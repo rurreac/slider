@@ -26,9 +26,9 @@ type config struct {
 	keyFile   string
 	authFile  string
 	addr      address
-	keepAlive time.Duration
-	debug     bool
 	timeout   time.Duration
+	keepalive time.Duration
+	debug     bool
 }
 
 type address struct {
@@ -38,20 +38,21 @@ type address struct {
 
 // sessionTrack keeps track of sessions and clients
 type sessionTrack struct {
-	SessionCount  int64              // number of sessions created
-	SessionActive int64              // number of active sessions
+	SessionCount  int64              // Number of Sessions created
+	SessionActive int64              // Number of Active Sessions
 	Sessions      map[int64]*Session // Map of Sessions
 }
 
 // Session represents a session from a client to the server
 type Session struct {
-	host         string
-	sessionID    int64
-	shellWsConn  *websocket.Conn
-	shellConn    *ssh.ServerConn
-	shellChannel ssh.Channel
-	shellOpened  bool
-	rawTerm      bool
+	host          string
+	sessionID     int64
+	shellWsConn   *websocket.Conn
+	shellConn     *ssh.ServerConn
+	shellChannel  ssh.Channel
+	shellOpened   bool
+	rawTerm       bool
+	KeepAliveChan chan bool
 }
 
 type server struct {
@@ -64,21 +65,23 @@ type server struct {
 }
 
 func NewServer(args []string) {
-	conf := &config{
-		keepAlive: 30 * time.Second,
-	}
+	conf := &config{}
 	sshConf := &ssh.ServerConfig{
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
 	}
 	f := flag.NewFlagSet("Server", flag.ContinueOnError)
 	f.BoolVar(&conf.debug, "debug", false, "Add verbose messages")
-	f.StringVar(&conf.keyFile, "key", "", "Path of key to use or generate in if absent")
 	f.StringVar(&conf.addr.host, "address", "0.0.0.0", "Address to run the server")
 	f.StringVar(&conf.addr.port, "port", "8080", "Port to run the server")
 	f.DurationVar(&conf.timeout, "timeout", 60*time.Second, "Set global handshake timeout in seconds.")
+	f.DurationVar(&conf.keepalive, "keepalive", 30*time.Second, "Set global handshake timeout in seconds.")
+	// TODO: Below flags not implemented
+	f.StringVar(&conf.keyFile, "key", "", "Path of key to use or generate in if absent")
 	f.BoolVar(&conf.keyGen, "keygen", false, "Save generated certificate to disk")
-	_ = f.Parse(args)
+	if parsErr := f.Parse(args); parsErr != nil {
+		return
+	}
 
 	signer, err := scrypt.CreateSSHKeys(*sshConf, conf.keyGen)
 	if err != nil {
@@ -99,8 +102,8 @@ func NewServer(args []string) {
 	if s.conf.debug {
 		s.WithDebug()
 	}
-	l, err := s.listener(conf.addr.host, conf.addr.port)
-	if err != nil {
+	l, lisErr := s.listener(conf.addr.host, conf.addr.port)
+	if lisErr != nil {
 		s.Fatalf("listener: %s", err)
 	}
 
@@ -121,10 +124,10 @@ func NewServer(args []string) {
 				s.Logger.BufferOut()
 				s.Logger.LogToStdout()
 			} else {
+				_, _ = fmt.Print("\rTerminating Server...\n\n")
 				break
 			}
 		}
-		s.TerminateAllSessions()
 		wg.Done()
 	}()
 	go func() {
@@ -179,18 +182,18 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	var upgrader = websocket.Upgrader{HandshakeTimeout: s.conf.timeout}
+
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.Errorf("Failed to upgrade client \"%s\": %s", r.Host, err)
 		return
 	}
-	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
-	session := s.NewWebSocketSession(wsConn)
-	wsConnClose := func() {
-		_ = wsConn.Close()
-		s.DropWebSocketSession(session)
-	}
+	defer func() { _ = wsConn.Close() }()
 
-	defer wsConnClose()
+	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
+
+	session := s.newWebSocketSession(wsConn)
+	defer s.dropWebSocketSession(session)
+
 	s.NewSSHServer(session)
 }
