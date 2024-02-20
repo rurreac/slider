@@ -33,5 +33,8 @@ sequenceDiagram
 ### Slider Client Output
 ![Slider Client](doc/slider_client.png)
 
+### Slider RCE Output
+![Slider RCE](doc/slider_rce.png)
+
 
 
