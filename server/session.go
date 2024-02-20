@@ -12,14 +12,18 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"golang.org/x/crypto/ssh"
+
 	"golang.org/x/term"
 
 	"github.com/gorilla/websocket"
 )
 
-// NewWebSocketSession adds a new session and stores the client info
-func (s *server) NewWebSocketSession(wsConn *websocket.Conn) *Session {
-	// clientID := rand.Intn(math.MaxInt)
+// newWebSocketSession adds a new session and stores the client info
+func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
+	var mutex sync.Mutex
+
+	mutex.Lock()
 	sc := atomic.AddInt64(&s.sessionTrack.SessionCount, 1)
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, 1)
 	s.sessionTrack.SessionCount = sc
@@ -29,25 +33,34 @@ func (s *server) NewWebSocketSession(wsConn *websocket.Conn) *Session {
 	if host == "" {
 		host = "localhost"
 	}
-	session := &Session{
-		sessionID:   sc,
-		host:        host,
-		shellWsConn: wsConn,
-	}
 
+	session := &Session{
+		sessionID:     sc,
+		host:          host,
+		shellWsConn:   wsConn,
+		KeepAliveChan: make(chan bool, 1),
+	}
 	s.sessionTrack.Sessions[sc] = session
+	mutex.Unlock()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.shellWsConn.RemoteAddr().String())
 	return session
 }
 
-// DropWebSocketSession removes a session and its client info
-func (s *server) DropWebSocketSession(session *Session) {
+// dropWebSocketSession removes a session and its client info
+func (s *server) dropWebSocketSession(session *Session) {
+	var mutex sync.Mutex
+
+	mutex.Lock()
+	session.KeepAliveChan <- true
+	close(session.KeepAliveChan)
+
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
 	s.sessionTrack.SessionActive = sa
+
+	_ = session.shellConn.Close()
 	_ = session.shellWsConn.Close()
-	delete(s.sessionTrack.Sessions, session.sessionID)
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		s.sessionTrack.SessionCount,
@@ -55,14 +68,55 @@ func (s *server) DropWebSocketSession(session *Session) {
 		session.sessionID,
 		session.shellWsConn.RemoteAddr().String(),
 	)
+
+	delete(s.sessionTrack.Sessions, session.sessionID)
+	mutex.Unlock()
 }
 
-func (s *server) SessionInteractive(sessionID int) {
+func (s *server) getSession(sessionID int) (*Session, error) {
 	session := s.sessionTrack.Sessions[int64(sessionID)]
 	if session == nil {
-		fmt.Printf("\rSession ID %d not found\n\n", sessionID)
-		return
+		return nil, fmt.Errorf("session ID %d not found", sessionID)
 	}
+	return session, nil
+}
+
+func (s *server) addSessionChannel(session *Session, channel ssh.Channel) {
+	var mutex sync.Mutex
+	mutex.Lock()
+	session.shellChannel = channel
+	mutex.Unlock()
+}
+
+func (s *server) closeSessionChannel(session *Session) {
+	var mutex sync.Mutex
+	mutex.Lock()
+	_ = session.shellChannel.Close()
+	mutex.Unlock()
+}
+
+func (s *server) sessionExecute(session *Session) {
+	// Remote Command won't execute on PTY, so terminal must be restored
+	// and make RAW once the output is finished
+	_ = term.Restore(int(os.Stdin.Fd()), s.consoleState)
+	defer func() {
+		// Force terminal back to RAW for Slider Console
+		_, _ = term.MakeRaw(int(os.Stdin.Fd()))
+
+		// Close SSH Session
+		s.closeSessionChannel(session)
+	}()
+
+	// Copy ssh channel to stdout. Copy will stop on exit.
+	if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
+		s.Debugf("Copy stdout: %s", outCopyErr)
+	}
+}
+
+func (s *server) sessionInteractive(session *Session) {
+	// Ensure Session Channel is closed
+	defer s.closeSessionChannel(session)
+
 	// Consider Reverse Shell is opened
 	session.shellOpened = true
 	defer func() {
@@ -75,6 +129,7 @@ func (s *server) SessionInteractive(sessionID int) {
 		// - Console terminal is RAW as this Remote Shell is not PTY,
 		// 		terminal state must be reverted to its original state, NOT RAW
 		_ = term.Restore(int(os.Stdin.Fd()), s.consoleState)
+
 		// - This Terminal in Reverse Shell has ECHO, it could be fixed (if not Windows not ConPTY)
 		// 		creating your own Terminal with ECHO disabled.
 		fmt.Printf(
@@ -82,8 +137,8 @@ func (s *server) SessionInteractive(sessionID int) {
 				"An extra intro is required to recover control of Slider Console after exit.%s\n\n\r",
 			string(s.console.Escape.Yellow),
 			string(s.console.Escape.Reset))
-		// - Once Reverse Shell is closed and extra intro is required to recover the control of the terminal.
 
+		// - Once Reverse Shell is closed and extra intro is required to recover the control of the terminal.
 		msgOut = fmt.Sprintf("\r%sPress INTRO to return to Console.\n\r%s",
 			string(s.console.Escape.Yellow),
 			string(s.console.Escape.Reset))
@@ -95,7 +150,7 @@ func (s *server) SessionInteractive(sessionID int) {
 		winChange := make(chan os.Signal, 1)
 		signal.Notify(winChange, syscall.SIGWINCH)
 
-		go s.CaptureWindowChange(session, winChange)
+		go s.captureWindowChange(session, winChange)
 
 		fmt.Printf(
 			"\r\n%sEntering fully interactive Shell...%s\n\n\r",
@@ -107,53 +162,31 @@ func (s *server) SessionInteractive(sessionID int) {
 			string(s.console.Escape.Reset))
 	}
 
-	var wg sync.WaitGroup
-	//var once sync.Once
-	wg.Add(1)
-
 	go func() {
 		// Copy ssh channel to stdout. Copy will stop on exit.
 		if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
 			s.Debugf("Copy stdout: %s", outCopyErr)
-			fmt.Printf("Copy stdout: %s\n", outCopyErr)
 		}
-		//once.Do(closeSSHChannel)
+
 		// Remote Shell is closed, print out message
 		fmt.Printf("%s", msgOut)
 	}()
 
 	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
 	// Copy all stdin to ssh channel.
-	go func() {
-		_, _ = io.Copy(session.shellChannel, os.Stdin)
-		wg.Done()
-	}()
+
+	_, _ = io.Copy(session.shellChannel, os.Stdin)
 
 	// TODO: Manage this along with Sessions
 
-	// Wait until Reverse Shell is closed
-	wg.Wait()
 	// Reverse Shell is closed
 	session.shellOpened = false
 
-	// Close SSH Connection and Session
-	_ = session.shellChannel.Close()
-	_ = session.shellConn.Close()
-	s.Debugf("Closed SSH Session ID %d (%s).", session.sessionID, session.shellWsConn.RemoteAddr().String())
+	s.Debugf("Closed Session ID %d Reverse Shell (%s).", session.sessionID, session.shellWsConn.RemoteAddr().String())
 }
 
-func (s *server) TerminateAllSessions() {
-	// TODO: May do this in a more refined way
-	s.Infof("Terminating all Connections to the Server...")
-	for _, session := range s.sessionTrack.Sessions {
-		_ = session.shellChannel.Close()
-		_ = session.shellConn.Close()
-		_ = session.shellWsConn.Close()
-	}
-}
-
-// CaptureWindowChange captures windows size changes and send them to the Client PTY
-func (s *server) CaptureWindowChange(session *Session, winChange chan os.Signal) {
+// captureWindowChange captures windows size changes and send them to the Client PTY
+func (s *server) captureWindowChange(session *Session, winChange chan os.Signal) {
 	// TODO: Events could be packed in 3-5s since the first event sending the just the latest.
 	for range winChange {
 		if session.shellOpened {
@@ -165,7 +198,7 @@ func (s *server) CaptureWindowChange(session *Session, winChange chan os.Signal)
 				}
 				if newTermSizeBytes, mErr := json.Marshal(newTermSize); mErr == nil {
 					// Send window-change event without expecting confirmation or answer
-					_, _, _ = s.sendSSHConnRequest(session, "window-change", false, newTermSizeBytes)
+					_, _, _ = s.sendConnRequest(session, "window-change", false, newTermSizeBytes)
 				}
 			} else {
 				break
