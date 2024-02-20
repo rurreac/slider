@@ -5,7 +5,7 @@
 Slider wants to be a tool used during Pentesting. 
 
 Consisting in a Server / Client binary, in this early stage, Slider can be utilized to send a 
-fully interactive Reverse Shell back to the Pentester host while pursuing a low detection level 
+fully interactive Reverse Shell back to the Pentester host (or achieve RCE) while pursuing a low detection level 
 using a well known protocol through an encrypted connection.
 
 ## How does it work
@@ -24,14 +24,17 @@ sequenceDiagram
     client ->> client: Client uses Websocket connection to create an SSH client
     client ->> server: Client connects to Server through SSH
     client ->> server: Client runs Shell into a PTY and sends it to the Server
-    server ->> server: Server saves Reverse Shell in Client Session for later use
-    server --> client: Server interacts with Reverse Shell saved in Client Session
+    server ->> server: Client opens a Channel Session to Server for later use
+    server --> client: Server request Reverse Shell or RCE using Client Session
 ```
 ### Slider Server Output
 ![Slider Server](doc/slider_server.png)
 
 ### Slider Client Output
 ![Slider Client](doc/slider_client.png)
+
+### Slider RCE Output
+![Slider RCE](doc/slider_rce.png)
 
 
 

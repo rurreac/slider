@@ -7,9 +7,12 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"golang.org/x/term"
 )
+
+type sessionFn func(*Session)
 
 func (s *server) NewConsole() string {
 	var out string
@@ -63,16 +66,40 @@ func (s *server) processCommand(consoleCmd []string) {
 	switch command {
 	case "sessions":
 		s.cmdSessions(args...)
+	case "execute":
+		s.cmdExecute(args...)
 	case "help":
 		s.help()
 	default:
-		fmt.Printf("Not recognized Command: %s, Arguments %s\n", command, args)
+		fmt.Printf("Unrecognized Command: %s, Arguments %s\n", command, args)
 		s.help()
 	}
 }
 
 func (s *server) help() {
 	s.cmdSessions()
+	s.cmdExecute()
+}
+
+func (s *server) cmdExecute(args ...string) {
+	sFlag := flag.NewFlagSet("\"sessions\" Command", flag.ContinueOnError)
+	sFlag.SetOutput(s.console)
+
+	se := sFlag.Int("i", 0, "Run given command on Session ID")
+	_ = sFlag.Parse(args)
+
+	if *se > 0 {
+		if err := s.sessionRequestAndRetry(
+			*se,
+			"session-exec",
+			[]byte(strings.Join(sFlag.Args(), " ")),
+			s.sessionExecute,
+		); err != nil {
+			_, _ = fmt.Fprintf(s.console, "\n\r%s\n", err)
+		}
+		return
+	}
+	sFlag.PrintDefaults()
 }
 
 func (s *server) cmdSessions(args ...string) {
@@ -81,21 +108,24 @@ func (s *server) cmdSessions(args ...string) {
 
 	sl := sFlag.Bool("l", false, "List Server Sessions")
 	si := sFlag.Int("i", 0, "Start Interactive Shell on Session ID")
+	sk := sFlag.Int("k", 0, "Kill Session ID")
 	_ = sFlag.Parse(args)
 
-	if (len(sFlag.Args()) > 0 || len(args) == 0) || (*sl && *si > 0) {
+	if len(sFlag.Args()) > 0 || len(args) == 0 || len(args) > 2 {
 		params := ""
 		if len(args) > 0 {
-			params = fmt.Sprintf("Received unwanted parammeters: %v\n", sFlag.Args())
+			params = fmt.Sprintf("Received unwanted parammeters: %v", sFlag.Args())
 		}
 		_, _ = fmt.Fprintf(
 			s.console,
-			"%ssessions - interact with sessions:\n",
+			"%s\n\rsessions - interact with sessions:\n",
 			params,
 		)
 		sFlag.PrintDefaults()
 		return
 	}
+
+	var err error
 
 	if *sl {
 		if len(s.sessionTrack.Sessions) > 0 {
@@ -115,7 +145,61 @@ func (s *server) cmdSessions(args ...string) {
 		_, _ = fmt.Fprintf(s.console, "Active sessions: %d\n\n", s.sessionTrack.SessionActive)
 		return
 	}
+
 	if *si > 0 {
-		s.SessionInteractive(*si)
+		if err = s.sessionRequestAndRetry(
+			*si,
+			"session-shell",
+			nil,
+			s.sessionInteractive,
+		); err != nil {
+			_, _ = fmt.Fprintf(s.console, "\n\r%s\n", err)
+		}
+		return
 	}
+
+	if *sk > 0 {
+		if err = s.sessionRequestAndRetry(
+			*sk,
+			"disconnect",
+			nil,
+			// Pass a dummy function, may use a function to terminate keep alive
+			// and maybe manually disconnect Client
+			func(session *Session) {},
+		); err != nil {
+			_, _ = fmt.Fprintf(s.console, "\r%s\n", err)
+		} else {
+			_, _ = fmt.Fprintf(
+				s.console,
+				"\rSessionID %d shutdown gracefully\n",
+				*sk,
+			)
+		}
+		return
+	}
+}
+
+func (s *server) sessionRequestAndRetry(sessionID int, reqType string, payload []byte, sessionF sessionFn) error {
+	session, sessErr := s.getSession(sessionID)
+	if sessErr != nil {
+		return sessErr
+	}
+
+	retry := time.Now().Add(time.Second * 5)
+	for {
+		ok, p, reqErr := s.sendConnRequest(session, reqType, true, payload)
+		if reqErr != nil {
+			return fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", ok, p, reqErr)
+		}
+		if ok {
+			break
+		}
+		if !ok && retry.After(time.Now()) {
+			time.Sleep(time.Second * 1)
+		} else if retry.Before(time.Now()) {
+			return fmt.Errorf("connection request failed after retries")
+		}
+	}
+	sessionF(session)
+	return nil
 }
