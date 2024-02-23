@@ -5,6 +5,9 @@ import (
 	"os"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 func (s *server) NewSSHServer(session *Session) {
