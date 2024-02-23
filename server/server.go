@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
+	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
 	"strings"
@@ -43,18 +45,6 @@ type sessionTrack struct {
 	Sessions      map[int64]*Session // Map of Sessions
 }
 
-// Session represents a session from a client to the server
-type Session struct {
-	host          string
-	sessionID     int64
-	shellWsConn   *websocket.Conn
-	shellConn     *ssh.ServerConn
-	shellChannel  ssh.Channel
-	shellOpened   bool
-	rawTerm       bool
-	KeepAliveChan chan bool
-}
-
 type server struct {
 	*slog.Logger
 	conf         *config
@@ -62,6 +52,7 @@ type server struct {
 	sessionTrack *sessionTrack
 	console      *term.Terminal
 	consoleState *term.State
+	sInterpreter *interpreter.Interpreter
 }
 
 func NewServer(args []string) {
@@ -70,7 +61,7 @@ func NewServer(args []string) {
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
 	}
-	f := flag.NewFlagSet("Server", flag.ContinueOnError)
+	f := flag.NewFlagSet("server", flag.ContinueOnError)
 	f.BoolVar(&conf.debug, "debug", false, "Add verbose messages")
 	f.StringVar(&conf.addr.host, "address", "0.0.0.0", "Address to run the server")
 	f.StringVar(&conf.addr.port, "port", "8080", "Port to run the server")
@@ -79,7 +70,8 @@ func NewServer(args []string) {
 	// TODO: Below flags not implemented
 	f.StringVar(&conf.keyFile, "key", "", "Path of key to use or generate in if absent")
 	f.BoolVar(&conf.keyGen, "keygen", false, "Save generated certificate to disk")
-	if parsErr := f.Parse(args); parsErr != nil {
+	if parsErr := f.Parse(args); parsErr != nil || slices.Contains(f.Args(), "help") {
+		f.Usage()
 		return
 	}
 
@@ -113,18 +105,22 @@ func NewServer(args []string) {
 	// Hold the execution until exit from the console
 	wg := sync.WaitGroup{}
 	wg.Add(1)
+
 	// Capture Interrupt Signal to toggle log output and activate C2 Console
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		for range sig {
+			// Send logs to a buffer
 			s.Logger.LogToBuffer()
-			if out := s.NewConsole(); out == "bg" {
-				s.Logger.BufferOut()
-				s.Logger.LogToStdout()
-			} else {
-				_, _ = fmt.Print("\rTerminating Server...\n\n")
+			// Run a Slider Console (NewConsole locks until termination),
+			// 'out' will always be equal to "bg" or "exit"
+			out := s.NewConsole()
+			// Restore logs from buffer and resume output to stdout
+			s.Logger.BufferOut()
+			s.Logger.LogToStdout()
+			if out == "exit" {
 				break
 			}
 		}
@@ -139,6 +135,7 @@ func NewServer(args []string) {
 	}()
 
 	wg.Wait()
+	s.Printf("Server down...")
 }
 
 func (s *server) listener(addr, port string) (net.Listener, error) {

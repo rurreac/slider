@@ -21,5 +21,9 @@ func main() {
 		server.NewServer(flags)
 	case "client":
 		client.NewClient(flags)
+	default:
+		help := []string{"help"}
+		server.NewServer(help)
+		client.NewClient(help)
 	}
 }
