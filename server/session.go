@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"slider/pkg/interpreter"
+	"slider/pkg/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +32,7 @@ type Session struct {
 	shellOpened   bool
 	rawTerm       bool
 	KeepAliveChan chan bool
+	*slog.Logger
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -52,6 +55,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		host:          host,
 		shellWsConn:   wsConn,
 		KeepAliveChan: make(chan bool, 1),
+		Logger:        s.Logger,
 	}
 	s.sessionTrack.Sessions[sc] = session
 	mutex.Unlock()
@@ -180,11 +184,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 
 	go func() {
 		// Copy ssh channel to stdout. Copy will stop on exit.
-		if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
-			// TODO: enable this once we fork the log into session
-			fmt.Printf("Copy stdout: %s", outCopyErr)
-			return
-		}
+		_, _ = io.Copy(os.Stdout, session.shellChannel)
 
 		// Remote Shell is closed, print out message
 		fmt.Printf("%s", msgOut)
@@ -192,11 +192,13 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 
 	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
 	// Copy all stdin to ssh channel.
-
 	_, _ = io.Copy(session.shellChannel, os.Stdin)
 
-	// TODO: enable this once we fork the log into session
-	//s.Debugf("Closed Session ID %d Reverse Shell (%s).", session.sessionID, session.shellWsConn.RemoteAddr().String())
+	session.Debugf(
+		"Session ID %d - Closed Reverse Shell (%s).",
+		session.sessionID,
+		session.shellWsConn.RemoteAddr().String(),
+	)
 }
 
 // captureWindowChange captures windows size changes and send them to the Client PTY
@@ -205,21 +207,91 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	for range winChange {
 		if session.shellOpened {
 			if cols, rows, sizeErr := term.GetSize(int(os.Stdin.Fd())); sizeErr == nil {
-				// TODO: enable this once we fork the log into session
-				//s.Debugf("Session ID %d - Terminal size changed: rows %d cols %d.\n", session.sessionID, rows, cols)
+				session.Debugf(
+					"Terminal size changed: rows %d cols %d.\n",
+					rows,
+					cols,
+				)
 				newTermSize := &interpreter.TermSize{
 					Rows: rows,
 					Cols: cols,
 				}
 				if newTermSizeBytes, mErr := json.Marshal(newTermSize); mErr == nil {
 					// Send window-change event without expecting confirmation or answer
-					_, _, _ = session.sendConnRequest("window-change", false, newTermSizeBytes)
+					if _, _, err := session.sendRequestAndRetry(
+						"window-change",
+						false,
+						newTermSizeBytes,
+					); err != nil {
+						session.Errorf("%s", err)
+					}
 				}
 			} else {
 				break
 			}
 		} else {
 			break
+		}
+	}
+}
+
+func (session *Session) keepAlive(keepalive time.Duration) {
+	ticker := time.NewTicker(keepalive)
+	defer ticker.Stop()
+	/*
+		A NOTE REGARDING BELOW:
+		- Connection failures from Server don't actually mean Client is offline (current status)
+		- Attempts restored always after attempt #1
+		- KeepAlive from Client doesn't fail
+		- Should add retries as a flag?
+		-
+	*/
+	allowConnFailures := 3
+	connFailures := 0
+
+	for {
+		select {
+		case <-session.KeepAliveChan:
+			session.Debugf("Keep-Alive SessionID %d - KeepAlive Check Stopped.", session.sessionID)
+			return
+		case <-ticker.C:
+			ok, p, sendErr := session.sendRequestAndRetry("keep-alive", true, []byte("ping"))
+			if sendErr != nil {
+				session.Errorf(
+					"Keep-Alive SessionID %d - KeepAlive Ping Failure - Connection Error \"%s\"",
+					session.sessionID,
+					sendErr,
+				)
+				return
+			}
+			if !bytes.Equal(p, []byte("pong")) || !ok {
+				if connFailures >= allowConnFailures {
+					session.Errorf(
+						"Keep-Alive SessionID %d - Ping Failure - Giving up after \"%d\" Attempts.",
+						session.sessionID,
+						allowConnFailures,
+					)
+					return
+				} else {
+					connFailures++
+					session.Warnf(
+						"Keep-Alive SessionID %d - Ping Failure - Attempt #%d (ok:\"%v\", data:\"%s\")",
+						session.sessionID,
+						connFailures,
+						ok,
+						p,
+					)
+				}
+				continue
+			}
+			if connFailures > 0 {
+				session.Warnf(
+					"Keep-Alive SessionID %d - Reset Failure Counter on Attempt #%d",
+					session.sessionID,
+					connFailures,
+				)
+				connFailures = 0
+			}
 		}
 	}
 }
@@ -246,32 +318,57 @@ func (s *server) readInput(session *Session) {
 	}
 }
 
-func (session *Session) sendRequestAndRetry(reqType string, payload []byte) error {
+func (session *Session) sendRequestAndRetry(requestType string, wantReply bool, payload []byte) (bool, []byte, error) {
 	var err error
 	retry := time.Now().Add(time.Second * 5)
+	counter := 1
+	var pOk bool
+	var resPayload []byte
 	for {
-		var ok bool
-		var p []byte
-		ok, p, err = session.sendConnRequest(reqType, true, payload)
+		pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
 		if err != nil {
-			return fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", ok, p, err)
+			return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", pOk, resPayload, err)
 		}
-		if ok {
+		if pOk {
+			var pMsg string
+			if len(payload) != 0 {
+				pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
+			}
+			session.Debugf(
+				"Sent Connection Request Type \"%s\" to SessionID %d %s(Attempt #%d)",
+				requestType,
+				session.sessionID,
+				pMsg,
+				counter,
+			)
 			break
 		}
-		if !ok && retry.After(time.Now()) {
+		if !pOk && retry.After(time.Now()) {
+			counter++
 			time.Sleep(time.Second * 1)
 		} else if retry.Before(time.Now()) {
-			return fmt.Errorf("connection request failed after retries")
+			return false, nil, fmt.Errorf(
+				"connection request to SessionID %d failed after %d attempts",
+				session.sessionID,
+				counter,
+			)
 		}
 	}
 
-	return nil
+	return pOk, resPayload, err
 }
 
-func (session *Session) sendConnRequest(requestType string, wantReply bool, payload []byte) (bool, []byte, error) {
-	// TODO: enable this once we fork the log into session
-	// s.Debugf("Session ID %d - Sending Connection Request Type \"%s\" with Payload: \"%s\"", session.sessionID, requestType, payload)
-	sOk, sP, sErr := session.shellConn.SendRequest(requestType, wantReply, payload)
-	return sOk, sP, sErr
+func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload []byte) error {
+	var pMsg string
+	if len(payload) != 0 {
+		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
+	}
+	session.Debugf(
+		"Replying Connection Request Type \"%s\" from SessionID %d, will send \"%v\" %s",
+		request.Type,
+		session.sessionID,
+		ok,
+		pMsg,
+	)
+	return request.Reply(ok, payload)
 }

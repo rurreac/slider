@@ -1,16 +1,10 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
-	"time"
-
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 func (s *server) NewSSHServer(session *Session) {
@@ -45,7 +39,7 @@ func (s *server) NewSSHServer(session *Session) {
 	)
 
 	if s.conf.keepalive > 0 {
-		go s.keepAlive(session, s.conf.keepalive)
+		go session.keepAlive(s.conf.keepalive)
 	}
 
 	// Requests and NewChannel channels must be serviced/discarded or the connection hangs
@@ -64,23 +58,26 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 		case "session":
 			sessChan, chanReq, err = nc.Accept()
 			if err != nil {
-				s.Errorf(
-					"Session ID %d - handleSSHChannels (Accept): Failed to accept the request.\n%s",
+				session.Errorf(
+					"[Session ID %d] handleSSHChannels (Accept): Failed to accept the request.\n%s",
 					session.sessionID,
 					err,
 				)
 				return
 			}
 			session.addSessionChannel(sessChan)
-			s.Debugf(
+			session.Debugf(
 				"Session ID %d - Accepted SSH \"%s\" Channel Connection.",
 				session.sessionID,
 				nc.ChannelType(),
 			)
 		default:
-			s.Debugf("Rejected channel %s", nc.ChannelType())
-			if err := nc.Reject(ssh.UnknownChannelType, ""); err != nil {
-				s.Warnf("handleSSHnewChannels (session): Received Unknown channel type.\n%s", err)
+			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
+			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
+				session.Warnf("Session ID %d - handleSSHnewChannels (session): Received Unknown channel type.\n%s",
+					session.sessionID,
+					err,
+				)
 			}
 			return
 		}
@@ -100,11 +97,11 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				}
 				payload, _ = json.Marshal(tSize)
 			}
-			s.replyChanRequest(r, true, payload)
+			_ = session.replyConnRequest(r, true, payload)
 		case "keep-alive":
-			replyErr := s.replyConnRequest(session, r, true, []byte("pong"))
+			replyErr := session.replyConnRequest(r, true, []byte("pong"))
 			if replyErr != nil {
-				s.Errorf("[Keep-Alive] Connection error while replying.")
+				session.Errorf("Keep-Alive Session ID %d - Connection error while replying.", session.sessionID)
 				return
 			}
 		default:
@@ -121,95 +118,16 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 		case "request-pty":
 			ok = true
 			session.rawTerm = true
-			s.replyChanRequest(r, ok, nil)
-			s.Debugf("Session %d Client Requested Raw Terminal...", session.sessionID)
+			_ = session.replyConnRequest(r, ok, nil)
+			session.Debugf("Session ID %d - Client Requested Raw Terminal...", session.sessionID)
 		case "reverse-shell":
 			ok = true
-			s.replyChanRequest(r, ok, nil)
-			s.Debugf("Session %d Client Sent Reverse Shell...", session.sessionID)
+			_ = session.replyConnRequest(r, ok, nil)
+			session.Debugf("Session ID %d - Client will send Reverse Shell...", session.sessionID)
 			return
 		default:
-			s.replyChanRequest(r, ok, nil)
+			_ = session.replyConnRequest(r, ok, nil)
 			return
-		}
-	}
-}
-
-// replyChanRequest answers a Request adding log verbosity
-func (s *server) replyChanRequest(req *ssh.Request, ok bool, payload []byte) {
-	if req.WantReply {
-		var p string
-		if payload != nil {
-			p = fmt.Sprintf("with Payload: \"%s\"", payload)
-		}
-		s.Debugf("Received Channel Request Type \"%s\" wants reply, will send \"%v\" %s", req.Type, ok, p)
-		if err := req.Reply(ok, payload); err != nil {
-			s.Errorf("req.Reply error: %s", err)
-		}
-	}
-}
-
-func (s *server) replyConnRequest(session *Session, req *ssh.Request, ok bool, payload []byte) error {
-	s.Debugf("Session ID %d - Replying Connection Request Type \"%s\" will send \"%v\" with Payload: %s", session.sessionID, req.Type, ok, payload)
-	return req.Reply(ok, payload)
-}
-
-func (s *server) keepAlive(session *Session, keepalive time.Duration) {
-	ticker := time.NewTicker(keepalive)
-	defer ticker.Stop()
-	/*
-		A NOTE REGARDING BELOW:
-		- Connection failures from Server don't actually mean Client is offline (current status)
-		- Attempts restored always after attempt #1
-		- KeepAlive from Client doesn't fail
-		- Should add retries as a flag?
-	*/
-	allowConnFailures := 3
-	connFailures := 0
-
-	for {
-		select {
-		case <-session.KeepAliveChan:
-			s.Debugf("SessionID %d - KeepAlive Check Stopped.", session.sessionID)
-			return
-		case <-ticker.C:
-			ok, p, sendErr := session.sendConnRequest("keep-alive", true, []byte("ping"))
-			if sendErr != nil {
-				s.Errorf(
-					"Session ID %d - KeepAlive Ping Failure - Connection Error \"%s\"",
-					session.sessionID,
-					sendErr,
-				)
-				return
-			}
-			if !bytes.Equal(p, []byte("pong")) || !ok {
-				if connFailures >= allowConnFailures {
-					s.Errorf(
-						"Session ID %d - KeepAlive Ping Failure - Giving up after \"%d\" Attempts.",
-						session.sessionID,
-						allowConnFailures,
-					)
-					return
-				} else {
-					connFailures++
-					s.Warnf(
-						"Session ID %d - KeepAlive Ping Failure - Attempt #%d (ok:\"%v\", data:\"%s\")",
-						session.sessionID,
-						connFailures,
-						ok,
-						p,
-					)
-				}
-				continue
-			}
-			if connFailures > 0 {
-				s.Warnf(
-					"Session ID %d - KeepAlive Connection Reset Failure Counter after Attempt #%d",
-					session.sessionID,
-					connFailures,
-				)
-				connFailures = 0
-			}
 		}
 	}
 }

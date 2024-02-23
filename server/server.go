@@ -120,7 +120,6 @@ func NewServer(args []string) {
 			// Restore logs from buffer and resume output to stdout
 			s.Logger.BufferOut()
 			s.Logger.LogToStdout()
-			// Terminates if it has to
 			if out == "exit" {
 				break
 			}

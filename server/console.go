@@ -171,8 +171,9 @@ func (s *server) cmdExecute(args ...string) {
 				s.console.Escape.Reset,
 			)
 		}
-		if err := session.sendRequestAndRetry(
+		if _, _, err := session.sendRequestAndRetry(
 			"session-exec",
+			true,
 			[]byte(strings.Join(executeCmd.Args(), " ")),
 		); err != nil {
 			fmt.Printf("\r%s\n\n\r", err)
@@ -229,8 +230,9 @@ func (s *server) cmdSessions(args ...string) {
 			_, _ = fmt.Printf("\r%s\n\n\r", sessErr)
 			return
 		}
-		if err = session.sendRequestAndRetry(
+		if _, _, err = session.sendRequestAndRetry(
 			"session-shell",
+			true,
 			nil,
 		); err != nil {
 			_, _ = fmt.Printf("\r%s\n\n\r", err)
@@ -246,8 +248,9 @@ func (s *server) cmdSessions(args ...string) {
 			_, _ = fmt.Printf("\r%s\n\n\r", sessErr)
 			return
 		}
-		if err = session.sendRequestAndRetry(
+		if _, _, err = session.sendRequestAndRetry(
 			"disconnect",
+			true,
 			nil,
 		); err != nil {
 			_, _ = fmt.Printf("\r%s\n\r", err)
