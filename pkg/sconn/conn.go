@@ -12,11 +12,6 @@ type wsConn struct {
 	buff []byte
 }
 
-type TermSize struct {
-	Rows int `json:"rows"`
-	Cols int `json:"cols"`
-}
-
 func (w *wsConn) Read(p []byte) (int, error) {
 	var src []byte
 

