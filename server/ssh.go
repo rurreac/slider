@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -71,7 +71,7 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 				)
 				return
 			}
-			s.addSessionChannel(session, sessChan)
+			session.addSessionChannel(sessChan)
 			s.Debugf(
 				"Session ID %d - Accepted SSH \"%s\" Channel Connection.",
 				session.sessionID,
@@ -94,7 +94,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		switch r.Type {
 		case "window-size":
 			if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-				tSize := sconn.TermSize{
+				tSize := interpreter.TermSize{
 					Rows: height,
 					Cols: width,
 				}
@@ -149,15 +149,6 @@ func (s *server) replyChanRequest(req *ssh.Request, ok bool, payload []byte) {
 	}
 }
 
-func (s *server) sendConnRequest(session *Session, requestType string, wantReply bool, payload []byte) (bool, []byte, error) {
-	var mutex sync.Mutex
-	mutex.Lock()
-	s.Debugf("Session ID %d - Sending Connection Request Type \"%s\" with Payload: \"%s\"", session.sessionID, requestType, payload)
-	sOk, sP, sErr := session.shellConn.SendRequest(requestType, wantReply, payload)
-	mutex.Unlock()
-	return sOk, sP, sErr
-}
-
 func (s *server) replyConnRequest(session *Session, req *ssh.Request, ok bool, payload []byte) error {
 	s.Debugf("Session ID %d - Replying Connection Request Type \"%s\" will send \"%v\" with Payload: %s", session.sessionID, req.Type, ok, payload)
 	return req.Reply(ok, payload)
@@ -182,7 +173,7 @@ func (s *server) keepAlive(session *Session, keepalive time.Duration) {
 			s.Debugf("SessionID %d - KeepAlive Check Stopped.", session.sessionID)
 			return
 		case <-ticker.C:
-			ok, p, sendErr := s.sendConnRequest(session, "keep-alive", true, []byte("ping"))
+			ok, p, sendErr := session.sendConnRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil {
 				s.Errorf(
 					"Session ID %d - KeepAlive Ping Failure - Connection Error \"%s\"",
