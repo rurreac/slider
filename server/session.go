@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/term"
 	"io"
 	"os"
 	"os/signal"
@@ -16,8 +17,6 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
-
-	"golang.org/x/term"
 
 	"github.com/gorilla/websocket"
 )
@@ -131,19 +130,18 @@ func (session *Session) sessionExecute(initTermState *term.State) error {
 	return nil
 }
 
-func (session *Session) sessionInteractive(initTermState *term.State, console *term.Terminal) {
+func (session *Session) sessionInteractive(initTermState *term.State, console *term.Terminal, winChangeCall syscall.Signal) {
 	// Consider Reverse Shell is opened
 	session.shellOpened = true
 
 	defer func() {
-		// Ensure Session Channel is closed
-		session.closeSessionChannel()
 		// Force terminal back to RAW for Slider Console
 		_, _ = term.MakeRaw(int(os.Stdin.Fd()))
+		// Ensure Session Channel is closed
+		session.closeSessionChannel()
 		// Reverse Shell is closed
 		session.shellOpened = false
 	}()
-
 	var msgOut string
 	if !session.rawTerm {
 		// - Console terminal is RAW as this Remote Shell is not PTY,
@@ -164,13 +162,15 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 			string(console.Escape.Reset))
 	} else {
 		// - This Reverse-Shell is PTY and can be RAW, since Slider Console is RAW there is nothing to set.
-
 		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
 		//		according to window-change events on the Server Terminal, sending Connection Requests.
-		winChange := make(chan os.Signal, 1)
-		signal.Notify(winChange, syscall.SIGWINCH)
+		if winChangeCall != 0 {
+			winChange := make(chan os.Signal, 1)
+			defer close(winChange)
+			signal.Notify(winChange, winChangeCall)
 
-		go session.captureWindowChange(winChange)
+			go session.captureWindowChange(winChange)
+		}
 
 		fmt.Printf(
 			"\r%sEntering fully interactive Shell...%s\n\r",
@@ -348,7 +348,8 @@ func (session *Session) sendRequestAndRetry(requestType string, wantReply bool, 
 			time.Sleep(time.Second * 1)
 		} else if retry.Before(time.Now()) {
 			return false, nil, fmt.Errorf(
-				"connection request to SessionID %d failed after %d attempts",
+				"connection request \"%s\" to SessionID %d failed after %d attempts",
+				requestType,
 				session.sessionID,
 				counter,
 			)
