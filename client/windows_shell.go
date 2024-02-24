@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/UserExistsError/conpty"
 	"io"
 	"os/exec"
 	"slider/pkg/interpreter"

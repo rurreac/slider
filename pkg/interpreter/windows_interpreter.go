@@ -4,6 +4,7 @@ package interpreter
 
 import (
 	"fmt"
+	"github.com/UserExistsError/conpty"
 	"os"
 	"syscall"
 )
