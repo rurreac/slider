@@ -118,7 +118,7 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 	for r := range chanReq {
 		ok := false
 		switch r.Type {
-		case "request-pty":
+		case "pty-req":
 			ok = true
 			session.rawTerm = true
 			_ = session.replyConnRequest(r, ok, nil)

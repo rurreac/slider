@@ -17,8 +17,6 @@ import (
 	"slider/pkg/slog"
 	"time"
 
-	"github.com/creack/pty"
-
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
 )
@@ -142,12 +140,7 @@ func (c *client) handleConnRequests(newChan <-chan ssh.NewChannel, connReqChan <
 			if err := json.Unmarshal(r.Payload, &termSize); err != nil {
 				c.Fatalf("%s", err)
 			}
-			if sizeErr := pty.Setsize(c.ptyFile, &pty.Winsize{
-				Rows: uint16(termSize.Rows),
-				Cols: uint16(termSize.Cols),
-			}); sizeErr != nil {
-				c.Errorf("%s", sizeErr)
-			}
+			c.updatePtySize(termSize.Rows, termSize.Cols)
 		case "disconnect":
 			c.Debugf("Server requested Client disconnection.")
 			_ = c.replyConnRequest(r, true, []byte("disconnected"))

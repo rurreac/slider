@@ -72,6 +72,7 @@ func (s *server) NewConsole() string {
 		if len(args) > 0 {
 			fCmd = args[0]
 		}
+
 		switch fCmd {
 		case "sessions":
 			s.cmdSessions(args[1:]...)
@@ -105,8 +106,8 @@ func (s *server) notConsoleCmd(fCmd []string) {
 		fCmd,
 	)
 
-	// If there's no suitable interpreter just return
-	if s.sInterpreter == nil {
+	// If a Shell was not set just return
+	if s.sInterpreter.Shell == "" {
 		return
 	}
 
@@ -238,7 +239,7 @@ func (s *server) cmdSessions(args ...string) {
 			_, _ = fmt.Printf("\r%s\n\n\r", err)
 			return
 		}
-		session.sessionInteractive(s.consoleState, s.console)
+		session.sessionInteractive(s.consoleState, s.console, s.sInterpreter.WinChangeCall)
 		return
 	}
 
