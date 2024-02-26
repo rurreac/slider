@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/term"
@@ -218,7 +217,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 				}
 				if newTermSizeBytes, mErr := json.Marshal(newTermSize); mErr == nil {
 					// Send window-change event without expecting confirmation or answer
-					if _, _, err := session.sendRequestAndRetry(
+					if _, _, err := session.sendRequest(
 						"window-change",
 						false,
 						newTermSizeBytes,
@@ -238,16 +237,6 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 func (session *Session) keepAlive(keepalive time.Duration) {
 	ticker := time.NewTicker(keepalive)
 	defer ticker.Stop()
-	/*
-		A NOTE REGARDING BELOW:
-		- Connection failures from Server don't actually mean Client is offline (current status)
-		- Attempts restored always after attempt #1
-		- KeepAlive from Client doesn't fail
-		- Should add retries as a flag?
-		-
-	*/
-	allowConnFailures := 3
-	connFailures := 0
 
 	for {
 		select {
@@ -255,105 +244,29 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 			session.Debugf("Keep-Alive SessionID %d - KeepAlive Check Stopped.", session.sessionID)
 			return
 		case <-ticker.C:
-			ok, p, sendErr := session.sendRequestAndRetry("keep-alive", true, []byte("ping"))
-			if sendErr != nil {
+			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
+			if sendErr != nil || !ok || string(p) != "pong" {
 				session.Errorf(
-					"Keep-Alive SessionID %d - KeepAlive Ping Failure - Connection Error \"%s\"",
+					"Keep-Alive SessionID %d - Connection Error Received (\"%v\"-\"%s\"-\"%s\")",
 					session.sessionID,
+					ok,
+					p,
 					sendErr,
 				)
 				return
 			}
-			if !bytes.Equal(p, []byte("pong")) || !ok {
-				if connFailures >= allowConnFailures {
-					session.Errorf(
-						"Keep-Alive SessionID %d - Ping Failure - Giving up after \"%d\" Attempts.",
-						session.sessionID,
-						allowConnFailures,
-					)
-					return
-				} else {
-					connFailures++
-					session.Warnf(
-						"Keep-Alive SessionID %d - Ping Failure - Attempt #%d (ok:\"%v\", data:\"%s\")",
-						session.sessionID,
-						connFailures,
-						ok,
-						p,
-					)
-				}
-				continue
-			}
-			if connFailures > 0 {
-				session.Warnf(
-					"Keep-Alive SessionID %d - Reset Failure Counter on Attempt #%d",
-					session.sessionID,
-					connFailures,
-				)
-				connFailures = 0
-			}
 		}
 	}
 }
 
-// readInput is just a test to try and minimize the user interaction due to io.Copy holding for a byte read until EOF
-func (s *server) readInput(session *Session) {
-	var readInput = make([]byte, 512)
-	for {
-		n, err := os.Stdin.Read(readInput[0:])
-		if err == io.EOF {
-			fmt.Printf("\r\nClient disconnected\n")
-			break
-		} else if err != nil {
-			fmt.Printf("\r\n%v\n", err)
-			break
-		}
-		if _, err = session.shellChannel.Write(readInput[0:n]); err != nil {
-			_, _ = os.Stdout.Write(readInput[0:n])
-			if _, err = s.console.Write(readInput[0:n]); err != nil {
-				fmt.Printf("\r\nError writing to Console")
-			}
-			break
-		}
-	}
-}
-
-func (session *Session) sendRequestAndRetry(requestType string, wantReply bool, payload []byte) (bool, []byte, error) {
+func (session *Session) sendRequest(requestType string, wantReply bool, payload []byte) (bool, []byte, error) {
 	var err error
-	retry := time.Now().Add(time.Second * 5)
-	counter := 1
 	var pOk bool
 	var resPayload []byte
-	for {
-		pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
-		if err != nil {
-			return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", pOk, resPayload, err)
-		}
-		if pOk {
-			var pMsg string
-			if len(payload) != 0 {
-				pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
-			}
-			session.Debugf(
-				"Sent Connection Request Type \"%s\" to SessionID %d %s(Attempt #%d)",
-				requestType,
-				session.sessionID,
-				pMsg,
-				counter,
-			)
-			break
-		}
-		if !pOk && retry.After(time.Now()) {
-			counter++
-			time.Sleep(time.Second * 1)
-		} else if retry.Before(time.Now()) {
-			return false, nil, fmt.Errorf(
-				"connection request \"%s\" to SessionID %d failed after %d attempts",
-				requestType,
-				session.sessionID,
-				counter,
-			)
-		}
+
+	pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
+	if err != nil || !pOk {
+		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", pOk, resPayload, err)
 	}
 
 	return pOk, resPayload, err
