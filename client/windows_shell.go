@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"slider/pkg/interpreter"
 
+	"github.com/UserExistsError/conpty"
+
 	"golang.org/x/crypto/ssh"
 )
 
