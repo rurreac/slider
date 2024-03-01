@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
+	"slider/pkg/ssocks"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,7 @@ type Session struct {
 	shellOpened   bool
 	rawTerm       bool
 	KeepAliveChan chan bool
+	SocksInstance *ssocks.Instance
 	*slog.Logger
 }
 
@@ -54,6 +56,9 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		shellWsConn:   wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
+		SocksInstance: &ssocks.Instance{
+			InstanceConfig: &ssocks.InstanceConfig{},
+		},
 	}
 	s.sessionTrack.Sessions[sc] = session
 	mutex.Unlock()
@@ -70,6 +75,10 @@ func (s *server) dropWebSocketSession(session *Session) {
 	mutex.Lock()
 	session.KeepAliveChan <- true
 	close(session.KeepAliveChan)
+
+	if session.SocksInstance.IsEnabled() {
+		_ = session.SocksInstance.Stop()
+	}
 
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
 	s.sessionTrack.SessionActive = sa
@@ -134,8 +143,6 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 	session.shellOpened = true
 
 	defer func() {
-		// Force terminal back to RAW for Slider Console
-		_, _ = term.MakeRaw(int(os.Stdin.Fd()))
 		// Ensure Session Channel is closed
 		session.closeSessionChannel()
 		// Reverse Shell is closed
@@ -190,6 +197,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 	}()
 
 	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
+	// This io.Copy always requires input as os.Stdin is a blocker
 	// Copy all stdin to ssh channel.
 	_, _ = io.Copy(session.shellChannel, os.Stdin)
 
@@ -285,4 +293,19 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 		pMsg,
 	)
 	return request.Reply(ok, payload)
+}
+
+func (session *Session) socksEnable(port int) {
+	sConfig := &ssocks.InstanceConfig{
+		Logger:     session.Logger,
+		IsEndpoint: true,
+		Port:       port,
+		SSHConn:    session.shellConn,
+	}
+
+	session.SocksInstance = ssocks.New(sConfig)
+
+	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
+		session.Errorf("SOCKS - %s", sErr)
+	}
 }
