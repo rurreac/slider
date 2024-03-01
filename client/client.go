@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -33,7 +32,6 @@ type client struct {
 	ptyFile       *os.File
 	debug         bool
 	disconnect    chan bool
-	socksConn     net.Conn
 	socksInstance *ssocks.Instance
 }
 
