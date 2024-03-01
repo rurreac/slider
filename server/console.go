@@ -3,13 +3,15 @@ package server
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/term"
 	"io"
 	"os"
 	"os/exec"
 	"slider/pkg/interpreter"
 	"strings"
 	"text/tabwriter"
+	"time"
+
+	"golang.org/x/term"
 )
 
 func (s *server) NewConsole() string {
@@ -81,9 +83,12 @@ func (s *server) NewConsole() string {
 		case "exit", "bg":
 			consoleInput = false
 			out = fCmd
+		case "socks":
+			s.cmdSocks(args[1:]...)
 		case "help":
 			s.cmdSessions()
 			s.cmdExecute()
+			s.cmdSocks()
 		case "":
 			continue
 		default:
@@ -260,4 +265,66 @@ func (s *server) cmdSessions(args ...string) {
 		_, _ = fmt.Printf("\rSessionID %d shutdown gracefully\n\r", *sKill)
 		return
 	}
+}
+
+func (s *server) cmdSocks(args ...string) {
+	socksCmd := flag.NewFlagSet("socks", flag.ContinueOnError)
+	id := socksCmd.Int("s", 0, "Run socks5 sever over a Session ID Channel")
+	sp := socksCmd.Int("p", 0, "Run socks5 sever over a Session ID Channel")
+	sk := socksCmd.Int("k", 0, "Kill Session ID SOCKS5 Endpoint and Sever")
+
+	socksCmd.SetOutput(s.console)
+
+	if pErr := socksCmd.Parse(args); pErr != nil {
+		return
+	}
+
+	if *id == 0 && *sk == 0 {
+		socksCmd.Usage()
+		return
+	}
+
+	if *sk > 0 {
+		session, sessErr := s.getSession(*sk)
+		if sessErr != nil {
+			fmt.Printf("\rUnknown Session ID %d\n\r", *sk)
+			return
+		}
+		if session.SocksInstance.IsEnabled() {
+			if err := session.SocksInstance.Stop(); err != nil {
+				fmt.Printf("\r[!] %s\n\r", err)
+				return
+			}
+			fmt.Printf("\r[+] Socks Endpoint gracefully stopped\n")
+			return
+		}
+		fmt.Printf("\rSocks is not running on Session ID %d", *sk)
+		return
+	}
+
+	if *id > 0 {
+		session, sessErr := s.getSession(*id)
+		if sessErr != nil {
+			fmt.Printf("\rUnknown Session ID %d\n\r", *id)
+			return
+		}
+		fmt.Printf("\r[*] Enabling Socks5 Endpoint in the background\r\n")
+
+		go session.socksEnable(*sp)
+
+		// Give some time to check
+		timeout := time.Now().Add(5 * time.Second)
+		for time.Now().Before(timeout) {
+			port, _ := session.SocksInstance.GetEndpointPort()
+			if port == 0 {
+				time.Sleep(250 * time.Millisecond)
+				continue
+			}
+			fmt.Printf("\r[+] Socks Endpoint running on port \"%d\"\r\n", port)
+			return
+		}
+		fmt.Printf("\r[!] Socks Endpoint doesn't appear to be running\r\n")
+		return
+	}
+	socksCmd.Usage()
 }

@@ -49,31 +49,34 @@ func (s *server) NewSSHServer(session *Session) {
 	go s.handleConnRequests(session, reqChan)
 
 	s.handleNewChannels(session, newChan)
+
 }
 
 func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
 		var chanReq <-chan *ssh.Request
-		var sessChan ssh.Channel
+		var sshChan ssh.Channel
 		var err error
 
 		switch nc.ChannelType() {
 		case "session":
-			sessChan, chanReq, err = nc.Accept()
+			sshChan, chanReq, err = nc.Accept()
 			if err != nil {
 				session.Errorf(
-					"[Session ID %d] handleSSHChannels (Accept): Failed to accept the request.\n%s",
+					"Session ID %d - handleSSHChannels (Accept): Failed to accept the channel \"%s\".\n%s",
 					session.sessionID,
+					nc.ChannelType(),
 					err,
 				)
 				return
 			}
-			session.addSessionChannel(sessChan)
+			session.addSessionChannel(sshChan)
 			session.Debugf(
 				"Session ID %d - Accepted SSH \"%s\" Channel Connection.",
 				session.sessionID,
 				nc.ChannelType(),
 			)
+		case "socks5":
 		default:
 			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
 			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {

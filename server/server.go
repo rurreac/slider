@@ -65,8 +65,7 @@ func NewServer(args []string) {
 	f.BoolVar(&conf.debug, "debug", false, "Add verbose messages")
 	f.StringVar(&conf.addr.host, "address", "0.0.0.0", "Address to run the server")
 	f.StringVar(&conf.addr.port, "port", "8080", "Port to run the server")
-	f.DurationVar(&conf.timeout, "timeout", 60*time.Second, "Set global handshake timeout in seconds.")
-	f.DurationVar(&conf.keepalive, "keepalive", 30*time.Second, "Set global handshake timeout in seconds.")
+	f.DurationVar(&conf.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
 	// TODO: Below flags not implemented
 	f.StringVar(&conf.keyFile, "key", "", "Path of key to use or generate in if absent")
 	f.BoolVar(&conf.keyGen, "keygen", false, "Save generated certificate to disk")
