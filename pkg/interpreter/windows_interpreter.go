@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"github.com/UserExistsError/conpty"
 	"os"
+	"os/user"
+	"runtime"
 	"syscall"
 )
 
@@ -32,6 +34,18 @@ type TermSize struct {
 func NewInterpreter() (*Interpreter, error) {
 	// TODO: Logic to decide running "cmd" or "powershell" (default to "cmd")
 	i := &Interpreter{}
+
+	i.Arch = runtime.GOARCH
+	i.System = runtime.GOOS
+	i.User = "--"
+	if u, uErr := user.Current(); uErr == nil {
+		i.User = u.Username
+	}
+	var hErr error
+	i.Hostname, hErr = os.Hostname()
+	if hErr != nil {
+		i.Hostname = "--"
+	}
 
 	// TODO: Default path but might not be this one
 	if conpty.IsConPtyAvailable() {
