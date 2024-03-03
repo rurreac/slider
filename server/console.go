@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slider/pkg/interpreter"
 	"strings"
 	"text/tabwriter"
@@ -85,10 +86,16 @@ func (s *server) NewConsole() string {
 			out = fCmd
 		case "socks":
 			s.cmdSocks(args[1:]...)
+		case "upload":
+			s.cmdUpload(args[1:]...)
+		case "download":
+			s.cmdDownload(args[1:]...)
 		case "help":
 			s.cmdSessions()
 			s.cmdExecute()
 			s.cmdSocks()
+			s.cmdUpload()
+			s.cmdDownload()
 		case "":
 			continue
 		default:
@@ -269,9 +276,9 @@ func (s *server) cmdSessions(args ...string) {
 
 func (s *server) cmdSocks(args ...string) {
 	socksCmd := flag.NewFlagSet("socks", flag.ContinueOnError)
-	id := socksCmd.Int("s", 0, "Run socks5 sever over a Session ID Channel")
-	sp := socksCmd.Int("p", 0, "Run socks5 sever over a Session ID Channel")
-	sk := socksCmd.Int("k", 0, "Kill Session ID SOCKS5 Endpoint and Sever")
+	id := socksCmd.Int("s", 0, "Run socks5 server over a Session ID Channel")
+	sp := socksCmd.Int("p", 0, "Run socks5 server over a Session ID Channel")
+	sk := socksCmd.Int("k", 0, "Kill Session ID SOCKS5 Endpoint and Server")
 
 	socksCmd.SetOutput(s.console)
 
@@ -327,4 +334,90 @@ func (s *server) cmdSocks(args ...string) {
 		return
 	}
 	socksCmd.Usage()
+}
+
+func (s *server) cmdUpload(args ...string) {
+	uploadCmd := flag.NewFlagSet("upload", flag.ContinueOnError)
+	id := uploadCmd.Int("s", 0, "Run sftp test over a Session ID Channel")
+
+	uploadCmd.SetOutput(s.console)
+
+	if pErr := uploadCmd.Parse(args); pErr != nil {
+		return
+	}
+
+	if len(uploadCmd.Args()) > 2 || len(uploadCmd.Args()) < 1 {
+		fmt.Printf("\rIncorrect number of arguments\r\n")
+		return
+	}
+
+	if *id > 0 {
+		session, sessErr := s.getSession(*id)
+		if sessErr != nil {
+			fmt.Printf("\rUnknown Session ID %d\n\r", *id)
+			return
+		}
+
+		src := uploadCmd.Args()[0]
+		dst := filepath.Base(src)
+		if len(uploadCmd.Args()) == 2 {
+			dst = uploadCmd.Args()[1]
+		}
+
+		for statusChan := range session.uploadFile(src, dst) {
+			if statusChan.Success {
+				fmt.Printf(
+					"\r[+] Uploaded \"%s\" -> \"%s\" (sha256:%s)\r\n",
+					src,
+					statusChan.FileName,
+					statusChan.CheckSum,
+				)
+			} else {
+				fmt.Printf("\r[!] Failed to Upload \"%s\": %s\r\n", src, statusChan.Err)
+			}
+		}
+	}
+}
+
+func (s *server) cmdDownload(args ...string) {
+	downloadCmd := flag.NewFlagSet("download", flag.ContinueOnError)
+	id := downloadCmd.Int("s", 0, "Run sftp test over a Session ID Channel")
+
+	downloadCmd.SetOutput(s.console)
+
+	if pErr := downloadCmd.Parse(args); pErr != nil {
+		return
+	}
+
+	if len(downloadCmd.Args()) > 2 || len(downloadCmd.Args()) < 1 {
+		fmt.Printf("\rIncorrect number of arguments\r\n")
+		return
+	}
+
+	if *id > 0 {
+		session, sessErr := s.getSession(*id)
+		if sessErr != nil {
+			fmt.Printf("\rUnknown Session ID %d\n\r", *id)
+			return
+		}
+
+		src := downloadCmd.Args()[0]
+		dst := filepath.Base(src)
+		if len(downloadCmd.Args()) == 2 {
+			dst = downloadCmd.Args()[1]
+		}
+
+		for statusChan := range session.downloadFile(src, dst) {
+			if statusChan.Success {
+				fmt.Printf(
+					"\r[+] Downloaded \"%s\" -> \"%s\" (sha256:%s)\r\n",
+					src,
+					statusChan.FileName,
+					statusChan.CheckSum,
+				)
+			} else {
+				fmt.Printf("\r[!] Failed to Download \"%s\": %s\r\n", src, statusChan.Err)
+			}
+		}
+	}
 }

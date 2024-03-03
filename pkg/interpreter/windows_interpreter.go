@@ -4,18 +4,19 @@ package interpreter
 
 import (
 	"fmt"
-	"github.com/UserExistsError/conpty"
 	"os"
 	"syscall"
 )
 
 type Interpreter struct {
-	Shell         string
-	ShellArgs     []string
-	CmdArgs       []string
-	PtyOn         bool
-	WinChangeCall syscall.Signal
-	Pty           *conpty.ConPty
+	Shell             string
+	ShellArgs         []string
+	CmdArgs           []string
+	PtyOn             bool
+	WinChangeCall     syscall.Signal
+	Pty               *conpty.ConPty
+	PathSeparator     string
+	PathListSeparator string
 }
 
 type TermSize struct {

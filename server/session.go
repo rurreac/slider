@@ -3,11 +3,11 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/term"
 	"io"
 	"os"
 	"os/signal"
 	"slider/pkg/interpreter"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/ssocks"
 	"strings"
@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"golang.org/x/term"
 
 	"golang.org/x/crypto/ssh"
 
@@ -308,4 +310,30 @@ func (session *Session) socksEnable(port int) {
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
 		session.Errorf("SOCKS - %s", sErr)
 	}
+}
+
+func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
+	status := make(chan sio.Status)
+	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	go func() {
+		for s := range action.UploadToClient(fileList) {
+			status <- s
+		}
+		close(status)
+	}()
+
+	return status
+}
+
+func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
+	status := make(chan sio.Status)
+	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	go func() {
+		for s := range action.DownloadFromClient(fileList) {
+			status <- s
+		}
+		close(status)
+	}()
+
+	return status
 }
