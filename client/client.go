@@ -105,17 +105,10 @@ func NewClient(args []string) {
 	defer func() { _ = c.sshClientConn.Close() }()
 	c.Debugf("Session %v\n", c.sshClientConn.SessionID())
 
-	// Send Server Client Info
-	go func() {
-		interpreterBytes, _ := json.Marshal(i)
-		ok, _, sErr := c.sshClientConn.SendRequest("interpreter", true, interpreterBytes)
-		if sErr != nil || !ok {
-			c.Errorf("client information was not sent to server - %s", sErr)
-		}
-	}()
+	// Send Interpreter Information to Server
+	go c.sendClientInfo(i)
 
 	c.disconnect = make(chan bool, 1)
-
 	if c.keepalive > 0 {
 		go c.keepAlive(c.keepalive)
 	}
@@ -125,6 +118,14 @@ func NewClient(args []string) {
 
 	<-c.disconnect
 	close(c.disconnect)
+}
+
+func (c *client) sendClientInfo(i *interpreter.Interpreter) {
+	interpreterBytes, _ := json.Marshal(i)
+	ok, _, sErr := c.sshClientConn.SendRequest("interpreter", true, interpreterBytes)
+	if sErr != nil || !ok {
+		c.Errorf("client information was not sent to server - %s", sErr)
+	}
 }
 
 func (c *client) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
