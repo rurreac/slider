@@ -110,6 +110,10 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				session.Errorf("Keep-Alive Session ID %d - Connection error while replying.", session.sessionID)
 				return
 			}
+		case "interpreter":
+			i := &interpreter.Interpreter{}
+			_ = json.Unmarshal(r.Payload, i)
+			session.Interpreter = i
 		default:
 			ssh.DiscardRequests(connReq)
 		}

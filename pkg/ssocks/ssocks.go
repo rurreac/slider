@@ -56,6 +56,7 @@ func (si *Instance) StartEndpoint() error {
 	go func() {
 		if <-si.stopSignal; true {
 			si.socksEnabled = false
+			si.Port = 0
 			close(si.stopSignal)
 			_ = listener.Close()
 		}
