@@ -25,7 +25,7 @@ import (
 
 // Session represents a session from a client to the server
 type Session struct {
-	host          string
+	hostIP        string
 	sessionID     int64
 	shellWsConn   *websocket.Conn
 	shellConn     *ssh.ServerConn
@@ -35,6 +35,7 @@ type Session struct {
 	KeepAliveChan chan bool
 	SocksInstance *ssocks.Instance
 	*slog.Logger
+	*interpreter.Interpreter
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -54,7 +55,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 
 	session := &Session{
 		sessionID:     sc,
-		host:          host,
+		hostIP:        host,
 		shellWsConn:   wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,

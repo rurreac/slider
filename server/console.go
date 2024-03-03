@@ -223,12 +223,19 @@ func (s *server) cmdSessions(args ...string) {
 		if len(s.sessionTrack.Sessions) > 0 {
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console, 0, 4, 2, ' ', tabwriter.AlignRight)
-			_, _ = fmt.Fprintln(tw, "\n\tSessionID\tAddress\t")
+			_, _ = fmt.Fprintln(tw, "\n\tID\tSystem\tHost\tConnection\tSocks\t")
 
 			for sID, session := range s.sessionTrack.Sessions {
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n",
+				socksPort := fmt.Sprintf("%d", session.SocksInstance.Port)
+				if socksPort == "0" {
+					socksPort = "--"
+				}
+				_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s@%s\t%s\t%s\t\n",
 					sID,
-					session.shellWsConn.RemoteAddr().String())
+					session.Arch, session.System,
+					session.User, session.Hostname,
+					session.shellWsConn.RemoteAddr().String(),
+					socksPort)
 			}
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
@@ -305,7 +312,7 @@ func (s *server) cmdSocks(args ...string) {
 			fmt.Printf("\r[+] Socks Endpoint gracefully stopped\n")
 			return
 		}
-		fmt.Printf("\rSocks is not running on Session ID %d", *sk)
+		fmt.Printf("\rSocks is not running on Session ID %d\r\n", *sk)
 		return
 	}
 

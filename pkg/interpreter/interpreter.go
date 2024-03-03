@@ -5,6 +5,7 @@ package interpreter
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"runtime"
 	"slices"
 	"strings"
@@ -12,10 +13,14 @@ import (
 )
 
 type Interpreter struct {
-	Shell         string
-	ShellArgs     []string
-	CmdArgs       []string
-	PtyOn         bool
+	Arch          string   `json:"Arch"`
+	System        string   `json:"System"`
+	User          string   `json:"User"`
+	Hostname      string   `json:"Hostname"`
+	Shell         string   `json:"Shell"`
+	ShellArgs     []string `json:"ShellArgs"`
+	CmdArgs       []string `json:"CmdArgs"`
+	PtyOn         bool     `json:"PtyOn"`
 	WinChangeCall syscall.Signal
 	Pty           *os.File
 }
@@ -76,9 +81,19 @@ func NewInterpreter() (*Interpreter, error) {
 		WinChangeCall: syscall.SIGWINCH,
 	}
 
-	system := runtime.GOOS
+	i.Arch = runtime.GOARCH
+	i.System = runtime.GOOS
+	i.User = "--"
+	if u, uErr := user.Current(); uErr == nil {
+		i.User = u.Username
+	}
+	var hErr error
+	i.Hostname, hErr = os.Hostname()
+	if hErr != nil {
+		i.Hostname = "--"
+	}
 
-	if slices.Contains(nixPty, system) {
+	if slices.Contains(nixPty, i.System) {
 		i.PtyOn = true
 	}
 
@@ -98,7 +113,7 @@ func NewInterpreter() (*Interpreter, error) {
 	i.CmdArgs = []string{"-c"}
 
 	if i.Shell == "" {
-		return nil, fmt.Errorf("can not find a suitable shell on system %s", system)
+		return nil, fmt.Errorf("can not find a suitable shell on system %s", i.System)
 	}
 
 	return i, nil
