@@ -19,7 +19,7 @@ func (s *server) NewConsole() string {
 	var out string
 
 	// Set Interpreter
-	if s.sInterpreter == nil {
+	if s.ServerInterpreter == nil {
 		i, iErr := interpreter.NewInterpreter()
 		if iErr != nil {
 			s.Errorf("%s", iErr)
@@ -107,7 +107,7 @@ func (s *server) NewConsole() string {
 }
 
 func (s *server) setInterpreter(i *interpreter.Interpreter) {
-	s.sInterpreter = i
+	s.ServerInterpreter = i
 }
 
 func (s *server) notConsoleCmd(fCmd []string) {
@@ -119,12 +119,12 @@ func (s *server) notConsoleCmd(fCmd []string) {
 	)
 
 	// If a Shell was not set just return
-	if s.sInterpreter.Shell == "" {
+	if s.ServerInterpreter.Shell == "" {
 		return
 	}
 
 	// Else, we'll try to execute the command locally
-	fCmd = append(s.sInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.ServerInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	_, _ = fmt.Printf(
 		"\r%sWill run an OS command locally instead...%s\n\r",
@@ -132,7 +132,7 @@ func (s *server) notConsoleCmd(fCmd []string) {
 		string(s.console.Escape.Reset),
 	)
 
-	cmd := exec.Command(s.sInterpreter.Shell, fCmd...) //nolint:gosec
+	cmd := exec.Command(s.ServerInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Stdout = s.console
 	cmd.Stderr = s.console
 	if err := cmd.Run(); err != nil {
@@ -223,17 +223,19 @@ func (s *server) cmdSessions(args ...string) {
 		if len(s.sessionTrack.Sessions) > 0 {
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console, 0, 4, 2, ' ', tabwriter.AlignRight)
-			_, _ = fmt.Fprintln(tw, "\n\tID\tSystem\tHost\tConnection\tSocks\t")
+			_, _ = fmt.Fprintln(tw, "\n\tID\tSystem\tUser\tHost\tConnection\tSocks\t")
 
 			for sID, session := range s.sessionTrack.Sessions {
 				socksPort := fmt.Sprintf("%d", session.SocksInstance.Port)
 				if socksPort == "0" {
 					socksPort = "--"
 				}
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s@%s\t%s\t%s\t\n",
+				_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t\n",
 					sID,
-					session.Arch, session.System,
-					session.User, session.Hostname,
+					session.ClientInterpreter.Arch,
+					session.ClientInterpreter.System,
+					session.ClientInterpreter.User,
+					session.ClientInterpreter.Hostname,
 					session.shellWsConn.RemoteAddr().String(),
 					socksPort)
 			}
@@ -258,7 +260,7 @@ func (s *server) cmdSessions(args ...string) {
 			_, _ = fmt.Printf("\r%s\n\n\r", err)
 			return
 		}
-		session.sessionInteractive(s.consoleState, s.console, s.sInterpreter.WinChangeCall)
+		session.sessionInteractive(s.consoleState, s.console, s.ServerInterpreter.WinChangeCall)
 		return
 	}
 
