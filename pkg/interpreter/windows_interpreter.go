@@ -10,10 +10,14 @@ import (
 )
 
 type Interpreter struct {
-	Shell             string
-	ShellArgs         []string
-	CmdArgs           []string
-	PtyOn             bool
+	Arch              string   `json:"Arch"`
+	System            string   `json:"System"`
+	User              string   `json:"User"`
+	Hostname          string   `json:"Hostname"`
+	Shell             string   `json:"Shell"`
+	ShellArgs         []string `json:"ShellArgs"`
+	CmdArgs           []string `json:"CmdArgs"`
+	PtyOn             bool     `json:"PtyOn"`
 	WinChangeCall     syscall.Signal
 	Pty               *conpty.ConPty
 	PathSeparator     string
