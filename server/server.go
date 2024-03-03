@@ -47,12 +47,12 @@ type sessionTrack struct {
 
 type server struct {
 	*slog.Logger
-	conf         *config
-	sshConf      *ssh.ServerConfig
-	sessionTrack *sessionTrack
-	console      *term.Terminal
-	consoleState *term.State
-	sInterpreter *interpreter.Interpreter
+	conf              *config
+	sshConf           *ssh.ServerConfig
+	sessionTrack      *sessionTrack
+	console           *term.Terminal
+	consoleState      *term.State
+	ServerInterpreter *interpreter.Interpreter
 }
 
 func NewServer(args []string) {

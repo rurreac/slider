@@ -35,7 +35,7 @@ type Session struct {
 	KeepAliveChan chan bool
 	SocksInstance *ssocks.Instance
 	*slog.Logger
-	*interpreter.Interpreter
+	ClientInterpreter *interpreter.Interpreter
 }
 
 // newWebSocketSession adds a new session and stores the client info

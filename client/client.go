@@ -104,11 +104,15 @@ func NewClient(args []string) {
 	}
 	defer func() { _ = c.sshClientConn.Close() }()
 	c.Debugf("Session %v\n", c.sshClientConn.SessionID())
-	interpreterBytes, _ := json.Marshal(i)
-	ok, _, sErr := c.sshClientConn.SendRequest("interpreter", true, interpreterBytes)
-	if sErr != nil || !ok {
-		c.Errorf("client information was not sent to server - %s", sErr)
-	}
+
+	// Send Server Client Info
+	go func() {
+		interpreterBytes, _ := json.Marshal(i)
+		ok, _, sErr := c.sshClientConn.SendRequest("interpreter", true, interpreterBytes)
+		if sErr != nil || !ok {
+			c.Errorf("client information was not sent to server - %s", sErr)
+		}
+	}()
 
 	c.disconnect = make(chan bool, 1)
 
