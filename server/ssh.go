@@ -113,7 +113,8 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "interpreter":
 			i := &interpreter.Interpreter{}
 			_ = json.Unmarshal(r.Payload, i)
-			session.Interpreter = i
+			session.ClientInterpreter = i
+			_ = session.replyConnRequest(r, true, nil)
 		default:
 			ssh.DiscardRequests(connReq)
 		}
