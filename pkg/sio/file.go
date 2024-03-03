@@ -164,6 +164,7 @@ func (c *ActionConf) saveRemote(job <-chan FileJob) <-chan FileJob {
 				if oErr != nil {
 					j.Error = oErr
 					_ = fileChan.Close()
+					out <- j
 					continue
 				}
 
@@ -171,6 +172,7 @@ func (c *ActionConf) saveRemote(job <-chan FileJob) <-chan FileJob {
 				if wErr != nil {
 					j.Error = wErr
 					_ = fileChan.Close()
+					out <- j
 					continue
 				}
 
@@ -188,6 +190,7 @@ func (c *ActionConf) saveRemote(job <-chan FileJob) <-chan FileJob {
 						j.Error = fmt.Errorf("%s", string(p))
 					}
 					_ = fileChan.Close()
+					out <- j
 					continue
 				}
 				j.Success = true
@@ -237,6 +240,7 @@ func (c *ActionConf) remoteCheck(actionList []FileAction) <-chan FileJob {
 			if oErr != nil {
 				job.Error = oErr
 				_ = fileChan.Close()
+				out <- job
 				continue
 			}
 			job.FileChannel = fileChan
@@ -290,6 +294,7 @@ func (c *ActionConf) saveLocal(job <-chan FileJob) <-chan FileJob {
 				_ = j.FileChannel.Close()
 				out <- j
 			}
+			out <- j
 		}
 		close(out)
 	}()
