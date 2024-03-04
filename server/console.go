@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slider/pkg/interpreter"
+	"slider/pkg/sio"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -391,6 +392,7 @@ func (s *server) cmdUpload(args ...string) {
 func (s *server) cmdDownload(args ...string) {
 	downloadCmd := flag.NewFlagSet("download", flag.ContinueOnError)
 	id := downloadCmd.Int("s", 0, "Run sftp test over a Session ID Channel")
+	dl := downloadCmd.String("l", "", "Run sftp test over a Session ID Channel")
 
 	downloadCmd.SetOutput(s.console)
 
@@ -398,7 +400,7 @@ func (s *server) cmdDownload(args ...string) {
 		return
 	}
 
-	if len(downloadCmd.Args()) > 2 || len(downloadCmd.Args()) < 1 {
+	if *id == 0 {
 		fmt.Printf("\rIncorrect number of arguments\r\n")
 		return
 	}
@@ -407,6 +409,30 @@ func (s *server) cmdDownload(args ...string) {
 		session, sessErr := s.getSession(*id)
 		if sessErr != nil {
 			fmt.Printf("\rUnknown Session ID %d\n\r", *id)
+			return
+		}
+
+		if *dl == "" && downloadCmd.NFlag() >= 2 {
+			fmt.Printf("\rNeed to provide a list file\n\r")
+			return
+		} else if *dl != "" {
+			fmt.Printf("\rOutput Dir: \"%s\"", sio.GetOutputDir())
+			for statusChan := range session.downloadFileBatch(*dl) {
+				if statusChan.Success {
+					fmt.Printf(
+						"\r[+] Downloaded \"%s\" (sha256:%s)\r\n",
+						statusChan.FileName,
+						statusChan.CheckSum,
+					)
+				} else {
+					fmt.Printf("\r[!] Failed to Download \"%s\"\r\n", statusChan.Err)
+				}
+			}
+			return
+		}
+
+		if len(downloadCmd.Args()) > 2 || len(downloadCmd.Args()) < 1 {
+			fmt.Printf("\rIncorrect number of arguments\r\n")
 			return
 		}
 
