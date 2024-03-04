@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -43,6 +43,16 @@ type Status struct {
 
 var slicerHome = os.Getenv("SLIDER_HOME")
 
+func GetOutputDir() string {
+	if slicerHome == "" {
+		sh, hErr := os.UserHomeDir()
+		if hErr == nil {
+			slicerHome = sh
+		}
+	}
+	return fmt.Sprintf("%s%s", slicerHome, string(os.PathSeparator))
+}
+
 func NewFileAction(conn ssh.Conn, src string, dst string) ([]FileAction, ActionConf) {
 	var fileActionList []FileAction
 	fileActionList = append(fileActionList, FileAction{
@@ -56,13 +66,6 @@ func NewBatchAction(conn ssh.Conn, filePath string) ([]FileAction, ActionConf, e
 	var fileActionList []FileAction
 	var action ActionConf
 
-	if slicerHome == "" {
-		sh, hErr := os.UserHomeDir()
-		if hErr == nil {
-			slicerHome = fmt.Sprintf("%s%d", sh, os.PathSeparator)
-		}
-	}
-
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, action, err
@@ -72,9 +75,15 @@ func NewBatchAction(conn ssh.Conn, filePath string) ([]FileAction, ActionConf, e
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		if filename := scanner.Text(); filename != "" {
+			outputFile := strings.Replace(
+				filename,
+				string(os.PathSeparator),
+				"_",
+				-1)
 			fileActionList = append(fileActionList, FileAction{
 				ScrPath: filename,
-				DstPath: fmt.Sprintf("%s%d%s", slicerHome, os.PathSeparator, filepath.Base(filename)),
+				// Convert dst from '/etc/passwd' to 'etc_passwd'
+				DstPath: GetOutputDir() + outputFile,
 			})
 		}
 	}
@@ -292,7 +301,6 @@ func (c *ActionConf) saveLocal(job <-chan FileJob) <-chan FileJob {
 				}
 				_, _ = io.Copy(file, j.FileChannel)
 				_ = j.FileChannel.Close()
-				out <- j
 			}
 			out <- j
 		}
