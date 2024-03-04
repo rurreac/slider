@@ -338,3 +338,25 @@ func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
 
 	return status
 }
+
+func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status {
+	status := make(chan sio.Status)
+	fileList, action, err := sio.NewBatchAction(session.shellConn, fileListPath)
+	if err != nil {
+		status <- sio.Status{
+			FileInfo: sio.FileInfo{},
+			Success:  false,
+			Err:      fmt.Errorf("failed to create batch action"),
+		}
+		close(status)
+		return status
+	}
+	go func() {
+		for s := range action.DownloadFromClient(fileList) {
+			status <- s
+		}
+		close(status)
+	}()
+
+	return status
+}
