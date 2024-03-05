@@ -37,19 +37,41 @@ type client struct {
 	socksInstance *ssocks.Instance
 }
 
+const help = `
+Slider Client
+
+  Creates a new Slider Client instance and connects 
+to the defined Slider Server.
+
+Usage: ./slider client [flags] <[server_address]:port>
+
+Flags:
+`
+
 func NewClient(args []string) {
 	c := client{
 		Logger:     slog.NewLogger("Client"),
 		disconnect: make(chan bool, 1),
 	}
 
-	f := flag.NewFlagSet("client", flag.ContinueOnError)
-	f.BoolVar(&c.debug, "debug", false, "Verbose logging.")
-	f.DurationVar(&c.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
-	if parsErr := f.Parse(args); parsErr != nil || slices.Contains(f.Args(), "help") {
-		f.Usage()
+	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
+	clientFlags.BoolVar(&c.debug, "debug", false, "Verbose logging.")
+	clientFlags.DurationVar(&c.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
+	clientFlags.Usage = func() {
+		fmt.Printf(help)
+		clientFlags.PrintDefaults()
+		fmt.Println()
+	}
+
+	if fErr := clientFlags.Parse(args); fErr != nil {
 		return
 	}
+
+	if slices.Contains(clientFlags.Args(), "help") {
+		clientFlags.Usage()
+		return
+	}
+	c.serverAddr = clientFlags.Args()[0]
 
 	if c.debug {
 		c.Logger.WithDebug()
@@ -61,9 +83,6 @@ func NewClient(args []string) {
 		c.Fatalf("%s", err)
 	}
 	c.setInterpreter(i)
-
-	args = f.Args()
-	c.serverAddr = args[0]
 
 	c.wsConfig = &websocket.Dialer{
 		NetDial:          nil,

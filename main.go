@@ -2,9 +2,29 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"slider/client"
 	"slider/server"
 )
+
+const help = `
+Slider is program able to run as: 
+
+- Server with the basic functionality of a Command & Control (C2) 
+- Client acting as an Agent that connects back to the Server counterpart.
+
+  Source Code available at: 
+	https://github.com/rurreac/slider
+
+Usage:
+  slider [command]
+
+Available Commands:
+  client	Runs a Slider Client instance
+  server	Runs a Slider Server instance
+  help		Print this information out
+
+`
 
 func main() {
 	flag.Parse()
@@ -22,8 +42,6 @@ func main() {
 	case "client":
 		client.NewClient(flags)
 	default:
-		help := []string{"help"}
-		server.NewServer(help)
-		client.NewClient(help)
+		fmt.Printf(help)
 	}
 }
