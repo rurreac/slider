@@ -61,16 +61,20 @@ func NewServer(args []string) {
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
 	}
-	f := flag.NewFlagSet("server", flag.ContinueOnError)
-	f.BoolVar(&conf.debug, "debug", false, "Add verbose messages")
-	f.StringVar(&conf.addr.host, "address", "0.0.0.0", "Address to run the server")
-	f.StringVar(&conf.addr.port, "port", "8080", "Port to run the server")
-	f.DurationVar(&conf.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
-	// TODO: Below flags not implemented
-	f.StringVar(&conf.keyFile, "key", "", "Path of key to use or generate in if absent")
-	f.BoolVar(&conf.keyGen, "keygen", false, "Save generated certificate to disk")
-	if parsErr := f.Parse(args); parsErr != nil || slices.Contains(f.Args(), "help") {
-		f.Usage()
+	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
+	serverFlags.BoolVar(&conf.debug, "debug", false, "Adds verbosity")
+	serverFlags.StringVar(&conf.addr.host, "address", "0.0.0.0", "Server will bind to this address")
+	serverFlags.StringVar(&conf.addr.port, "port", "8080", "Port where Server will listen")
+	serverFlags.DurationVar(&conf.keepalive, "keepalive", 60*time.Second, "Set keepalive interval vs clients")
+	serverFlags.Usage = func() {
+		fmt.Printf(serverHelpLong)
+		serverFlags.PrintDefaults()
+		fmt.Println()
+	}
+	_ = serverFlags.Parse(args)
+
+	if slices.Contains(args, "help") {
+		serverFlags.Usage()
 		return
 	}
 
