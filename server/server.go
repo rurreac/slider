@@ -3,7 +3,6 @@ package server
 import (
 	"flag"
 	"fmt"
-	"html/template"
 	"net"
 	"net/http"
 	"os"
@@ -12,14 +11,11 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 // config creates the server configuration build from flags
@@ -50,22 +46,17 @@ type server struct {
 	conf              *config
 	sshConf           *ssh.ServerConfig
 	sessionTrack      *sessionTrack
-	console           *term.Terminal
-	consoleState      *term.State
+	console           Console
 	ServerInterpreter *interpreter.Interpreter
 }
 
 func NewServer(args []string) {
-	conf := &config{}
-	sshConf := &ssh.ServerConfig{
-		NoClientAuth:  true,
-		ServerVersion: "SSH-slider-server",
-	}
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
-	serverFlags.BoolVar(&conf.debug, "debug", false, "Adds verbosity")
-	serverFlags.StringVar(&conf.addr.host, "address", "0.0.0.0", "Server will bind to this address")
-	serverFlags.StringVar(&conf.addr.port, "port", "8080", "Port where Server will listen")
-	serverFlags.DurationVar(&conf.keepalive, "keepalive", 60*time.Second, "Set keepalive interval vs clients")
+	debug := serverFlags.Bool("debug", false, "Adds verbosity")
+	verbose := serverFlags.String("verbose", "INFO", "Adds verbosity [DEBUG|INFO|WARN|ERROR]")
+	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
+	port := serverFlags.String("port", "8080", "Port where Server will listen")
+	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval vs clients")
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
 		serverFlags.PrintDefaults()
@@ -78,28 +69,51 @@ func NewServer(args []string) {
 		return
 	}
 
-	signer, err := scrypt.CreateSSHKeys(*sshConf, conf.keyGen)
-	if err != nil {
-		panic(err)
+	conf := &config{
+		debug: *debug,
+		addr: address{
+			host: *ip,
+			port: *port,
+		},
+		keepalive: *keepalive,
+		keyGen:    false,
 	}
-	sshConf.AddHostKey(signer)
+
+	sshConf := &ssh.ServerConfig{
+		NoClientAuth:  true,
+		ServerVersion: "SSH-slider-server",
+	}
+
+	log := slog.NewLogger("Server")
+	if lvErr := log.SetLevel(*verbose); lvErr != nil {
+		panic(lvErr)
+	}
 
 	s := &server{
 		conf:   conf,
-		Logger: slog.NewLogger("Server"),
+		Logger: log,
 		sessionTrack: &sessionTrack{
 			SessionCount:  0,
 			SessionActive: 0,
 			Sessions:      make(map[int64]*Session),
 		},
 		sshConf: sshConf,
+		console: Console{},
 	}
-	if s.conf.debug {
-		s.WithDebug()
+
+	signer, err := scrypt.CreateSSHKeys(*s.sshConf, s.conf.keyGen)
+	if err != nil {
+		panic(err)
 	}
-	l, lisErr := s.listener(conf.addr.host, conf.addr.port)
+	s.sshConf.AddHostKey(signer)
+
+	l, lisErr := net.Listen(
+		"tcp",
+		fmt.Sprintf("%s:%s", s.conf.addr.host, s.conf.addr.port),
+	)
 	if lisErr != nil {
 		s.Fatalf("listener: %s", err)
+
 	}
 
 	s.Infof("listening on %s://%s:%s", l.Addr().Network(), conf.addr.host, conf.addr.port)
@@ -139,61 +153,4 @@ func NewServer(args []string) {
 
 	wg.Wait()
 	s.Printf("Server down...")
-}
-
-func (s *server) listener(addr, port string) (net.Listener, error) {
-	return net.Listen("tcp", fmt.Sprintf("%s:%s", addr, port))
-}
-
-func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
-	upgradeHeader := r.Header.Get("Upgrade")
-	if strings.ToLower(upgradeHeader) == "websocket" {
-		s.handleWebSocket(w, r)
-		return
-	}
-	var err error
-	switch r.URL.Path {
-	case "/health":
-		_, err = w.Write([]byte("OK"))
-	case "/stats":
-		if s.conf.debug {
-			statsTmpl := template.Must(template.New("stats").Parse(`
-			{{if not .Sessions}}
-				<div>No Sessions</div> 
-			{{else}}
-				<div>Active sessions: {{.SessionActive}}</div>
-				{{range $sessionId, $addr := .Sessions }}
-					<li>Session {{$addr}} -> {{$sessionId}}</li>
-				{{end}}
-			{{end}}`))
-			if err = statsTmpl.Execute(w, s.sessionTrack); err == nil {
-				return
-			}
-		}
-		fallthrough
-	default:
-		w.WriteHeader(http.StatusNotFound)
-		_, err = w.Write([]byte("Not Found"))
-	}
-	if err != nil {
-		s.Errorf("handleClient: %s", err)
-	}
-}
-
-func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{HandshakeTimeout: s.conf.timeout}
-
-	wsConn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		s.Errorf("Failed to upgrade client \"%s\": %s", r.Host, err)
-		return
-	}
-	defer func() { _ = wsConn.Close() }()
-
-	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
-
-	session := s.newWebSocketSession(wsConn)
-	defer s.dropWebSocketSession(session)
-
-	s.NewSSHServer(session)
 }
