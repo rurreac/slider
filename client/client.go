@@ -67,10 +67,11 @@ func NewClient(args []string) {
 		return
 	}
 
-	if slices.Contains(clientFlags.Args(), "help") {
+	if slices.Contains(clientFlags.Args(), "help") || len(clientFlags.Args()) == 0 {
 		clientFlags.Usage()
 		return
 	}
+
 	c.serverAddr = clientFlags.Args()[0]
 
 	if c.debug {
@@ -122,6 +123,7 @@ func NewClient(args []string) {
 		return
 	}
 	defer func() { _ = c.sshClientConn.Close() }()
+	c.Infof("Connected to server...")
 	c.Debugf("Session %v\n", c.sshClientConn.SessionID())
 
 	// Send Interpreter Information to Server
