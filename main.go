@@ -8,10 +8,10 @@ import (
 )
 
 const help = `
-Slider is program able to run as: 
+Slider is a program able to run as: 
 
-- Server with the basic functionality of a Command & Control (C2) 
-- Client acting as an Agent that connects back to the Server counterpart.
+* Server with the basic functionality of a Command & Control (C2) 
+* Client acting as an Agent that connects back to the Server counterpart.
 
   Source Code available at: 
 	https://github.com/rurreac/slider
