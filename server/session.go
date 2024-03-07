@@ -160,13 +160,14 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 		// - This Terminal in Reverse Shell has ECHO, it could be fixed (if not Windows not ConPTY)
 		// 		creating your own Terminal with ECHO disabled.
 		fmt.Printf(
-			"\r%sCurrent Terminal is NOT RAW.\n\r"+
-				"An extra intro is required to recover control of Slider Console after exit.%s\n\n\r",
+			"\r%sCurrent Terminal is NOT RAW.\r\n"+
+				"An extra intro is required to recover control of Slider Console after exit.%s\r\n\n",
 			string(console.Escape.Yellow),
 			string(console.Escape.Reset))
 
 		// - Once Reverse Shell is closed and extra intro is required to recover the control of the terminal.
-		msgOut = fmt.Sprintf("\r%sPress INTRO to return to Console.\n\r%s",
+		msgOut = fmt.Sprintf("\r%s%sPress INTRO to return to Console.\r\n%s",
+			string(console.Escape.Reset),
 			string(console.Escape.Yellow),
 			string(console.Escape.Reset))
 	} else {
@@ -182,11 +183,12 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 		}
 
 		fmt.Printf(
-			"\r%sEntering fully interactive Shell...%s\n\r",
+			"\r%sEntering fully interactive Shell...%s\r\n",
 			string(console.Escape.Yellow),
 			string(console.Escape.Reset))
 
-		msgOut = fmt.Sprintf("\r%sPress any key to return to Console.\n\r%s",
+		msgOut = fmt.Sprintf("\r%s%sPress any key to return to Console.\r\n%s",
+			string(console.Escape.Reset),
 			string(console.Escape.Yellow),
 			string(console.Escape.Reset))
 	}
