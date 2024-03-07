@@ -25,24 +25,23 @@ import (
 
 // Session represents a session from a client to the server
 type Session struct {
-	hostIP        string
-	sessionID     int64
-	shellWsConn   *websocket.Conn
-	shellConn     *ssh.ServerConn
-	shellChannel  ssh.Channel
-	shellOpened   bool
-	rawTerm       bool
-	KeepAliveChan chan bool
-	SocksInstance *ssocks.Instance
 	*slog.Logger
+	hostIP            string
+	sessionID         int64
+	shellWsConn       *websocket.Conn
+	shellConn         *ssh.ServerConn
+	shellChannel      ssh.Channel
+	shellOpened       bool
+	rawTerm           bool
+	KeepAliveChan     chan bool
+	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
+	sessionMutex      sync.Mutex
 }
 
 // newWebSocketSession adds a new session and stores the client info
 func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
-	var mutex sync.Mutex
-
-	mutex.Lock()
+	s.sessionTrackMutex.Lock()
 	sc := atomic.AddInt64(&s.sessionTrack.SessionCount, 1)
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, 1)
 	s.sessionTrack.SessionCount = sc
@@ -64,7 +63,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		},
 	}
 	s.sessionTrack.Sessions[sc] = session
-	mutex.Unlock()
+	s.sessionTrackMutex.Unlock()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.shellWsConn.RemoteAddr().String())
@@ -73,9 +72,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 
 // dropWebSocketSession removes a session and its client info
 func (s *server) dropWebSocketSession(session *Session) {
-	var mutex sync.Mutex
-
-	mutex.Lock()
+	s.sessionTrackMutex.Lock()
 	session.KeepAliveChan <- true
 	close(session.KeepAliveChan)
 
@@ -97,7 +94,7 @@ func (s *server) dropWebSocketSession(session *Session) {
 	)
 
 	delete(s.sessionTrack.Sessions, session.sessionID)
-	mutex.Unlock()
+	s.sessionTrackMutex.Unlock()
 }
 
 func (s *server) getSession(sessionID int) (*Session, error) {
@@ -109,17 +106,15 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 }
 
 func (session *Session) addSessionChannel(channel ssh.Channel) {
-	var mutex sync.Mutex
-	mutex.Lock()
+	session.sessionMutex.Lock()
 	session.shellChannel = channel
-	mutex.Unlock()
+	session.sessionMutex.Unlock()
 }
 
 func (session *Session) closeSessionChannel() {
-	var mutex sync.Mutex
-	mutex.Lock()
+	session.sessionMutex.Lock()
 	_ = session.shellChannel.Close()
-	mutex.Unlock()
+	session.sessionMutex.Unlock()
 }
 
 func (session *Session) sessionExecute(initTermState *term.State) error {
@@ -307,8 +302,9 @@ func (session *Session) socksEnable(port int) {
 		Port:       port,
 		SSHConn:    session.shellConn,
 	}
-
+	session.sessionMutex.Lock()
 	session.SocksInstance = ssocks.New(sConfig)
+	session.sessionMutex.Unlock()
 
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
 		session.Errorf("SOCKS - %s", sErr)

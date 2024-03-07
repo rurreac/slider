@@ -9,6 +9,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"strings"
+	"sync"
 
 	"github.com/armon/go-socks5"
 	"golang.org/x/crypto/ssh"
@@ -28,6 +29,7 @@ type Instance struct {
 	socksEnabled bool
 	stopSignal   chan bool
 	done         chan bool
+	socksMutex   sync.Mutex
 }
 
 func New(config *InstanceConfig) *Instance {
@@ -39,7 +41,7 @@ func New(config *InstanceConfig) *Instance {
 }
 
 func (si *Instance) StartEndpoint() error {
-	// Make Endpoints to listen only localhost due to security, but can be configured in the future
+	// TODO: Endpoints listen only localhost due to security, but can be configured in the future + authentication?
 	addr, rErr := net.ResolveTCPAddr("tcp", fmt.Sprintf("127.0.0.1:%d", si.Port))
 	if rErr != nil {
 		return fmt.Errorf("can not resolve address [:%d] - %s", si.Port, rErr)
@@ -50,13 +52,17 @@ func (si *Instance) StartEndpoint() error {
 		return err
 	}
 
+	si.socksMutex.Lock()
 	si.Port = listener.Addr().(*net.TCPAddr).Port
 	si.socksEnabled = true
+	si.socksMutex.Unlock()
 
 	go func() {
 		if <-si.stopSignal; true {
+			si.socksMutex.Lock()
 			si.socksEnabled = false
 			si.Port = 0
+			si.socksMutex.Unlock()
 			close(si.stopSignal)
 			_ = listener.Close()
 		}
@@ -76,17 +82,17 @@ func (si *Instance) StartEndpoint() error {
 
 func (si *Instance) StartServer() error {
 	var err error
-
+	si.socksMutex.Lock()
 	si.socksEnabled = true
-
+	si.socksMutex.Unlock()
 	for {
 		if err = si.runSocks(); err != nil {
 			break
 		}
 	}
-
+	si.socksMutex.Lock()
 	si.socksEnabled = false
-
+	si.socksMutex.Unlock()
 	return err
 }
 

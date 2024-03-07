@@ -46,6 +46,7 @@ type server struct {
 	conf              *config
 	sshConf           *ssh.ServerConfig
 	sessionTrack      *sessionTrack
+	sessionTrackMutex sync.Mutex
 	console           Console
 	ServerInterpreter *interpreter.Interpreter
 }
