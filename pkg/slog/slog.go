@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 )
 
 type LogBuff struct {
@@ -13,11 +14,17 @@ type LogBuff struct {
 	buff      []byte // Hold the logs while not using stdout
 }
 
+const levelDebug = 0
+const levelInfo = 1
+const levelWarn = 2
+const levelError = 3
+const separator = " - "
+
 type Logger struct {
-	debug   bool
-	prefix  string
-	logger  *log.Logger
-	logBuff *LogBuff
+	logLevel int
+	debug    bool
+	logger   *log.Logger
+	logBuff  *LogBuff
 }
 
 func (lb *LogBuff) Write(p []byte) (int, error) {
@@ -35,16 +42,27 @@ func NewLogger(prefix string) *Logger {
 		buff: make([]byte, 0),
 	}
 	l := &Logger{
-		prefix:  prefix,
-		logger:  log.New(os.Stdout, "", log.Ldate|log.Ltime),
-		debug:   false,
-		logBuff: lb,
+		logLevel: levelInfo,
+		logger:   log.New(os.Stdout, prefix, log.LstdFlags|log.Lmsgprefix),
+		debug:    false,
+		logBuff:  lb,
 	}
 	return l
 }
 
 func (l *Logger) WithDebug() {
-	l.debug = true
+	l.logLevel = levelDebug
+}
+func (l *Logger) WithInfo() {
+	l.logLevel = levelInfo
+}
+
+func (l *Logger) WithWarn() {
+	l.logLevel = levelWarn
+}
+
+func (l *Logger) WithError() {
+	l.logLevel = levelError
 }
 
 func (l *Logger) LogToBuffer() {
@@ -61,29 +79,49 @@ func (l *Logger) BufferOut() {
 }
 
 func (l *Logger) Printf(t string, args ...interface{}) {
-	l.logger.Printf(t, args...)
+	l.Infof(t, args...)
 }
 
 func (l *Logger) Debugf(t string, args ...interface{}) {
-	if l.debug {
-		l.logger.Printf(l.prefix+"[DEBUG] - "+t, args...)
+	if l.logLevel == levelDebug {
+		l.logger.Printf(DEBUG+separator+t, args...)
 	}
 }
 
 func (l *Logger) Warnf(t string, args ...interface{}) {
-	if l.debug {
-		l.logger.Printf(l.prefix+"[WARN] - "+t, args...)
+	if l.logLevel <= levelWarn {
+		l.logger.Printf(WARN+separator+t, args...)
 	}
 }
 
 func (l *Logger) Infof(t string, args ...interface{}) {
-	l.logger.Printf(l.prefix+" - "+t, args...)
+	if l.logLevel <= levelInfo {
+		l.logger.Printf(INFO+separator+t, args...)
+	}
 }
 
 func (l *Logger) Fatalf(t string, err error) {
-	l.logger.Fatalf(l.prefix+"[FATAL] - "+t, err)
+	l.logger.Fatalf(FATAL+separator+t, err)
 }
 
 func (l *Logger) Errorf(t string, args ...interface{}) {
-	l.logger.Printf(l.prefix+"[ERROR] - "+t, args...)
+	if l.logLevel <= levelError {
+		l.logger.Printf(ERROR+separator+t, args...)
+	}
+}
+
+func (l *Logger) SetLevel(verbosity string) error {
+	switch strings.ToUpper(verbosity) {
+	case "DEBUG":
+		l.WithDebug()
+	case "INFO":
+		l.WithInfo()
+	case "WARN":
+		l.WithWarn()
+	case "ERROR":
+		l.WithError()
+	default:
+		return fmt.Errorf("incorrect log level, expected one of [DEBUG|INFO|WARN|ERROR]")
+	}
+	return nil
 }
