@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,12 @@ import (
 
 	"golang.org/x/term"
 )
+
+type Console struct {
+	Term      *term.Terminal
+	InitState *term.State
+	Output    *log.Logger
+}
 
 func (s *server) NewConsole() string {
 	var out string
@@ -29,9 +36,9 @@ func (s *server) NewConsole() string {
 	}
 
 	// Set Screen
-	s.consoleState, _ = term.MakeRaw(int(os.Stdin.Fd()))
+	s.console.InitState, _ = term.MakeRaw(int(os.Stdin.Fd()))
 	defer func() {
-		_ = term.Restore(int(os.Stdin.Fd()), s.consoleState)
+		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
 
 	screen := struct {
@@ -40,34 +47,37 @@ func (s *server) NewConsole() string {
 	}{os.Stdin, os.Stdout}
 
 	// Set Console
-	s.console = term.NewTerminal(screen, "")
+	s.console.Term = term.NewTerminal(screen, "")
+	s.console.Output = log.New(s.console.Term, "", 0)
+
+	// Set Console
 	if width, height, tErr := term.GetSize(int(os.Stdin.Fd())); tErr == nil {
 		// Disregard the error if fails setting Console size
-		_ = s.console.SetSize(width, height)
+		_ = s.console.Term.SetSize(width, height)
 	}
-	fmt.Printf(
+	s.console.Println(
 		"\n\rPress CTRL^C again or Type \"bg\" to background the console," +
 			"\n\rType \"exit\" to terminate the server.\n\n\r",
 	)
-	s.console.SetPrompt(
+	s.console.Term.SetPrompt(
 		"\rSlider" +
-			string(s.console.Escape.Cyan) +
-			">" +
-			string(s.console.Escape.Reset) + " ",
+			string(s.console.Term.Escape.Cyan) +
+			" > " +
+			string(s.console.Term.Escape.Reset),
 	)
 
 	for consoleInput := true; consoleInput; {
 		var fCmd string
-		input, err := s.console.ReadLine()
+		input, err := s.console.Term.ReadLine()
 		if err != nil {
 			if err != io.EOF {
-				_, _ = fmt.Fprintf(s.console, "\rFailed to read input: %s\n\r", err)
+				s.console.Printf("\rFailed to read input: %s\n\r", err)
 				break
 			}
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
 			// line, error = "", io.EOF
 			// We will background gracefully when this happens
-			_, _ = fmt.Fprintf(s.console, "\r\n")
+			s.console.Println("")
 			return "bg"
 		}
 		args := make([]string, 0)
@@ -92,7 +102,7 @@ func (s *server) NewConsole() string {
 		case downloadCmd:
 			s.downloadCommand(args[1:]...)
 		case helpCmd:
-			printConsoleHelp(s.console)
+			printConsoleHelp(s.console.Term)
 		case "":
 			continue
 		default:
@@ -108,12 +118,7 @@ func (s *server) setInterpreter(i *interpreter.Interpreter) {
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
-	_, _ = fmt.Fprintf(s.console,
-		"\r%sConsole does not recognize Command: %s%s\n",
-		string(s.console.Escape.Yellow),
-		string(s.console.Escape.Reset),
-		fCmd,
-	)
+	s.console.PrintWarnSelect("Console does not recognize Command: ", fCmd...)
 
 	// If a Shell was not set just return
 	if s.ServerInterpreter.Shell == "" {
@@ -121,33 +126,25 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	}
 
 	// Else, we'll try to execute the command locally
+	s.console.PrintlnWarn("Will run an OS command locally instead...")
 	fCmd = append(s.ServerInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
-	_, _ = fmt.Fprintf(s.console,
-		"\r%sWill run an OS command locally instead...%s\n\r",
-		string(s.console.Escape.Yellow),
-		string(s.console.Escape.Reset),
-	)
-
 	cmd := exec.Command(s.ServerInterpreter.Shell, fCmd...) //nolint:gosec
-	cmd.Stdout = s.console
-	cmd.Stderr = s.console
+	cmd.Stdout = s.console.Term
+	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(s.console, "\r%s\n\r", err)
+		s.console.PrintlnErrorStep("%s", err)
 	}
 
 }
 
 func (s *server) executeCommand(args ...string) {
 	executeFlags := flag.NewFlagSet("execute", flag.ContinueOnError)
-	executeFlags.SetOutput(s.console)
+	executeFlags.SetOutput(s.console.Term)
 	eSession := executeFlags.Int("s", 0, "Runs given command on a Session ID")
 	eAll := executeFlags.Bool("a", false, "Runs given command on every Session")
-
 	executeFlags.Usage = func() {
-		_, _ = fmt.Fprintf(s.console, executeShort+executeLong)
-		executeFlags.PrintDefaults()
-		_, _ = fmt.Fprintln(s.console)
+		s.console.PrintCommandUsage(executeFlags, executeShort+executeLong)
 	}
 
 	if pErr := executeFlags.Parse(args); pErr != nil {
@@ -163,7 +160,7 @@ func (s *server) executeCommand(args ...string) {
 	if *eSession > 0 {
 		session, sessErr := s.getSession(*eSession)
 		if sessErr != nil {
-			fmt.Printf("\r%s\n\n\r", sessErr)
+			s.console.PrintlnErrorStep("%s", sessErr)
 			return
 		}
 		sessions = []*Session{session}
@@ -177,13 +174,9 @@ func (s *server) executeCommand(args ...string) {
 
 	for _, session := range sessions {
 		if *eAll {
-			fmt.Printf(
-				"\r%sExecuting Command on %sSessionID %d%s.%s\r\n",
-				s.console.Escape.Yellow,
-				s.console.Escape.Reset,
-				session.sessionID,
-				s.console.Escape.Yellow,
-				s.console.Escape.Reset,
+			s.console.PrintWarnSelect(
+				"Executing Command on ",
+				fmt.Sprintf("SessionID %d", session.sessionID),
 			)
 		}
 		if _, _, err := session.sendRequest(
@@ -191,11 +184,11 @@ func (s *server) executeCommand(args ...string) {
 			true,
 			[]byte(strings.Join(executeFlags.Args(), " ")),
 		); err != nil {
-			fmt.Printf("\r%s\n\n\r", err)
+			s.console.PrintlnErrorStep("%s", err)
 			continue
 		}
-		if sErr := session.sessionExecute(s.consoleState); sErr != nil {
-			fmt.Printf("\r%s\n\n\r", sErr)
+		if sErr := session.sessionExecute(s.console.InitState); sErr != nil {
+			s.console.PrintlnErrorStep("%s", sErr)
 			continue
 		}
 	}
@@ -203,15 +196,13 @@ func (s *server) executeCommand(args ...string) {
 
 func (s *server) sessionsCommand(args ...string) {
 	sessionsFlags := flag.NewFlagSet("sessions", flag.ContinueOnError)
-	sessionsFlags.SetOutput(s.console)
+	sessionsFlags.SetOutput(s.console.Term)
 
 	sList := sessionsFlags.Bool("l", false, "Lists Server Sessions")
 	sInteract := sessionsFlags.Int("i", 0, "Starts Interactive Shell on a Session ID")
 	sKill := sessionsFlags.Int("k", 0, "Kills Session ID")
 	sessionsFlags.Usage = func() {
-		_, _ = fmt.Fprintf(s.console, sessionsShort+sessionsLong)
-		sessionsFlags.PrintDefaults()
-		_, _ = fmt.Fprintln(s.console)
+		s.console.PrintCommandUsage(sessionsFlags, sessionsShort+sessionsLong)
 	}
 
 	if pErr := sessionsFlags.Parse(args); pErr != nil {
@@ -228,7 +219,7 @@ func (s *server) sessionsCommand(args ...string) {
 	if *sList {
 		if len(s.sessionTrack.Sessions) > 0 {
 			tw := new(tabwriter.Writer)
-			tw.Init(s.console, 0, 4, 2, ' ', 0)
+			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
 			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tConnection\tSocks\t\n")
 
 			for sID, session := range s.sessionTrack.Sessions {
@@ -248,14 +239,15 @@ func (s *server) sessionsCommand(args ...string) {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		_, _ = fmt.Fprintf(s.console, "\rActive sessions: %d\n\r\n", s.sessionTrack.SessionActive)
+		s.console.Printf("Active sessions: %d", s.sessionTrack.SessionActive)
+
 		return
 	}
 
 	if *sInteract > 0 {
 		session, sessErr := s.getSession(*sInteract)
 		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\r%s\n\n\r", sessErr)
+			s.console.PrintlnErrorStep("%s", sessErr)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -263,17 +255,17 @@ func (s *server) sessionsCommand(args ...string) {
 			true,
 			nil,
 		); err != nil {
-			_, _ = fmt.Fprintf(s.console, "\r%s\n\n\r", err)
+			s.console.Printf("%s", err)
 			return
 		}
-		session.sessionInteractive(s.consoleState, s.console, s.ServerInterpreter.WinChangeCall)
+		session.sessionInteractive(s.console.InitState, s.console.Term, s.ServerInterpreter.WinChangeCall)
 		return
 	}
 
 	if *sKill > 0 {
 		session, sessErr := s.getSession(*sKill)
 		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\r%s\n\n\r", sessErr)
+			s.console.PrintlnErrorStep("%s", sessErr)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -281,60 +273,61 @@ func (s *server) sessionsCommand(args ...string) {
 			true,
 			nil,
 		); err != nil {
-			_, _ = fmt.Fprintf(s.console, "\r%s\n\r", err)
+			s.console.Printf("%s", err)
 			return
 		}
-		_, _ = fmt.Fprintf(s.console, "\r[+] SessionID %d terminated gracefully\r\n\n", *sKill)
+		s.console.PrintlnOkStep("SessionID %d terminated gracefully", *sKill)
+
 		return
 	}
 }
 
 func (s *server) socksCommand(args ...string) {
 	socksFlags := flag.NewFlagSet("socks", flag.ContinueOnError)
-	socksFlags.SetOutput(s.console)
+	socksFlags.SetOutput(s.console.Term)
 	sSession := socksFlags.Int("s", 0, "Runs a Socks5 server over an SSH Channel on a Session ID")
 	sPort := socksFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
 	sKill := socksFlags.Int("k", 0, "Kills Socks5 Listener and Server on a Session ID")
 	socksFlags.Usage = func() {
-		_, _ = fmt.Fprintf(s.console, socksShort+socksLong)
-		socksFlags.PrintDefaults()
-		_, _ = fmt.Fprintln(s.console)
+		s.console.PrintCommandUsage(socksFlags, socksShort+socksLong)
 	}
 
 	if pErr := socksFlags.Parse(args); pErr != nil {
 		return
 	}
 
-	if *sSession == 0 && *sKill == 0 {
+	var session *Session
+	var sessErr error
+	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
 		socksFlags.Usage()
 		return
+	} else {
+		sessionID := *sSession + *sKill
+		session, sessErr = s.getSession(sessionID)
+		if sessErr != nil {
+			s.console.PrintlnInfoStep("Unknown Session ID %d", sessionID)
+			return
+		}
 	}
 
 	if *sKill > 0 {
-		session, sessErr := s.getSession(*sKill)
-		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\r[*] Unknown Session ID %d\r\n\n", *sKill)
-			return
-		}
 		if session.SocksInstance.IsEnabled() {
 			if err := session.SocksInstance.Stop(); err != nil {
-				_, _ = fmt.Fprintf(s.console, "\r[!] %s\n\r", err)
+				s.console.PrintlnErrorStep("%s", err)
 				return
 			}
-			_, _ = fmt.Fprintf(s.console, "\r[+] Socks Endpoint gracefully stopped\n\n")
+			s.console.PrintlnOkStep("Socks Endpoint gracefully stopped")
+
 			return
 		}
-		_, _ = fmt.Fprintf(s.console, "\r[*] No Socks Server found running on Session ID %d\r\n\n", *sKill)
+		s.console.PrintlnInfoStep("No Socks Server found running on Session ID %d", *sKill)
+
 		return
 	}
 
 	if *sSession > 0 {
-		session, sessErr := s.getSession(*sSession)
-		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\n[*] Unknown Session ID %d\n\n", *sSession)
-			return
-		}
-		_, _ = fmt.Fprintf(s.console, "\r[*] Enabling Socks5 Endpoint in the background\r\n")
+		s.console.PrintlnInfoStep("Enabling Socks5 Endpoint in the background")
+		//_, _ = fmt.Fprintf(s.console.Term, "\r[*] Enabling Socks5 Endpoint in the background\r\n")
 
 		go session.socksEnable(*sPort)
 
@@ -347,10 +340,11 @@ func (s *server) socksCommand(args ...string) {
 				time.Sleep(250 * time.Millisecond)
 				continue
 			}
-			_, _ = fmt.Fprintf(s.console, "\r[+] Socks Endpoint running on port \"%d\"\r\n", port)
+			s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
 			return
 		}
-		_, _ = fmt.Fprintf(s.console, "\r[!] Socks Endpoint doesn't appear to be running\r\n")
+		s.console.PrintlnErrorStep("Socks Endpoint doesn't appear to be running")
+
 		return
 	}
 	socksFlags.Usage()
@@ -358,12 +352,10 @@ func (s *server) socksCommand(args ...string) {
 
 func (s *server) uploadCommand(args ...string) {
 	uploadFlags := flag.NewFlagSet("upload", flag.ContinueOnError)
-	uploadFlags.SetOutput(s.console)
+	uploadFlags.SetOutput(s.console.Term)
 	uSession := uploadFlags.Int("s", 0, "Uploads file to selected Session ID")
 	uploadFlags.Usage = func() {
-		_, _ = fmt.Fprintf(s.console, uploadShort+uploadLong)
-		uploadFlags.PrintDefaults()
-		_, _ = fmt.Fprintln(s.console)
+		s.console.PrintCommandUsage(uploadFlags, uploadShort+uploadLong)
 	}
 
 	if pErr := uploadFlags.Parse(args); pErr != nil {
@@ -378,7 +370,8 @@ func (s *server) uploadCommand(args ...string) {
 	if *uSession > 0 {
 		session, sessErr := s.getSession(*uSession)
 		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\n[*] Unknown Session ID %d\n\n", *uSession)
+			s.console.PrintlnWarn("Unknown Session ID %d", *uSession)
+
 			return
 		}
 
@@ -390,14 +383,13 @@ func (s *server) uploadCommand(args ...string) {
 
 		for statusChan := range session.uploadFile(src, dst) {
 			if statusChan.Success {
-				_, _ = fmt.Fprintf(s.console,
-					"\r[+] Uploaded \"%s\" -> \"%s\" (sha256:%s)\r\n",
+				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\" (sha256:%s)",
 					src,
 					statusChan.FileName,
 					statusChan.CheckSum,
 				)
 			} else {
-				_, _ = fmt.Fprintf(s.console, "\r[!] Failed to Upload \"%s\": %s\r\n", src, statusChan.Err)
+				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %s", src, statusChan.Err)
 			}
 		}
 	}
@@ -405,13 +397,11 @@ func (s *server) uploadCommand(args ...string) {
 
 func (s *server) downloadCommand(args ...string) {
 	downloadFlags := flag.NewFlagSet("download", flag.ContinueOnError)
-	downloadFlags.SetOutput(s.console)
+	downloadFlags.SetOutput(s.console.Term)
 	dSession := downloadFlags.Int("s", 0, "Downloads file from a given a Session ID")
 	dFile := downloadFlags.String("f", "", "Receives a filelist with items to download")
 	downloadFlags.Usage = func() {
-		_, _ = fmt.Fprintf(s.console, downloadShort+downloadLong)
-		downloadFlags.PrintDefaults()
-		_, _ = fmt.Fprintln(s.console)
+		s.console.PrintCommandUsage(downloadFlags, downloadShort+downloadLong)
 	}
 
 	if pErr := downloadFlags.Parse(args); pErr != nil {
@@ -426,31 +416,31 @@ func (s *server) downloadCommand(args ...string) {
 	if *dSession > 0 {
 		session, sessErr := s.getSession(*dSession)
 		if sessErr != nil {
-			_, _ = fmt.Fprintf(s.console, "\n[*] Unknown Session ID %d\n\n", *dSession)
+			s.console.PrintlnInfoStep("Unknown Session ID %d", *dSession)
 			return
 		}
 
 		if *dFile == "" && downloadFlags.NFlag() >= 2 {
-			_, _ = fmt.Fprintf(s.console, "\r[*] Need to provide a list file\n\r")
+			s.console.PrintlnInfoStep("Need to provide a filelist")
 			return
 		} else if *dFile != "" {
-			_, _ = fmt.Fprintf(s.console, "\rOutput Dir: \"%s\"", sio.GetOutputDir())
+			s.console.PrintlnInfoStep("Output Dir: \"%s\"", sio.GetOutputDir())
+
 			for statusChan := range session.downloadFileBatch(*dFile) {
 				if statusChan.Success {
-					_, _ = fmt.Fprintf(s.console,
-						"\r[+] Downloaded \"%s\" (sha256:%s)\r\n",
+					s.console.PrintlnOkStep("Downloaded \"%s\" (sha256:%s)",
 						statusChan.FileName,
 						statusChan.CheckSum,
 					)
 				} else {
-					_, _ = fmt.Fprintf(s.console, "\r[!] Failed to Download \"%s\"\r\n", statusChan.Err)
+					s.console.PrintlnErrorStep("Failed to Download \"%s\"", statusChan.Err)
 				}
 			}
 			return
 		}
 
 		if len(downloadFlags.Args()) > 2 || len(downloadFlags.Args()) < 1 {
-			_, _ = fmt.Fprintf(s.console, "\r[*] Incorrect number of arguments\r\n")
+			s.console.PrintlnInfoStep("Incorrect number of arguments")
 			return
 		}
 
@@ -462,14 +452,13 @@ func (s *server) downloadCommand(args ...string) {
 
 		for statusChan := range session.downloadFile(src, dst) {
 			if statusChan.Success {
-				_, _ = fmt.Fprintf(s.console,
-					"\r[+] Downloaded \"%s\" -> \"%s\" (sha256:%s)\r\n",
+				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\" (sha256:%s)",
 					src,
 					statusChan.FileName,
 					statusChan.CheckSum,
 				)
 			} else {
-				_, _ = fmt.Fprintf(s.console, "\r[!] Failed to Download \"%s\": %s\r\n", src, statusChan.Err)
+				s.console.PrintlnErrorStep("Failed to Download \"%s\": %s", src, statusChan.Err)
 			}
 		}
 	}
