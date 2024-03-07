@@ -63,7 +63,9 @@ func NewServer(args []string) {
 		serverFlags.PrintDefaults()
 		fmt.Println()
 	}
-	_ = serverFlags.Parse(args)
+	if fErr := serverFlags.Parse(args); fErr != nil {
+		return
+	}
 
 	if slices.Contains(args, "help") {
 		serverFlags.Usage()
