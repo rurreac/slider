@@ -245,7 +245,7 @@ func (s *server) sessionsCommand(args ...string) {
 			s.console.Printf("%s", err)
 			return
 		}
-		session.sessionInteractive(s.console.InitState, s.console.Term, s.ServerInterpreter.WinChangeCall)
+		session.sessionInteractive(s.console.InitState, s.ServerInterpreter.WinChangeCall)
 		return
 	}
 

@@ -137,7 +137,7 @@ func (session *Session) sessionExecute(initTermState *term.State) error {
 	return nil
 }
 
-func (session *Session) sessionInteractive(initTermState *term.State, console *term.Terminal, winChangeCall syscall.Signal) {
+func (session *Session) sessionInteractive(initTermState *term.State, winChangeCall syscall.Signal) {
 	// Consider Reverse Shell is opened
 	session.shellOpened = true
 
