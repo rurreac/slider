@@ -9,6 +9,6 @@ func (c *client) updatePtySize(rows int, cols int) {
 		Rows: uint16(rows),
 		Cols: uint16(cols),
 	}); sizeErr != nil {
-		c.Errorf("%s", sizeErr)
+		c.Errorf("%v", sizeErr)
 	}
 }

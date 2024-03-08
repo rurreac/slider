@@ -231,7 +231,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 						false,
 						newTermSizeBytes,
 					); err != nil {
-						session.Errorf("%s", err)
+						session.Errorf("%v", err)
 					}
 				}
 			} else {
@@ -256,7 +256,7 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
 				session.Errorf(
-					"Keep-Alive SessionID %d - Connection Error Received (\"%v\"-\"%s\"-\"%s\")",
+					"Keep-Alive SessionID %d - Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
 					session.sessionID,
 					ok,
 					p,
@@ -275,7 +275,7 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 
 	pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
 	if err != nil || !pOk {
-		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%s'\"", pOk, resPayload, err)
+		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%v'\"", pOk, resPayload, err)
 	}
 
 	return pOk, resPayload, err
@@ -308,7 +308,7 @@ func (session *Session) socksEnable(port int) {
 	session.sessionMutex.Unlock()
 
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
-		session.Errorf("SOCKS - %s", sErr)
+		session.Errorf("Session ID %d - SOCKS - %v", session.sessionID, sErr)
 	}
 }
 

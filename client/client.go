@@ -153,7 +153,7 @@ func (c *client) sendClientInfo(i *interpreter.Interpreter) {
 	interpreterBytes, _ := json.Marshal(i)
 	ok, _, sErr := c.sshClientConn.SendRequest("interpreter", true, interpreterBytes)
 	if sErr != nil || !ok {
-		c.Errorf("client information was not sent to server - %s", sErr)
+		c.Errorf("client information was not sent to server - %v", sErr)
 	}
 }
 
@@ -186,7 +186,7 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 		switch req.Type {
 		case "keep-alive":
 			if err := c.replyConnRequest(req, true, []byte("pong")); err != nil {
-				c.Errorf("Error sending \"%s\" reply to Server - %s", req.Type, err)
+				c.Errorf("Error sending \"%s\" reply to Server - %v", req.Type, err)
 			}
 		case "session-exec":
 			c.Debugf("Received \"%s\" Connection Request", req.Type)
@@ -273,7 +273,7 @@ func (c *client) replyConnRequest(req *ssh.Request, reply bool, payload []byte) 
 func (c *client) sendSessionRequest(sshSession *ssh.Session, requestType string, ok bool, payload []byte) error {
 	okR, err := sshSession.SendRequest(requestType, ok, payload)
 	if err != nil {
-		return fmt.Errorf("%s %s", requestType, err)
+		return fmt.Errorf("%s %v", requestType, err)
 	}
 	c.Debugf("Sent Session Request \"%s\", received: \"%v\" from server.\n", requestType, okR)
 	return nil
@@ -283,7 +283,7 @@ func (c *client) handleSocksChannel(channel ssh.NewChannel) {
 	socksChan, req, aErr := channel.Accept()
 	if aErr != nil {
 		c.Errorf(
-			"Failed to accept \"%s\" channel.\n%s",
+			"Failed to accept \"%s\" channel\n%v",
 			channel.ChannelType(),
 			aErr,
 		)
@@ -308,7 +308,7 @@ func (c *client) handleFileUploadChannel(channel ssh.NewChannel) {
 	uploadChan, requests, aErr := channel.Accept()
 	if aErr != nil {
 		c.Errorf(
-			"Failed to accept \"%s\" channel.\n%s",
+			"Failed to accept \"%s\" channel\n%v",
 			channel.ChannelType(),
 			aErr,
 		)
@@ -351,7 +351,7 @@ func (c *client) handleFileDownloadChannel(channel ssh.NewChannel) {
 	downloadChan, _, aErr := channel.Accept()
 	if aErr != nil {
 		c.Errorf(
-			"Failed to accept \"%s\" channel.\n%s",
+			"Failed to accept \"%s\" channel\n%v",
 			channel.ChannelType(),
 			aErr,
 		)

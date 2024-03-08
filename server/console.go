@@ -120,7 +120,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
-		s.console.PrintlnErrorStep("%s", err)
+		s.console.PrintlnErrorStep("%v", err)
 	}
 
 }
@@ -147,7 +147,7 @@ func (s *server) executeCommand(args ...string) {
 	if *eSession > 0 {
 		session, sessErr := s.getSession(*eSession)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%s", sessErr)
+			s.console.PrintlnErrorStep("%v", sessErr)
 			return
 		}
 		sessions = []*Session{session}
@@ -171,11 +171,11 @@ func (s *server) executeCommand(args ...string) {
 			true,
 			[]byte(strings.Join(executeFlags.Args(), " ")),
 		); err != nil {
-			s.console.PrintlnErrorStep("%s", err)
+			s.console.PrintlnErrorStep("%v", err)
 			continue
 		}
 		if sErr := session.sessionExecute(s.console.InitState); sErr != nil {
-			s.console.PrintlnErrorStep("%s", sErr)
+			s.console.PrintlnErrorStep("%v", sErr)
 			continue
 		}
 	}
@@ -234,7 +234,7 @@ func (s *server) sessionsCommand(args ...string) {
 	if *sInteract > 0 {
 		session, sessErr := s.getSession(*sInteract)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%s", sessErr)
+			s.console.PrintlnErrorStep("%v", sessErr)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -252,7 +252,7 @@ func (s *server) sessionsCommand(args ...string) {
 	if *sKill > 0 {
 		session, sessErr := s.getSession(*sKill)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%s", sessErr)
+			s.console.PrintlnErrorStep("%v", sessErr)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -300,7 +300,7 @@ func (s *server) socksCommand(args ...string) {
 	if *sKill > 0 {
 		if session.SocksInstance.IsEnabled() {
 			if err := session.SocksInstance.Stop(); err != nil {
-				s.console.PrintlnErrorStep("%s", err)
+				s.console.PrintlnErrorStep("%v", err)
 				return
 			}
 			s.console.PrintlnOkStep("Socks Endpoint gracefully stopped")
@@ -313,8 +313,11 @@ func (s *server) socksCommand(args ...string) {
 	}
 
 	if *sSession > 0 {
+		if session.SocksInstance.IsEnabled() {
+			s.console.PrintlnErrorStep("Socks is already running at Port: %d", session.SocksInstance.Port)
+			return
+		}
 		s.console.PrintlnDebugStep("Enabling Socks5 Endpoint in the background")
-		//_, _ = fmt.Fprintf(s.console.Term, "\r[*] Enabling Socks5 Endpoint in the background\r\n")
 
 		go session.socksEnable(*sPort)
 
@@ -376,7 +379,7 @@ func (s *server) uploadCommand(args ...string) {
 					statusChan.CheckSum,
 				)
 			} else {
-				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %s", src, statusChan.Err)
+				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %v", src, statusChan.Err)
 			}
 		}
 	}
@@ -420,7 +423,7 @@ func (s *server) downloadCommand(args ...string) {
 						statusChan.CheckSum,
 					)
 				} else {
-					s.console.PrintlnErrorStep("Failed to Download \"%s\"", statusChan.Err)
+					s.console.PrintlnErrorStep("Failed to Download \"%v\"", statusChan.Err)
 				}
 			}
 			return
@@ -445,7 +448,7 @@ func (s *server) downloadCommand(args ...string) {
 					statusChan.CheckSum,
 				)
 			} else {
-				s.console.PrintlnErrorStep("Failed to Download \"%s\": %s", src, statusChan.Err)
+				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
 			}
 		}
 	}
