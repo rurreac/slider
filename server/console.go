@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slider/pkg/interpreter"
+	"slider/pkg/colors"
 	"slider/pkg/sio"
 	"strings"
 	"text/tabwriter"
@@ -25,15 +25,6 @@ type Console struct {
 
 func (s *server) NewConsole() string {
 	var out string
-
-	// Set Interpreter
-	if s.ServerInterpreter == nil {
-		i, iErr := interpreter.NewInterpreter()
-		if iErr != nil {
-			s.Errorf("%s", iErr)
-		}
-		s.setInterpreter(i)
-	}
 
 	// Set Screen
 	s.console.InitState, _ = term.MakeRaw(int(os.Stdin.Fd()))
@@ -61,9 +52,9 @@ func (s *server) NewConsole() string {
 	)
 	s.console.Term.SetPrompt(
 		"\rSlider" +
-			string(s.console.Term.Escape.Cyan) +
+			string(colors.Console.System) +
 			" > " +
-			string(s.console.Term.Escape.Reset),
+			string(colors.Reset),
 	)
 
 	for consoleInput := true; consoleInput; {
@@ -111,10 +102,6 @@ func (s *server) NewConsole() string {
 	}
 
 	return out
-}
-
-func (s *server) setInterpreter(i *interpreter.Interpreter) {
-	s.ServerInterpreter = i
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
@@ -239,7 +226,7 @@ func (s *server) sessionsCommand(args ...string) {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		s.console.Printf("Active sessions: %d", s.sessionTrack.SessionActive)
+		s.console.Printf("Active sessions: %d\n", s.sessionTrack.SessionActive)
 
 		return
 	}
@@ -305,7 +292,7 @@ func (s *server) socksCommand(args ...string) {
 		sessionID := *sSession + *sKill
 		session, sessErr = s.getSession(sessionID)
 		if sessErr != nil {
-			s.console.PrintlnInfoStep("Unknown Session ID %d", sessionID)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
 			return
 		}
 	}
@@ -320,13 +307,13 @@ func (s *server) socksCommand(args ...string) {
 
 			return
 		}
-		s.console.PrintlnInfoStep("No Socks Server found running on Session ID %d", *sKill)
+		s.console.PrintlnDebugStep("No Socks Server found running on Session ID %d", *sKill)
 
 		return
 	}
 
 	if *sSession > 0 {
-		s.console.PrintlnInfoStep("Enabling Socks5 Endpoint in the background")
+		s.console.PrintlnDebugStep("Enabling Socks5 Endpoint in the background")
 		//_, _ = fmt.Fprintf(s.console.Term, "\r[*] Enabling Socks5 Endpoint in the background\r\n")
 
 		go session.socksEnable(*sPort)
@@ -416,15 +403,15 @@ func (s *server) downloadCommand(args ...string) {
 	if *dSession > 0 {
 		session, sessErr := s.getSession(*dSession)
 		if sessErr != nil {
-			s.console.PrintlnInfoStep("Unknown Session ID %d", *dSession)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *dSession)
 			return
 		}
 
 		if *dFile == "" && downloadFlags.NFlag() >= 2 {
-			s.console.PrintlnInfoStep("Need to provide a filelist")
+			s.console.PrintlnDebugStep("Need to provide a filelist")
 			return
 		} else if *dFile != "" {
-			s.console.PrintlnInfoStep("Output Dir: \"%s\"", sio.GetOutputDir())
+			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetOutputDir())
 
 			for statusChan := range session.downloadFileBatch(*dFile) {
 				if statusChan.Success {
@@ -440,7 +427,7 @@ func (s *server) downloadCommand(args ...string) {
 		}
 
 		if len(downloadFlags.Args()) > 2 || len(downloadFlags.Args()) < 1 {
-			s.console.PrintlnInfoStep("Incorrect number of arguments")
+			s.console.PrintlnDebugStep("Incorrect number of arguments")
 			return
 		}
 

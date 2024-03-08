@@ -3,6 +3,7 @@ package server
 import (
 	"flag"
 	"fmt"
+	"slider/pkg/colors"
 	"strings"
 )
 
@@ -10,26 +11,26 @@ func (c *Console) PrintlnWarn(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r%s%s%s\r\n",
-		string(c.Term.Escape.Yellow),
+		string(colors.Console.Warn),
 		msg,
-		string(c.Term.Escape.Reset),
+		string(colors.Reset),
 	)
 }
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
 	msg := fmt.Sprintf("%s%s%s",
-		string(c.Term.Escape.Yellow),
+		string(colors.Console.Warn),
 		selected,
-		string(c.Term.Escape.Reset))
+		string(colors.Reset))
 	c.Output.Printf("\r%s%s\r\n", msg, strings.Join(args, " "))
 }
 
-func (c *Console) PrintlnInfoStep(m string, args ...interface{}) {
+func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r[%s*%s] %s\r\n",
-		string(c.Term.Escape.Blue),
-		string(c.Term.Escape.Reset),
+		string(colors.Console.Debug),
+		string(colors.Reset),
 		msg,
 	)
 }
@@ -37,9 +38,9 @@ func (c *Console) PrintlnInfoStep(m string, args ...interface{}) {
 func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
-		"\r[%s!%s] %s\r\n",
-		string(c.Term.Escape.Red),
-		string(c.Term.Escape.Reset),
+		"\r[%s-%s] %s\r\n",
+		string(colors.Console.Error),
+		string(colors.Reset),
 		msg,
 	)
 }
@@ -48,8 +49,8 @@ func (c *Console) PrintlnOkStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r[%s+%s] %s\r\n",
-		string(c.Term.Escape.Green),
-		string(c.Term.Escape.Reset),
+		string(colors.Console.Ok),
+		string(colors.Reset),
 		msg,
 	)
 }

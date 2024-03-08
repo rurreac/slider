@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slider/pkg/colors"
 	"slider/pkg/interpreter"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
@@ -131,7 +132,7 @@ func (session *Session) sessionExecute(initTermState *term.State) error {
 
 	// Copy ssh channel to stdout. Copy will stop on exit.
 	if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
-		return fmt.Errorf("copy stdout: %s", outCopyErr)
+		return fmt.Errorf("copy stdout: %v", outCopyErr)
 	}
 	return nil
 }
@@ -157,14 +158,14 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 		fmt.Printf(
 			"\r%sCurrent Terminal is NOT RAW.\r\n"+
 				"An extra intro is required to recover control of Slider Console after exit.%s\r\n\n",
-			string(console.Escape.Yellow),
-			string(console.Escape.Reset))
+			string(colors.Console.Warn),
+			string(colors.Reset))
 
 		// - Once Reverse Shell is closed and extra intro is required to recover the control of the terminal.
 		msgOut = fmt.Sprintf("\r%s%sPress INTRO to return to Console.\r\n%s",
-			string(console.Escape.Reset),
-			string(console.Escape.Yellow),
-			string(console.Escape.Reset))
+			string(colors.Reset),
+			string(colors.Console.Warn),
+			string(colors.Reset))
 	} else {
 		// - This Reverse-Shell is PTY and can be RAW, since Slider Console is RAW there is nothing to set.
 		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
@@ -179,13 +180,13 @@ func (session *Session) sessionInteractive(initTermState *term.State, console *t
 
 		fmt.Printf(
 			"\r%sEntering fully interactive Shell...%s\r\n",
-			string(console.Escape.Yellow),
-			string(console.Escape.Reset))
+			string(colors.Console.Warn),
+			string(colors.Reset))
 
 		msgOut = fmt.Sprintf("\r%s%sPress any key to return to Console.\r\n%s",
-			string(console.Escape.Reset),
-			string(console.Escape.Yellow),
-			string(console.Escape.Reset))
+			string(colors.Reset),
+			string(colors.Console.Warn),
+			string(colors.Reset))
 	}
 
 	go func() {
