@@ -46,9 +46,9 @@ func (s *server) NewConsole() string {
 		// Disregard the error if fails setting Console size
 		_ = s.console.Term.SetSize(width, height)
 	}
-	s.console.Println(
-		"\n\rPress CTRL^C again or Type \"bg\" to background the console," +
-			"\n\rType \"exit\" to terminate the server.\n\n\r",
+	s.console.PrintlnWarn(
+		"\r\nPress CTRL^C again or Type \"bg\" to background the console," +
+			"\r\nType \"exit\" to terminate the server.\r\n",
 	)
 	s.console.Term.SetPrompt(
 		"\rSlider" +
@@ -62,7 +62,7 @@ func (s *server) NewConsole() string {
 		input, err := s.console.Term.ReadLine()
 		if err != nil {
 			if err != io.EOF {
-				s.console.Printf("\rFailed to read input: %s\n\r", err)
+				s.console.Printf("\rFailed to read input: %s\r\n", err)
 				break
 			}
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
@@ -227,7 +227,6 @@ func (s *server) sessionsCommand(args ...string) {
 			_ = tw.Flush()
 		}
 		s.console.Printf("Active sessions: %d\n", s.sessionTrack.SessionActive)
-
 		return
 	}
 
@@ -304,38 +303,39 @@ func (s *server) socksCommand(args ...string) {
 				return
 			}
 			s.console.PrintlnOkStep("Socks Endpoint gracefully stopped")
-
 			return
 		}
 		s.console.PrintlnDebugStep("No Socks Server found running on Session ID %d", *sKill)
-
 		return
 	}
 
 	if *sSession > 0 {
 		if session.SocksInstance.IsEnabled() {
-			s.console.PrintlnErrorStep("Socks is already running at Port: %d", session.SocksInstance.Port)
+			s.console.PrintlnErrorStep("Socks Endpoint is already running on Port: %d", session.SocksInstance.Port)
 			return
 		}
 		s.console.PrintlnDebugStep("Enabling Socks5 Endpoint in the background")
 
 		go session.socksEnable(*sPort)
 
-		// TODO: this should be done with pipelines
 		// Give some time to check
+		socksTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(5 * time.Second)
-		for time.Now().Before(timeout) {
-			port, _ := session.SocksInstance.GetEndpointPort()
-			if port == 0 {
-				time.Sleep(250 * time.Millisecond)
-				continue
+		for {
+			select {
+			case <-socksTicker.C:
+				if time.Now().Before(timeout) {
+					port, _ := session.SocksInstance.GetEndpointPort()
+					if port == 0 {
+						continue
+					}
+					s.console.PrintlnOkStep("Socks Endpoint running on Port: %d", port)
+					return
+				}
+				s.console.PrintlnErrorStep("Socks Endpoint doesn't appear to be running")
+				return
 			}
-			s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
-			return
 		}
-		s.console.PrintlnErrorStep("Socks Endpoint doesn't appear to be running")
-
-		return
 	}
 	socksFlags.Usage()
 }
@@ -361,7 +361,6 @@ func (s *server) uploadCommand(args ...string) {
 		session, sessErr := s.getSession(*uSession)
 		if sessErr != nil {
 			s.console.PrintlnWarn("Unknown Session ID %d", *uSession)
-
 			return
 		}
 
