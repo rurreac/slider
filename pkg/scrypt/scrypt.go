@@ -71,25 +71,25 @@ func CreateSSHKeys(sshConfig ssh.ServerConfig, keyGen bool) (ssh.Signer, error) 
 	// Generate SSH Keys
 	privateKey, err := GeneratePrivateKey(4096)
 	if err != nil {
-		return nil, fmt.Errorf("generatePrivateKey: %s", err)
+		return nil, fmt.Errorf("generatePrivateKey: %v", err)
 	}
 
 	privateKeyBytes := EncodePrivateKeyToPEM(privateKey)
 	privateKeySigner, err := ssh.ParsePrivateKey(privateKeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %s", err)
+		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
 	}
 
 	sshConfig.AddHostKey(privateKeySigner)
 
 	publicKeyBytes, err := GeneratePublicKey(privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("generatePublicKey: %s", err)
+		return nil, fmt.Errorf("generatePublicKey: %v", err)
 	}
 	if keyGen {
 		err = CreateKeyPairFiles(privateKeyBytes, publicKeyBytes)
 		if err != nil {
-			return nil, fmt.Errorf("createKeyPairFiles: %s", err)
+			return nil, fmt.Errorf("createKeyPairFiles: %v", err)
 		}
 	}
 	return privateKeySigner, nil

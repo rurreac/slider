@@ -44,7 +44,7 @@ func (si *Instance) StartEndpoint() error {
 	// TODO: Endpoints listen only localhost due to security, but can be configured in the future + authentication?
 	addr, rErr := net.ResolveTCPAddr("tcp", fmt.Sprintf("127.0.0.1:%d", si.Port))
 	if rErr != nil {
-		return fmt.Errorf("can not resolve address [:%d] - %s", si.Port, rErr)
+		return fmt.Errorf("can not resolve address [:%d] - %v", si.Port, rErr)
 	}
 
 	listener, err := net.ListenTCP("tcp", addr)
