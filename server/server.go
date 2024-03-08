@@ -56,7 +56,7 @@ func NewServer(args []string) {
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval vs clients")
-	colorless := serverFlags.Bool("colorless", false, "Disable logging colors")
+	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
 		serverFlags.PrintDefaults()

@@ -52,7 +52,7 @@ func NewClient(args []string) {
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
 	verbose := clientFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
 	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval in seconds.")
-	colorless := clientFlags.Bool("colorless", false, "Disable logging colors")
+	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	clientFlags.Usage = func() {
 		fmt.Printf(help)
 		clientFlags.PrintDefaults()
@@ -248,12 +248,12 @@ func (c *client) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-c.disconnect:
-			c.Debugf("[KeepAlive] Stopping Ping to server.")
+			c.Infof("Shutting down...")
 			return
 		case <-ticker.C:
 			_, p, sendErr := c.sendConnRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !bytes.Equal(p, []byte("pong")) {
-				c.Errorf("[KeepAlive] Lost connection to Server.")
+				c.Errorf("KeepAlive Check Lost connection to Server.")
 				c.disconnect <- true
 			}
 		}
