@@ -105,12 +105,12 @@ func (si *Instance) runSocks() error {
 			Logger: log.New(io.Discard, "", 0),
 		})
 	if snErr != nil {
-		return fmt.Errorf("failed to create new socks server - %s", snErr)
+		return fmt.Errorf("failed to create new socks server - %v", snErr)
 	}
 
 	sErr := socksServer.ServeConn(socksConn)
-	if sErr != nil && !strings.Contains(fmt.Sprintf("%s", sErr), "EOF") {
-		return fmt.Errorf("connection error - %s", sErr)
+	if sErr != nil && !strings.Contains(fmt.Sprintf("%v", sErr), "EOF") {
+		return fmt.Errorf("connection error - %v", sErr)
 	}
 
 	return nil
@@ -120,7 +120,7 @@ func (si *Instance) runComm(conn *net.TCPConn) {
 	defer func() { _ = conn.Close() }()
 	socksChan, reqs, oErr := si.SSHConn.OpenChannel("socks5", nil)
 	if oErr != nil {
-		si.Errorf("SOCKS - failed to open \"socks5\" channel - %s", oErr)
+		si.Errorf("SOCKS - failed to open \"socks5\" channel - %v", oErr)
 	}
 	defer func() { _ = socksChan.Close() }()
 	go ssh.DiscardRequests(reqs)
