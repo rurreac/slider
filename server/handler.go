@@ -4,6 +4,7 @@ import (
 	"github.com/gorilla/websocket"
 	"html/template"
 	"net/http"
+	"slider/pkg/slog"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	case "/health":
 		_, err = w.Write([]byte("OK"))
 	case "/stats":
-		if s.conf.debug {
+		if s.LogLevel == slog.LvlDebug {
 			statsTmpl := template.Must(template.New("stats").Parse(`
 			{{if not .Sessions}}
 				<div>No Sessions</div> 

@@ -26,7 +26,6 @@ type config struct {
 	addr      address
 	timeout   time.Duration
 	keepalive time.Duration
-	debug     bool
 }
 
 type address struct {
@@ -53,11 +52,11 @@ type server struct {
 
 func NewServer(args []string) {
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
-	debug := serverFlags.Bool("debug", false, "Adds verbosity")
-	verbose := serverFlags.String("verbose", "INFO", "Adds verbosity [DEBUG|INFO|WARN|ERROR]")
+	verbose := serverFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval vs clients")
+	colorless := serverFlags.Bool("colorless", false, "Disable logging colors")
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
 		serverFlags.PrintDefaults()
@@ -73,7 +72,6 @@ func NewServer(args []string) {
 	}
 
 	conf := &config{
-		debug: *debug,
 		addr: address{
 			host: *ip,
 			port: *port,
@@ -87,9 +85,20 @@ func NewServer(args []string) {
 		ServerVersion: "SSH-slider-server",
 	}
 
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		panic(iErr)
+	}
+
 	log := slog.NewLogger("Server")
 	if lvErr := log.SetLevel(*verbose); lvErr != nil {
-		panic(lvErr)
+		fmt.Printf("%v", lvErr)
+		return
+	}
+
+	// It is safe to assume that if PTY is On then colors are supported.
+	if i.PtyOn && !*colorless {
+		log.WithColors()
 	}
 
 	s := &server{
@@ -100,8 +109,9 @@ func NewServer(args []string) {
 			SessionActive: 0,
 			Sessions:      make(map[int64]*Session),
 		},
-		sshConf: sshConf,
-		console: Console{},
+		sshConf:           sshConf,
+		console:           Console{},
+		ServerInterpreter: i,
 	}
 
 	signer, err := scrypt.CreateSSHKeys(*s.sshConf, s.conf.keyGen)

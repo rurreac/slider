@@ -32,7 +32,7 @@ type client struct {
 	sshClientConn ssh.Conn
 	interpreter   *interpreter.Interpreter
 	ptyFile       *os.File
-	debug         bool
+	verbose       string
 	disconnect    chan bool
 	socksInstance *ssocks.Instance
 }
@@ -49,14 +49,10 @@ Flags:
 `
 
 func NewClient(args []string) {
-	c := client{
-		Logger:     slog.NewLogger("Client"),
-		disconnect: make(chan bool, 1),
-	}
-
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
-	clientFlags.BoolVar(&c.debug, "debug", false, "Verbose logging.")
-	clientFlags.DurationVar(&c.keepalive, "keepalive", 60*time.Second, "Set keepalive interval in seconds.")
+	verbose := clientFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
+	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval in seconds.")
+	colorless := clientFlags.Bool("colorless", false, "Disable logging colors")
 	clientFlags.Usage = func() {
 		fmt.Printf(help)
 		clientFlags.PrintDefaults()
@@ -71,19 +67,31 @@ func NewClient(args []string) {
 		clientFlags.Usage()
 		return
 	}
-
-	c.serverAddr = clientFlags.Args()[0]
-
-	if c.debug {
-		c.Logger.WithDebug()
-	}
-
 	// Set interpreter
 	i, err := interpreter.NewInterpreter()
 	if err != nil {
-		c.Fatalf("%s", err)
+		panic(err)
 	}
-	c.setInterpreter(i)
+
+	log := slog.NewLogger("Client")
+	if lvErr := log.SetLevel(*verbose); lvErr != nil {
+		fmt.Printf("%s", lvErr)
+		return
+	}
+
+	// It is safe to assume that if PTY is On then colors are supported.
+	if i.PtyOn && !*colorless {
+		log.WithColors()
+	}
+
+	c := client{
+		Logger:      log,
+		keepalive:   *keepAlive,
+		disconnect:  make(chan bool, 1),
+		interpreter: i,
+	}
+
+	c.serverAddr = clientFlags.Args()[0]
 
 	c.wsConfig = &websocket.Dialer{
 		NetDial:          nil,
@@ -206,10 +214,6 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 			_ = req.Reply(false, nil)
 		}
 	}
-}
-
-func (c *client) setInterpreter(i *interpreter.Interpreter) {
-	c.interpreter = i
 }
 
 func (c *client) sendCommandExec(request *ssh.Request) {
