@@ -19,7 +19,7 @@ func (s *server) NewSSHServer(session *Session) {
 
 	session.shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
 	if err != nil {
-		s.Errorf("Failed to create SSH server %s", err)
+		s.Errorf("Failed to create SSH server %v", err)
 		return
 	}
 	defer func() { _ = session.shellConn.Close() }()
@@ -63,7 +63,7 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 			sshChan, chanReq, err = nc.Accept()
 			if err != nil {
 				session.Errorf(
-					"Session ID %d - handleSSHChannels (Accept): Failed to accept the channel \"%s\".\n%s",
+					"Session ID %d - handleSSHChannels (Accept): Failed to accept the channel \"%s\".\n%v",
 					session.sessionID,
 					nc.ChannelType(),
 					err,

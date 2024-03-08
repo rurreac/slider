@@ -39,7 +39,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		_, err = w.Write([]byte("Not Found"))
 	}
 	if err != nil {
-		s.Errorf("handleClient: %s", err)
+		s.Errorf("handleClient: %v", err)
 	}
 }
 
@@ -48,7 +48,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.Errorf("Failed to upgrade client \"%s\": %s", r.Host, err)
+		s.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
