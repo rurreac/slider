@@ -5,11 +5,10 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"github.com/UserExistsError/conpty"
 	"io"
 	"os/exec"
 	"slider/pkg/interpreter"
-
-	"github.com/UserExistsError/conpty"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -29,7 +28,7 @@ func (c *client) sendReverseShell(request *ssh.Request) {
 		// Request Server Terminal Size
 		_, payload, reqErr := c.sendConnRequest("window-size", true, nil)
 		if reqErr != nil {
-			c.Errorf("%s", reqErr)
+			c.Errorf("%v", reqErr)
 		}
 		var termSize interpreter.TermSize
 		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
