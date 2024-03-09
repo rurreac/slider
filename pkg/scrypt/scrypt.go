@@ -3,7 +3,9 @@ package scrypt
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"golang.org/x/crypto/ed25519"
@@ -96,13 +98,13 @@ func CreateSSHKeys(sshConfig ssh.ServerConfig, keyGen bool) (ssh.Signer, error) 
 	return privateKeySigner, nil
 }
 
-func GenerateEd25519Key() (ssh.Signer, error) {
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+func GenerateEd25519Key() (ssh.Signer, string, error) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
 
 	// MarshalPKCS8PrivateKey supports ed25519
 	pvBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
 	if mErr != nil {
-		return nil, mErr
+		return nil, "", mErr
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{
 		Type:    "PRIVATE KEY",
@@ -112,8 +114,25 @@ func GenerateEd25519Key() (ssh.Signer, error) {
 
 	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
 	if prErr != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
+		return nil, "", fmt.Errorf("ParsePrivateKey: %v", err)
 	}
 
-	return privateKeySigner, nil
+	pbKey, pbErr := ssh.NewPublicKey(publicKey)
+	if pbErr != nil {
+		return nil, "", pbErr
+	}
+
+	fingerprint, fErr := GenerateFingerprint(pbKey)
+	if fErr != nil {
+		return nil, "", fErr
+	}
+
+	return privateKeySigner, fingerprint, nil
+}
+
+func GenerateFingerprint(publicKey ssh.PublicKey) (string, error) {
+	h := sha256.New()
+	h.Write(publicKey.Marshal())
+
+	return base64.RawStdEncoding.EncodeToString(h.Sum(nil)), nil
 }

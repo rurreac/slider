@@ -7,12 +7,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"slices"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
+	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/ssocks"
@@ -24,17 +26,18 @@ import (
 
 type client struct {
 	*slog.Logger
-	serverAddr    string
-	keepalive     time.Duration
-	wsConfig      *websocket.Dialer
-	httpHeaders   http.Header
-	sshConfig     *ssh.ClientConfig
-	sshClientConn ssh.Conn
-	interpreter   *interpreter.Interpreter
-	ptyFile       *os.File
-	verbose       string
-	disconnect    chan bool
-	socksInstance *ssocks.Instance
+	serverAddr        string
+	keepalive         time.Duration
+	wsConfig          *websocket.Dialer
+	httpHeaders       http.Header
+	sshConfig         *ssh.ClientConfig
+	sshClientConn     ssh.Conn
+	interpreter       *interpreter.Interpreter
+	ptyFile           *os.File
+	verbose           string
+	disconnect        chan bool
+	socksInstance     *ssocks.Instance
+	serverFingerprint string
 }
 
 const help = `
@@ -51,8 +54,9 @@ Flags:
 func NewClient(args []string) {
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
 	verbose := clientFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
-	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval in seconds.")
+	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
+	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
 	clientFlags.Usage = func() {
 		fmt.Printf(help)
 		clientFlags.PrintDefaults()
@@ -85,10 +89,11 @@ func NewClient(args []string) {
 	}
 
 	c := client{
-		Logger:      log,
-		keepalive:   *keepAlive,
-		disconnect:  make(chan bool, 1),
-		interpreter: i,
+		Logger:            log,
+		keepalive:         *keepAlive,
+		disconnect:        make(chan bool, 1),
+		interpreter:       i,
+		serverFingerprint: *fingerprint,
 	}
 
 	c.serverAddr = clientFlags.Args()[0]
@@ -107,6 +112,9 @@ func NewClient(args []string) {
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		ClientVersion:   "SSH-slider-client",
 		Timeout:         60 * time.Second,
+	}
+	if c.serverFingerprint != "" {
+		c.sshConfig.HostKeyCallback = c.verifyServerKey
 	}
 
 	// Check the use of extra headers for added functionality
@@ -147,6 +155,18 @@ func NewClient(args []string) {
 
 	<-c.disconnect
 	close(c.disconnect)
+}
+
+func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
+	serverFingerprint, fErr := scrypt.GenerateFingerprint(key)
+	if fErr != nil {
+		return fErr
+	}
+	if serverFingerprint != c.serverFingerprint {
+		return fmt.Errorf("server %s - verification failed", remote.String())
+	}
+	c.Infof("Server successfully vefified with provided fingerprint")
+	return nil
 }
 
 func (c *client) sendClientInfo(i *interpreter.Interpreter) {

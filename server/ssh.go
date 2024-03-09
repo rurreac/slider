@@ -13,29 +13,25 @@ import (
 func (s *server) NewSSHServer(session *Session) {
 	netConn := sconn.WsConnToNetConn(session.shellWsConn)
 
+	var shellConn *ssh.ServerConn
 	var newChan <-chan ssh.NewChannel
 	var reqChan <-chan *ssh.Request
 	var err error
 
-	session.shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
+	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
 	if err != nil {
 		s.Errorf("Failed to create SSH server %v", err)
 		return
 	}
-	defer func() { _ = session.shellConn.Close() }()
+	session.addSessionSSHConnection(shellConn)
 
 	s.Debugf(
 		"New SSH Server with WebSocket as underlying transport connected to client \"%s\"",
 		netConn.RemoteAddr().String(),
 	)
 
-	user := session.shellConn.User()
-	if user == "" {
-		user = "<unknown>"
-	}
 	s.Debugf(
-		"SSH Connection received from user: %s, address: %s, client version: %s, session: %v",
-		user,
+		"SSH Connection received from: address: %s, client version: %s, session: %v",
 		session.shellConn.RemoteAddr().String(),
 		session.shellConn.ClientVersion(),
 		session.shellConn.SessionID(),
