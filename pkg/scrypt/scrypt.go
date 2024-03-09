@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"golang.org/x/crypto/ed25519"
 	"os"
 
 	"golang.org/x/crypto/ssh"
@@ -92,5 +93,27 @@ func CreateSSHKeys(sshConfig ssh.ServerConfig, keyGen bool) (ssh.Signer, error) 
 			return nil, fmt.Errorf("createKeyPairFiles: %v", err)
 		}
 	}
+	return privateKeySigner, nil
+}
+
+func GenerateEd25519Key() (ssh.Signer, error) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+
+	// MarshalPKCS8PrivateKey supports ed25519
+	pvBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
+	if mErr != nil {
+		return nil, mErr
+	}
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:    "PRIVATE KEY",
+		Headers: nil,
+		Bytes:   pvBytes,
+	})
+
+	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
+	if prErr != nil {
+		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
+	}
+
 	return privateKeySigner, nil
 }
