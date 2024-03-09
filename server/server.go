@@ -114,7 +114,7 @@ func NewServer(args []string) {
 		ServerInterpreter: i,
 	}
 
-	signer, err := scrypt.CreateSSHKeys(*s.sshConf, s.conf.keyGen)
+	signer, err := scrypt.GenerateEd25519Key()
 	if err != nil {
 		panic(err)
 	}
