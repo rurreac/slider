@@ -52,7 +52,7 @@ type server struct {
 
 func NewServer(args []string) {
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
-	verbose := serverFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
+	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval vs clients")
