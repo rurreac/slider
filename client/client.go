@@ -53,7 +53,7 @@ Flags:
 
 func NewClient(args []string) {
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
-	verbose := clientFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
+	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
 	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
