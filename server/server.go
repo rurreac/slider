@@ -55,7 +55,7 @@ func NewServer(args []string) {
 	verbose := serverFlags.String("verbose", "INFO", "Adds verbosity [debug|info|warn|error]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
-	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Set keepalive interval vs clients")
+	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval vs clients")
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
@@ -114,22 +114,23 @@ func NewServer(args []string) {
 		ServerInterpreter: i,
 	}
 
-	signer, err := scrypt.GenerateEd25519Key()
+	signer, fingerprint, err := scrypt.GenerateEd25519Key()
 	if err != nil {
 		panic(err)
 	}
 	s.sshConf.AddHostKey(signer)
+	s.Infof("Server Fingerprint: %s", fingerprint)
 
 	l, lisErr := net.Listen(
 		"tcp",
 		fmt.Sprintf("%s:%s", s.conf.addr.host, s.conf.addr.port),
 	)
 	if lisErr != nil {
-		s.Fatalf("listener: %s", err)
+		s.Fatalf("Listener: %s", err)
 
 	}
 
-	s.Infof("listening on %s://%s:%s", l.Addr().Network(), conf.addr.host, conf.addr.port)
+	s.Infof("Listening on %s://%s:%s", l.Addr().Network(), conf.addr.host, conf.addr.port)
 	s.Infof("Press CTR^C to access the Slider Console")
 
 	// Hold the execution until exit from the console

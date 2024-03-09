@@ -214,14 +214,18 @@ func (s *server) sessionsCommand(args ...string) {
 				if socksPort == "0" {
 					socksPort = "--"
 				}
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t\n",
-					sID,
-					session.ClientInterpreter.Arch,
-					session.ClientInterpreter.System,
-					session.ClientInterpreter.User,
-					session.ClientInterpreter.Hostname,
-					session.shellWsConn.RemoteAddr().String(),
-					socksPort)
+
+				if session.ClientInterpreter != nil {
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t\n",
+						sID,
+						session.ClientInterpreter.Arch,
+						session.ClientInterpreter.System,
+						session.ClientInterpreter.User,
+						session.ClientInterpreter.Hostname,
+						session.shellWsConn.RemoteAddr().String(),
+						socksPort)
+
+				}
 			}
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()

@@ -35,6 +35,7 @@ type Session struct {
 	shellOpened       bool
 	rawTerm           bool
 	KeepAliveChan     chan bool
+	keepAliveOn       bool
 	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
 	sessionMutex      sync.Mutex
@@ -74,8 +75,12 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 // dropWebSocketSession removes a session and its client info
 func (s *server) dropWebSocketSession(session *Session) {
 	s.sessionTrackMutex.Lock()
-	session.KeepAliveChan <- true
-	close(session.KeepAliveChan)
+
+	if session.keepAliveOn {
+		session.KeepAliveChan <- true
+		close(session.KeepAliveChan)
+		session.keepAliveOn = false
+	}
 
 	if session.SocksInstance.IsEnabled() {
 		_ = session.SocksInstance.Stop()
@@ -84,7 +89,6 @@ func (s *server) dropWebSocketSession(session *Session) {
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
 	s.sessionTrack.SessionActive = sa
 
-	_ = session.shellConn.Close()
 	_ = session.shellWsConn.Close()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Dropped Session ID %d: %s)",
@@ -106,9 +110,21 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 	return session, nil
 }
 
+func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
+	session.sessionMutex.Lock()
+	session.shellConn = sshConn
+	session.sessionMutex.Unlock()
+}
+
 func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Lock()
 	session.shellChannel = channel
+	session.sessionMutex.Unlock()
+}
+
+func (session *Session) setKeepAliveOn(aliveCheck bool) {
+	session.sessionMutex.Lock()
+	session.keepAliveOn = aliveCheck
 	session.sessionMutex.Unlock()
 }
 
@@ -244,6 +260,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 }
 
 func (session *Session) keepAlive(keepalive time.Duration) {
+	session.setKeepAliveOn(true)
 	ticker := time.NewTicker(keepalive)
 	defer ticker.Stop()
 
