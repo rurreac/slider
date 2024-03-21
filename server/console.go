@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slider/pkg/colors"
 	"slider/pkg/sio"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -93,7 +94,13 @@ func (s *server) NewConsole() string {
 		case downloadCmd:
 			s.downloadCommand(args[1:]...)
 		case helpCmd:
-			printConsoleHelp(s.console.Term)
+			s.printConsoleHelp(s.console.Term)
+		case certsCmd:
+			if s.authOn {
+				s.certsCommand(args[1:]...)
+			} else {
+				s.notConsoleCommand(args)
+			}
 		case "":
 			continue
 		default:
@@ -205,25 +212,38 @@ func (s *server) sessionsCommand(args ...string) {
 
 	if *sList {
 		if len(s.sessionTrack.Sessions) > 0 {
+			var keys []int
+			for i := range s.sessionTrack.Sessions {
+				keys = append(keys, int(i))
+			}
+			sort.Ints(keys)
+
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tConnection\tSocks\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tConnection\tSocks\tFingerprint\t\n")
 
-			for sID, session := range s.sessionTrack.Sessions {
+			for _, i := range keys {
+				session := s.sessionTrack.Sessions[int64(i)]
 				socksPort := fmt.Sprintf("%d", session.SocksInstance.Port)
 				if socksPort == "0" {
 					socksPort = "--"
 				}
 
 				if session.ClientInterpreter != nil {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t\n",
-						sID,
+					fingerprint := session.fingerprint
+					if fingerprint == "" {
+						fingerprint = "--"
+					}
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t\n",
+						session.sessionID,
 						session.ClientInterpreter.Arch,
 						session.ClientInterpreter.System,
 						session.ClientInterpreter.User,
 						session.ClientInterpreter.Hostname,
 						session.shellWsConn.RemoteAddr().String(),
-						socksPort)
+						socksPort,
+						fingerprint,
+					)
 
 				}
 			}
@@ -392,7 +412,7 @@ func (s *server) downloadCommand(args ...string) {
 	downloadFlags := flag.NewFlagSet("download", flag.ContinueOnError)
 	downloadFlags.SetOutput(s.console.Term)
 	dSession := downloadFlags.Int("s", 0, "Downloads file from a given a Session ID")
-	dFile := downloadFlags.String("f", "", "Receives a filelist with items to download")
+	dFile := downloadFlags.String("f", "", "Receives a file list with items to download")
 	downloadFlags.Usage = func() {
 		s.console.PrintCommandUsage(downloadFlags, downloadShort+downloadLong)
 	}
@@ -454,5 +474,76 @@ func (s *server) downloadCommand(args ...string) {
 				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
 			}
 		}
+	}
+}
+
+func (s *server) certsCommand(args ...string) {
+	certsFlags := flag.NewFlagSet("cert", flag.ContinueOnError)
+	certsFlags.SetOutput(s.console.Term)
+	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
+	cList := certsFlags.Bool("l", false, "List all available Key Pairs")
+	cRemove := certsFlags.Int("r", 0, "Remove matching index in the CertJar")
+	certsFlags.Usage = func() {
+		s.console.PrintCommandUsage(certsFlags, certsShort+certsLong)
+	}
+	if err := certsFlags.Parse(args); err != nil {
+		return
+	}
+
+	if !*cList && !*cNew && *cRemove == 0 {
+		certsFlags.Usage()
+	}
+
+	if *cRemove > 0 {
+		if err := s.dropCertItem(int64(*cRemove)); err != nil {
+			s.console.PrintlnErrorStep("%s", err)
+			return
+		}
+		s.console.PrintlnOkStep("Certificate successfully removed")
+		return
+	}
+
+	if *cList {
+		if len(s.certTrack.Certs) > 0 {
+			var keys []int
+			for i := range s.certTrack.Certs {
+				keys = append(keys, int(i))
+			}
+			sort.Ints(keys)
+
+			twl := new(tabwriter.Writer)
+			twl.Init(s.console.Term, 0, 4, 2, ' ', 0)
+
+			for _, k := range keys {
+				_, _ = fmt.Fprintln(twl)
+				_, _ = fmt.Fprintf(twl, "\tCertID %d\n\t%s\n",
+					k,
+					strings.Repeat("-", 11),
+				)
+				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].ExtractKeyFromPem())
+				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
+				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%d\t\n", s.getSessionByCert(s.certTrack.Certs[int64(k)].FingerPrint))
+			}
+			_, _ = fmt.Fprintln(twl)
+			_ = twl.Flush()
+		}
+		s.console.Printf("Certificates in Jar: %d\n", s.certTrack.CertActive)
+		return
+	}
+
+	if *cNew {
+		keypair, err := s.newCertItem()
+		if err != nil {
+			s.console.PrintlnErrorStep("Failed to generate certificate - %s", err)
+		}
+		twn := new(tabwriter.Writer)
+		twn.Init(s.console.Term, 0, 4, 2, ' ', 0)
+		_, _ = fmt.Fprintln(twn)
+		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.ExtractKeyFromPem())
+		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
+		_, _ = fmt.Fprintln(twn)
+		_ = twn.Flush()
+
+		return
 	}
 }

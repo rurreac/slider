@@ -40,6 +40,12 @@ type sessionTrack struct {
 	Sessions      map[int64]*Session // Map of Sessions
 }
 
+type certTrack struct {
+	CertCount  int64
+	CertActive int64
+	Certs      map[int64]*scrypt.KeyPair
+}
+
 type server struct {
 	*slog.Logger
 	conf              *config
@@ -48,6 +54,10 @@ type server struct {
 	sessionTrackMutex sync.Mutex
 	console           Console
 	ServerInterpreter *interpreter.Interpreter
+	certTrack         *certTrack
+	certTrackMutex    sync.Mutex
+	certJarFile       string
+	authOn            bool
 }
 
 func NewServer(args []string) {
@@ -55,8 +65,11 @@ func NewServer(args []string) {
 	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
-	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval vs clients")
+	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval vs Clients")
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
+	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
+	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
+
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
 		serverFlags.PrintDefaults()
@@ -105,20 +118,45 @@ func NewServer(args []string) {
 		conf:   conf,
 		Logger: log,
 		sessionTrack: &sessionTrack{
-			SessionCount:  0,
-			SessionActive: 0,
-			Sessions:      make(map[int64]*Session),
+			Sessions: make(map[int64]*Session),
 		},
 		sshConf:           sshConf,
 		console:           Console{},
 		ServerInterpreter: i,
+		certTrack: &certTrack{
+			Certs: make(map[int64]*scrypt.KeyPair),
+		},
+		certJarFile: *certJarFile,
+		authOn:      *auth,
 	}
 
-	signer, fingerprint, err := scrypt.GenerateEd25519Key()
-	if err != nil {
-		panic(err)
+	signer, fingerprint, kErr := scrypt.NewKeyPair()
+	if kErr != nil {
+		panic(kErr)
 	}
 	s.sshConf.AddHostKey(signer)
+
+	if *auth {
+		s.Infof("Client Authentication enabled, a valid certificate will be required")
+
+		if s.certJarFile == "" {
+			cwd, err := os.Getwd()
+			if err != nil {
+				cwd = "."
+			}
+
+			s.certJarFile = cwd + "/" + scrypt.CertJarFile
+		}
+		if lcErr := s.loadCertJar(); lcErr != nil {
+			s.Fatalf("%v", lcErr)
+		}
+
+		s.sshConf.NoClientAuth = false
+		s.sshConf.PublicKeyCallback = s.clientVerification
+	} else {
+		s.Warnf("Client Authentication is disabled")
+	}
+
 	s.Infof("Server Fingerprint: %s", fingerprint)
 
 	l, lisErr := net.Listen(
@@ -126,7 +164,7 @@ func NewServer(args []string) {
 		fmt.Sprintf("%s:%s", s.conf.addr.host, s.conf.addr.port),
 	)
 	if lisErr != nil {
-		s.Fatalf("Listener: %s", err)
+		s.Fatalf("Listener: %v", lisErr)
 
 	}
 
@@ -160,11 +198,28 @@ func NewServer(args []string) {
 	go func() {
 		// TODO: net/http serve has no support for timeouts
 		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
-		if err = http.Serve(l, handler); err != nil {
-			s.Fatalf("%s", err)
+		if sErr := http.Serve(l, handler); sErr != nil {
+			s.Fatalf("%s", sErr)
 		}
 	}()
 
 	wg.Wait()
 	s.Printf("Server down...")
+}
+
+func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
+	fp, fErr := scrypt.GenerateFingerprint(key)
+	s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
+	if fErr != nil {
+		return nil, fErr
+	}
+
+	for _, k := range s.certTrack.Certs {
+		if k.FingerPrint == fp {
+			return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
+		}
+	}
+	s.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
+
+	return nil, fmt.Errorf("client key not authorized")
 }

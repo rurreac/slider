@@ -57,6 +57,7 @@ func NewClient(args []string) {
 	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
+	key := clientFlags.String("key", "", "Private key to use for authentication")
 	clientFlags.Usage = func() {
 		fmt.Printf(help)
 		clientFlags.PrintDefaults()
@@ -113,6 +114,13 @@ func NewClient(args []string) {
 		ClientVersion:   "SSH-slider-client",
 		Timeout:         60 * time.Second,
 	}
+
+	if *key != "" {
+		if aErr := c.enableKeyAuth(*key); aErr != nil {
+			c.Fatalf("%s", aErr)
+		}
+	}
+
 	if c.serverFingerprint != "" {
 		c.sshConfig.HostKeyCallback = c.verifyServerKey
 	}
@@ -155,6 +163,18 @@ func NewClient(args []string) {
 
 	<-c.disconnect
 	close(c.disconnect)
+}
+
+func (c *client) enableKeyAuth(key string) error {
+	// TODO: Probably not the best way to accomplish this
+	p := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", key)
+	signer, pErr := ssh.ParsePrivateKey([]byte(p))
+	if pErr != nil {
+		return fmt.Errorf("failed to parse private key: %v", pErr)
+	}
+	c.sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+
+	return nil
 }
 
 func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
