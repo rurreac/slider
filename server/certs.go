@@ -14,7 +14,7 @@ func (s *server) loadCertJar() error {
 	if sErr != nil {
 		if os.IsNotExist(sErr) {
 			_, nErr := s.newCertItem()
-			s.Infof("Certificate Jar was empty, initialized it with a new certificate")
+			s.Infof("Certificate Jar was empty, initialized with a new certificate")
 			return nErr
 		}
 		return fmt.Errorf("failed to load %s file - %v", s.certJarFile, sErr)
@@ -36,7 +36,7 @@ func (s *server) loadCertJar() error {
 		if _, nErr := s.newCertItem(); nErr != nil {
 			return fmt.Errorf("failed to initialize Certificate Jar - %v", nErr)
 		}
-		s.Infof("Certificate Jar was empty, initialized it with a new certificate")
+		s.Infof("Certificate Jar was empty, initialized with a new certificate")
 		return nil
 	}
 
