@@ -210,15 +210,13 @@ func NewServer(args []string) {
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	fp, fErr := scrypt.GenerateFingerprint(key)
-	s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
 	if fErr != nil {
-		return nil, fErr
+		return nil, fmt.Errorf("failed to generate fingerprint from public key - %s", fErr)
 	}
 
-	for _, k := range s.certTrack.Certs {
-		if k.FingerPrint == fp {
-			return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
-		}
+	if s.isAllowedFingerprint(fp) {
+		s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
+		return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
 	}
 	s.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
 

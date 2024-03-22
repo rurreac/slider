@@ -149,3 +149,13 @@ func (s *server) getSessionByCert(fingerprint string) []int64 {
 	}
 	return sessionList
 }
+
+func (s *server) isAllowedFingerprint(fp string) bool {
+	for _, k := range s.certTrack.Certs {
+		if k.FingerPrint == fp {
+			return true
+		}
+	}
+
+	return false
+}
