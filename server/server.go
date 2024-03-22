@@ -58,6 +58,7 @@ type server struct {
 	certTrackMutex    sync.Mutex
 	certJarFile       string
 	authOn            bool
+	certSaveOn        bool
 }
 
 func NewServer(args []string) {

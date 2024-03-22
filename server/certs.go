@@ -10,11 +10,21 @@ import (
 )
 
 func (s *server) loadCertJar() error {
+	saveJar := os.Getenv("SLIDER_CERT_JAR")
+	switch saveJar {
+	case "1", "", "true":
+		s.certSaveOn = true
+	case "0", "false":
+		s.Warnf("Environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
+	default:
+		s.Warnf("Unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
+	}
+
 	_, sErr := os.Stat(s.certJarFile)
 	if sErr != nil {
 		if os.IsNotExist(sErr) {
 			_, nErr := s.newCertItem()
-			s.Infof("Certificate Jar was empty, initialized with a new certificate")
+			s.Warnf("Slider Certificates file not found, initialized with a new certificate")
 			return nErr
 		}
 		return fmt.Errorf("failed to load %s file - %v", s.certJarFile, sErr)
@@ -36,7 +46,7 @@ func (s *server) loadCertJar() error {
 		if _, nErr := s.newCertItem(); nErr != nil {
 			return fmt.Errorf("failed to initialize Certificate Jar - %v", nErr)
 		}
-		s.Infof("Certificate Jar was empty, initialized with a new certificate")
+		s.Warnf("Certificate Jar was empty, initialized with a new certificate")
 		return nil
 	}
 
@@ -60,7 +70,6 @@ func (s *server) newCertItem() (*scrypt.KeyPair, error) {
 	if err != nil {
 		return &scrypt.KeyPair{}, fmt.Errorf("failed to generate certificate - %s", err)
 	}
-	saveJar := os.Getenv("SLIDER_CERT_JAR")
 
 	s.certTrackMutex.Lock()
 	cc := atomic.AddInt64(&s.certTrack.CertCount, 1)
@@ -69,13 +78,8 @@ func (s *server) newCertItem() (*scrypt.KeyPair, error) {
 	s.certTrack.CertActive = ca
 	s.certTrack.Certs[cc] = keypair
 
-	switch saveJar {
-	case "1", "", "true":
+	if s.certSaveOn {
 		s.saveCertJar()
-	case "0", "false":
-		s.Warnf("Environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificates won't be saved", saveJar)
-	default:
-		s.Warnf("Unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificates won't be saved", saveJar)
 	}
 
 	s.certTrackMutex.Unlock()
@@ -88,14 +92,13 @@ func (s *server) dropCertItem(certID int64) error {
 	if err != nil {
 		return err
 	}
-	saveJar := os.Getenv("SLIDER_CERT_JAR")
 
 	s.certTrackMutex.Lock()
 	ca := atomic.AddInt64(&s.certTrack.CertActive, -1)
 	s.certTrack.CertActive = ca
 	delete(s.certTrack.Certs, certID)
 
-	if saveJar == "1" || saveJar == "" || saveJar == "true" {
+	if s.certSaveOn {
 		s.saveCertJar()
 	}
 

@@ -482,7 +482,7 @@ func (s *server) certsCommand(args ...string) {
 	certsFlags.SetOutput(s.console.Term)
 	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
 	cList := certsFlags.Bool("l", false, "List all available Key Pairs")
-	cRemove := certsFlags.Int("r", 0, "Remove matching index in the CertJar")
+	cRemove := certsFlags.Int("r", 0, "Remove matching index from the Certificate Jar")
 	certsFlags.Usage = func() {
 		s.console.PrintCommandUsage(certsFlags, certsShort+certsLong)
 	}
