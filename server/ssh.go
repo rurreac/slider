@@ -24,7 +24,9 @@ func (s *server) NewSSHServer(session *Session) {
 		return
 	}
 	session.addSessionSSHConnection(shellConn)
-	session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
+	if s.authOn {
+		session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
+	}
 
 	s.Debugf(
 		"New SSH Server with WebSocket as underlying transport connected to client \"%s\"",
