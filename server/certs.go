@@ -122,12 +122,13 @@ func (s *server) saveCertJar() {
 	// Create or truncate, it's ok to trash existing content
 	file, oErr := os.Create(s.certJarFile)
 	if oErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s%s - %v", s.certJarFile, oErr)
+		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
 		return
 	}
+	defer func() { _ = file.Close() }()
 	_, wErr := file.Write(jsonCertJar)
 	if wErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s%s - %v", s.certJarFile, wErr)
+		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
 		return
 	}
 }

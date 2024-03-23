@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -41,16 +42,39 @@ type Status struct {
 	Err     error
 }
 
-var slicerHome = os.Getenv("SLIDER_HOME")
+func GetSliderHome() string {
+	sliderHome := os.Getenv("SLIDER_HOME")
+	if sliderHome == "" {
+		userHome, err := os.UserHomeDir()
+		if err == nil {
+			if runtime.GOOS == "windows" {
+				sliderHome = userHome + string(os.PathSeparator) + "slider" + string(os.PathSeparator)
+				if err = ensurePath(sliderHome); err == nil {
+					return sliderHome
+				}
+			} else {
+				sliderHome = userHome + string(os.PathSeparator) + ".slider" + string(os.PathSeparator)
+				if err = ensurePath(sliderHome); err == nil {
+					return sliderHome
+				}
+			}
+		}
+		sliderHome, err = os.Getwd()
+		if err != nil {
+			sliderHome = "." + string(os.PathSeparator)
+		}
 
-func GetOutputDir() string {
-	if slicerHome == "" {
-		sh, hErr := os.UserHomeDir()
-		if hErr == nil {
-			slicerHome = sh
+	}
+	return sliderHome
+}
+
+func ensurePath(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err = os.MkdirAll(path, os.ModePerm); err != nil {
+			return err
 		}
 	}
-	return fmt.Sprintf("%s%s", slicerHome, string(os.PathSeparator))
+	return nil
 }
 
 func NewFileAction(conn ssh.Conn, src string, dst string) ([]FileAction, ActionConf) {
@@ -83,7 +107,7 @@ func NewBatchAction(conn ssh.Conn, filePath string) ([]FileAction, ActionConf, e
 			fileActionList = append(fileActionList, FileAction{
 				ScrPath: filename,
 				// Convert dst from '/etc/passwd' to 'etc_passwd'
-				DstPath: GetOutputDir() + outputFile,
+				DstPath: GetSliderHome() + outputFile,
 			})
 		}
 	}

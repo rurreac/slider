@@ -437,7 +437,7 @@ func (s *server) downloadCommand(args ...string) {
 			s.console.PrintlnDebugStep("Need to provide a filelist")
 			return
 		} else if *dFile != "" {
-			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetOutputDir())
+			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetSliderHome())
 
 			for statusChan := range session.downloadFileBatch(*dFile) {
 				if statusChan.Success {

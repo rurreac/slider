@@ -10,6 +10,7 @@ import (
 	"slices"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"sync"
 	"syscall"
@@ -17,6 +18,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+const clientCertsFile = "client-certs.json"
+const serverCertFile = "server-cert.json"
 
 // config creates the server configuration build from flags
 type config struct {
@@ -70,6 +74,7 @@ func NewServer(args []string) {
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
+	hostKey := serverFlags.Bool("save-key", false, "Store server key for reuse")
 
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
@@ -131,22 +136,31 @@ func NewServer(args []string) {
 		authOn:      *auth,
 	}
 
-	signer, fingerprint, kErr := scrypt.NewKeyPair()
+	var signer ssh.Signer
+	var kErr error
+	if *hostKey {
+		keyPath := sio.GetSliderHome() + serverCertFile
+		_, sErr := os.Stat(keyPath)
+		if os.IsNotExist(sErr) {
+			s.Infof("Storing Server Certificate on %s", keyPath)
+		} else {
+			s.Infof("Importing existing Server Certificate from %s", keyPath)
+		}
+
+		signer, kErr = scrypt.NewSSHSignerFromFile(keyPath)
+	} else {
+		signer, kErr = scrypt.NewSSHSigner()
+	}
 	if kErr != nil {
 		panic(kErr)
 	}
 	s.sshConf.AddHostKey(signer)
 
 	if *auth {
-		s.Infof("Client Authentication enabled, a valid certificate will be required")
+		s.Warnf("Client Authentication enabled, a valid certificate will be required")
 
 		if s.certJarFile == "" {
-			cwd, err := os.Getwd()
-			if err != nil {
-				cwd = "."
-			}
-
-			s.certJarFile = cwd + "/" + scrypt.CertJarFile
+			s.certJarFile = sio.GetSliderHome() + clientCertsFile
 		}
 		if lcErr := s.loadCertJar(); lcErr != nil {
 			s.Fatalf("%v", lcErr)
@@ -154,10 +168,12 @@ func NewServer(args []string) {
 
 		s.sshConf.NoClientAuth = false
 		s.sshConf.PublicKeyCallback = s.clientVerification
-	} else {
-		s.Warnf("Client Authentication is disabled")
 	}
 
+	fingerprint, gErr := scrypt.GenerateFingerprint(signer.PublicKey())
+	if gErr != nil {
+		s.Fatalf("Failed to generate fingerprint - %v", gErr)
+	}
 	s.Infof("Server Fingerprint: %s", fingerprint)
 
 	l, lisErr := net.Listen(
