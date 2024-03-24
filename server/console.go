@@ -79,32 +79,22 @@ func (s *server) NewConsole() string {
 			fCmd = args[0]
 		}
 
+		commands := s.initCommands()
+
 		switch fCmd {
-		case sessionsCmd:
-			s.sessionsCommand(args[1:]...)
-		case executeCmd:
-			s.executeCommand(args[1:]...)
 		case exitCmd, bgCmd:
 			consoleInput = false
 			out = fCmd
-		case socksCmd:
-			s.socksCommand(args[1:]...)
-		case uploadCmd:
-			s.uploadCommand(args[1:]...)
-		case downloadCmd:
-			s.downloadCommand(args[1:]...)
 		case helpCmd:
 			s.printConsoleHelp(s.console.Term)
-		case certsCmd:
-			if s.authOn {
-				s.certsCommand(args[1:]...)
-			} else {
-				s.notConsoleCommand(args)
-			}
 		case "":
 			continue
 		default:
-			s.notConsoleCommand(args)
+			if k, ok := commands[fCmd]; ok {
+				k.cmdFunc(args[1:]...)
+			} else {
+				s.notConsoleCommand(args)
+			}
 		}
 	}
 
@@ -133,12 +123,12 @@ func (s *server) notConsoleCommand(fCmd []string) {
 }
 
 func (s *server) executeCommand(args ...string) {
-	executeFlags := flag.NewFlagSet("execute", flag.ContinueOnError)
+	executeFlags := flag.NewFlagSet(executeCmd, flag.ContinueOnError)
 	executeFlags.SetOutput(s.console.Term)
 	eSession := executeFlags.Int("s", 0, "Runs given command on a Session ID")
 	eAll := executeFlags.Bool("a", false, "Runs given command on every Session")
 	executeFlags.Usage = func() {
-		s.console.PrintCommandUsage(executeFlags, executeShort+executeLong)
+		s.console.PrintCommandUsage(executeFlags, executeDesc+executeUsage)
 	}
 
 	if pErr := executeFlags.Parse(args); pErr != nil {
@@ -154,7 +144,7 @@ func (s *server) executeCommand(args ...string) {
 	if *eSession > 0 {
 		session, sessErr := s.getSession(*eSession)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%v", sessErr)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *eSession)
 			return
 		}
 		sessions = []*Session{session}
@@ -189,14 +179,14 @@ func (s *server) executeCommand(args ...string) {
 }
 
 func (s *server) sessionsCommand(args ...string) {
-	sessionsFlags := flag.NewFlagSet("sessions", flag.ContinueOnError)
+	sessionsFlags := flag.NewFlagSet(sessionsCmd, flag.ContinueOnError)
 	sessionsFlags.SetOutput(s.console.Term)
 
 	sList := sessionsFlags.Bool("l", false, "Lists Server Sessions")
 	sInteract := sessionsFlags.Int("i", 0, "Starts Interactive Shell on a Session ID")
 	sKill := sessionsFlags.Int("k", 0, "Kills Session ID")
 	sessionsFlags.Usage = func() {
-		s.console.PrintCommandUsage(sessionsFlags, sessionsShort+sessionsLong)
+		s.console.PrintCommandUsage(sessionsFlags, sessionsDesc+sessionsUsage)
 	}
 
 	if pErr := sessionsFlags.Parse(args); pErr != nil {
@@ -257,7 +247,7 @@ func (s *server) sessionsCommand(args ...string) {
 	if *sInteract > 0 {
 		session, sessErr := s.getSession(*sInteract)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%v", sessErr)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *sInteract)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -275,7 +265,7 @@ func (s *server) sessionsCommand(args ...string) {
 	if *sKill > 0 {
 		session, sessErr := s.getSession(*sKill)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("%v", sessErr)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *sKill)
 			return
 		}
 		if _, _, err = session.sendRequest(
@@ -293,13 +283,13 @@ func (s *server) sessionsCommand(args ...string) {
 }
 
 func (s *server) socksCommand(args ...string) {
-	socksFlags := flag.NewFlagSet("socks", flag.ContinueOnError)
+	socksFlags := flag.NewFlagSet(socksCmd, flag.ContinueOnError)
 	socksFlags.SetOutput(s.console.Term)
 	sSession := socksFlags.Int("s", 0, "Runs a Socks5 server over an SSH Channel on a Session ID")
 	sPort := socksFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
 	sKill := socksFlags.Int("k", 0, "Kills Socks5 Listener and Server on a Session ID")
 	socksFlags.Usage = func() {
-		s.console.PrintCommandUsage(socksFlags, socksShort+socksLong)
+		s.console.PrintCommandUsage(socksFlags, socksDesc+socksUsage)
 	}
 
 	if pErr := socksFlags.Parse(args); pErr != nil {
@@ -365,11 +355,11 @@ func (s *server) socksCommand(args ...string) {
 }
 
 func (s *server) uploadCommand(args ...string) {
-	uploadFlags := flag.NewFlagSet("upload", flag.ContinueOnError)
+	uploadFlags := flag.NewFlagSet(uploadCmd, flag.ContinueOnError)
 	uploadFlags.SetOutput(s.console.Term)
 	uSession := uploadFlags.Int("s", 0, "Uploads file to selected Session ID")
 	uploadFlags.Usage = func() {
-		s.console.PrintCommandUsage(uploadFlags, uploadShort+uploadLong)
+		s.console.PrintCommandUsage(uploadFlags, uploadDesc+uploadUsage)
 	}
 
 	if pErr := uploadFlags.Parse(args); pErr != nil {
@@ -384,7 +374,7 @@ func (s *server) uploadCommand(args ...string) {
 	if *uSession > 0 {
 		session, sessErr := s.getSession(*uSession)
 		if sessErr != nil {
-			s.console.PrintlnWarn("Unknown Session ID %d", *uSession)
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *uSession)
 			return
 		}
 
@@ -409,12 +399,12 @@ func (s *server) uploadCommand(args ...string) {
 }
 
 func (s *server) downloadCommand(args ...string) {
-	downloadFlags := flag.NewFlagSet("download", flag.ContinueOnError)
+	downloadFlags := flag.NewFlagSet(downloadCmd, flag.ContinueOnError)
 	downloadFlags.SetOutput(s.console.Term)
 	dSession := downloadFlags.Int("s", 0, "Downloads file from a given a Session ID")
 	dFile := downloadFlags.String("f", "", "Receives a file list with items to download")
 	downloadFlags.Usage = func() {
-		s.console.PrintCommandUsage(downloadFlags, downloadShort+downloadLong)
+		s.console.PrintCommandUsage(downloadFlags, downloadDesc+downloadUsage)
 	}
 
 	if pErr := downloadFlags.Parse(args); pErr != nil {
@@ -478,13 +468,13 @@ func (s *server) downloadCommand(args ...string) {
 }
 
 func (s *server) certsCommand(args ...string) {
-	certsFlags := flag.NewFlagSet("cert", flag.ContinueOnError)
+	certsFlags := flag.NewFlagSet(certsCmd, flag.ContinueOnError)
 	certsFlags.SetOutput(s.console.Term)
 	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
 	cList := certsFlags.Bool("l", false, "List all available Key Pairs")
 	cRemove := certsFlags.Int("r", 0, "Remove matching index from the Certificate Jar")
 	certsFlags.Usage = func() {
-		s.console.PrintCommandUsage(certsFlags, certsShort+certsLong)
+		s.console.PrintCommandUsage(certsFlags, certsDesc+certsUsage)
 	}
 	if err := certsFlags.Parse(args); err != nil {
 		return
