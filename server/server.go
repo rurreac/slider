@@ -74,7 +74,8 @@ func NewServer(args []string) {
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
-	hostKey := serverFlags.Bool("save-key", false, "Store server key for reuse")
+	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
+	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
 
 	serverFlags.Usage = func() {
 		fmt.Printf(serverHelpLong)
@@ -137,22 +138,28 @@ func NewServer(args []string) {
 	}
 
 	var signer ssh.Signer
-	var kErr error
-	if *hostKey {
-		keyPath := sio.GetSliderHome() + serverCertFile
-		_, sErr := os.Stat(keyPath)
-		if os.IsNotExist(sErr) {
-			s.Infof("Storing Server Certificate on %s", keyPath)
-		} else {
-			s.Infof("Importing existing Server Certificate from %s", keyPath)
+	var keyErr error
+	if *keyStore || *keyPath != "" {
+		kp := sio.GetSliderHome() + serverCertFile
+
+		if *keyPath != "" {
+			kp = *keyPath
 		}
 
-		signer, kErr = scrypt.NewSSHSignerFromFile(keyPath)
+		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !*keyStore && *keyPath != "" {
+			s.Fatalf("Failed load Server Key, %s does not exist", kp)
+		} else if os.IsNotExist(sErr) && *keyStore {
+			s.Infof("Storing New Server Certificate on %s", kp)
+		} else {
+			s.Infof("Importing existing Server Certificate from %s", kp)
+		}
+
+		signer, keyErr = scrypt.NewSSHSignerFromFile(kp)
 	} else {
-		signer, kErr = scrypt.NewSSHSigner()
+		signer, keyErr = scrypt.NewSSHSigner()
 	}
-	if kErr != nil {
-		panic(kErr)
+	if keyErr != nil {
+		s.Fatalf("%v", keyErr)
 	}
 	s.sshConf.AddHostKey(signer)
 
