@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -37,7 +38,7 @@ type client struct {
 	verbose           string
 	disconnect        chan bool
 	socksInstance     *ssocks.Instance
-	serverFingerprint string
+	serverFingerprint []string
 }
 
 const help = `
@@ -57,6 +58,7 @@ func NewClient(args []string) {
 	keepAlive := clientFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
+	key := clientFlags.String("key", "", "Private key to use for authentication")
 	clientFlags.Usage = func() {
 		fmt.Printf(help)
 		clientFlags.PrintDefaults()
@@ -89,11 +91,10 @@ func NewClient(args []string) {
 	}
 
 	c := client{
-		Logger:            log,
-		keepalive:         *keepAlive,
-		disconnect:        make(chan bool, 1),
-		interpreter:       i,
-		serverFingerprint: *fingerprint,
+		Logger:      log,
+		keepalive:   *keepAlive,
+		disconnect:  make(chan bool, 1),
+		interpreter: i,
 	}
 
 	c.serverAddr = clientFlags.Args()[0]
@@ -107,13 +108,22 @@ func NewClient(args []string) {
 		WriteBufferSize: 0,
 	}
 
-	// TODO: Provide Key authentication to the server if requested with flag otherwise fallback insecure
 	c.sshConfig = &ssh.ClientConfig{
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		ClientVersion:   "SSH-slider-client",
 		Timeout:         60 * time.Second,
 	}
-	if c.serverFingerprint != "" {
+
+	if *key != "" {
+		if aErr := c.enableKeyAuth(*key); aErr != nil {
+			c.Fatalf("%s", aErr)
+		}
+	}
+
+	if *fingerprint != "" {
+		if fErr := c.loadFingerPrint(*fingerprint); fErr != nil {
+			c.Fatalf("%s", fErr)
+		}
 		c.sshConfig.HostKeyCallback = c.verifyServerKey
 	}
 
@@ -157,16 +167,55 @@ func NewClient(args []string) {
 	close(c.disconnect)
 }
 
+func (c *client) enableKeyAuth(key string) error {
+	// TODO: Probably not the best way to accomplish this
+	p := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", key)
+	signer, pErr := ssh.ParsePrivateKey([]byte(p))
+	if pErr != nil {
+		return fmt.Errorf("failed to parse private key: %v", pErr)
+	}
+	c.sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
+
+	return nil
+}
+
+func (c *client) loadFingerPrint(fp string) error {
+	// Check is fingerprint flag is a file or a fingerprint string
+	// A file should contain a list of valid fingerprints
+	fileInfo, sErr := os.Stat(fp)
+	if sErr != nil {
+		c.serverFingerprint = append(c.serverFingerprint, fp)
+		return nil
+	}
+	if fileInfo.IsDir() {
+		return fmt.Errorf("fingerprint flag points to a directory not a file")
+	}
+	file, fErr := os.Open(fp)
+	if fErr != nil {
+		return fmt.Errorf("failed to read fingerprint file - %s", fErr)
+	}
+	scan := bufio.NewScanner(file)
+	for scan.Scan() {
+		if f := scan.Text(); f != "" {
+			c.serverFingerprint = append(c.serverFingerprint, f)
+		}
+	}
+
+	return nil
+}
+
 func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
 	serverFingerprint, fErr := scrypt.GenerateFingerprint(key)
 	if fErr != nil {
 		return fErr
 	}
-	if serverFingerprint != c.serverFingerprint {
-		return fmt.Errorf("server %s - verification failed", remote.String())
+
+	if slices.Contains(c.serverFingerprint, serverFingerprint) {
+		c.Infof("Server successfully vefified with provided fingerprint")
+		return nil
 	}
-	c.Infof("Server successfully vefified with provided fingerprint")
-	return nil
+
+	return fmt.Errorf("server %s - verification failed", remote.String())
 }
 
 func (c *client) sendClientInfo(i *interpreter.Interpreter) {
@@ -226,7 +275,7 @@ func (c *client) handleGlobalRequests(requests <-chan *ssh.Request) {
 		case "checksum-verify":
 			go c.verifyFileCheckSum(req)
 		case "disconnect":
-			c.Debugf("Server requested Client disconnection.")
+			c.Warnf("Server requested Client disconnection.")
 			_ = c.replyConnRequest(req, true, []byte("disconnected"))
 			c.disconnect <- true
 		default:

@@ -20,11 +20,14 @@ Usage: ./slider server [flags]
 Flags:
 `
 
-func printConsoleHelp(console *term.Terminal) {
+func (s *server) printConsoleHelp(console *term.Terminal) {
 	tw := new(tabwriter.Writer)
 	tw.Init(console, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommands\tDescription\t\n\n")
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", bgCmd, bgShort)
+	if s.authOn {
+		_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", certsCmd, certsShort)
+	}
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", downloadCmd, downloadShort)
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", executeCmd, executeShort)
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", exitCmd, exitShort)
@@ -87,13 +90,23 @@ Flags:
 
 // Console Download Command
 const downloadCmd = "download"
-const downloadShort = "Download file passed as an argument from Client"
+const downloadShort = "Downloads file passed as an argument from Client"
 const downloadLong = `
 
 * If no destination name is given, file will be downloaded with the same basename to the Server CWD.
-* Downloading from a filelist does not allow specifying destination.  
+* Downloading from a file list does not allow specifying destination.  
 
 Usage: download [flags] [src] [dst]
+
+Flags:
+`
+
+// Console Cert Command
+const certsCmd = "certs"
+const certsShort = "Interacts with the Server Certificate Jar"
+const certsLong = `
+
+Usage: certs [flags]
 
 Flags:
 `

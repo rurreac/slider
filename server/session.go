@@ -39,6 +39,7 @@ type Session struct {
 	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
 	sessionMutex      sync.Mutex
+	fingerprint       string
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -119,6 +120,12 @@ func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Lock()
 	session.shellChannel = channel
+	session.sessionMutex.Unlock()
+}
+
+func (session *Session) addSessionFingerprint(fingerprint string) {
+	session.sessionMutex.Lock()
+	session.fingerprint = fingerprint
 	session.sessionMutex.Unlock()
 }
 
