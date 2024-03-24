@@ -41,7 +41,7 @@ type client struct {
 	serverFingerprint []string
 }
 
-const help = `
+const clientHelp = `
 Slider Client
 
   Creates a new Slider Client instance and connects 
@@ -60,7 +60,7 @@ func NewClient(args []string) {
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
 	key := clientFlags.String("key", "", "Private key to use for authentication")
 	clientFlags.Usage = func() {
-		fmt.Printf(help)
+		fmt.Printf(clientHelp)
 		clientFlags.PrintDefaults()
 		fmt.Println()
 	}
