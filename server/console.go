@@ -86,7 +86,7 @@ func (s *server) NewConsole() string {
 			consoleInput = false
 			out = fCmd
 		case helpCmd:
-			s.printConsoleHelp(s.console.Term)
+			s.printConsoleHelp()
 		case "":
 			continue
 		default:

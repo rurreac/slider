@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"golang.org/x/term"
 	"sort"
 	"text/tabwriter"
 )
@@ -142,9 +141,9 @@ func (s *server) initCommands() map[string]commandStruct {
 	return commands
 }
 
-func (s *server) printConsoleHelp(console *term.Terminal) {
+func (s *server) printConsoleHelp() {
 	tw := new(tabwriter.Writer)
-	tw.Init(console, 0, 4, 2, ' ', 0)
+	tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommands\tDescription\t\n\n")
 	commands := s.initCommands()
 	var cmdNames []string
