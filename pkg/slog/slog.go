@@ -119,8 +119,8 @@ func (l *Logger) Infof(t string, args ...interface{}) {
 	}
 }
 
-func (l *Logger) Fatalf(t string, err error) {
-	l.logger.Fatalf(FATAL+t, err)
+func (l *Logger) Fatalf(t string, args ...interface{}) {
+	l.logger.Fatalf(FATAL+t, args...)
 }
 
 func (l *Logger) Errorf(t string, args ...interface{}) {

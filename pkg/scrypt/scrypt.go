@@ -2,109 +2,99 @@ package scrypt
 
 import (
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"golang.org/x/crypto/ed25519"
-	"os"
-
 	"golang.org/x/crypto/ssh"
+	"os"
+	"path"
 )
 
-// TODO: This should be set according to config flags default to TEMP or cwd otherwise
-var (
-	temp           = os.Getenv("TEMP")
-	PrivateKeyFile = temp + "./sshi-rsa.pem"
-	PublicKeyFile  = temp + "./sshi-rsa.pub"
-)
-
-// EncodePrivateKeyToPEM converts a private key to PEM format
-func EncodePrivateKeyToPEM(privateKey *rsa.PrivateKey) []byte {
-	return pem.EncodeToMemory(&pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-	})
+type KeyPair struct {
+	PrivateKey  []byte `json:"PrivateKey"`
+	FingerPrint string `json:"FingerPrint"`
 }
 
-// GeneratePrivateKey generate an RSA key of a given length
-func GeneratePrivateKey(keyLength int) (*rsa.PrivateKey, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, keyLength)
+func NewSSHSigner() (ssh.Signer, error) {
+	keypair, err := NewEd25519KeyPair()
 	if err != nil {
 		return nil, err
 	}
-	return privateKey, nil
-}
 
-// GeneratePublicKey generate an RSA Public Key from an RSA Private Key
-func GeneratePublicKey(privateKey *rsa.PrivateKey) ([]byte, error) {
-	publicRsaKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, err
-	}
-	publicRsaKeyBytes := ssh.MarshalAuthorizedKey(publicRsaKey)
-	return publicRsaKeyBytes, nil
-}
-
-// EncodePublicKeyToPEM converts a public key to PEM format
-func EncodePublicKeyToPEM(publicKey *rsa.PublicKey) ([]byte, error) {
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
-	if err != nil {
-		return nil, err
-	}
-	return publicKeyBytes, nil
-}
-
-// CreateKeyPairFiles creates Private and Public Key files from bytes
-func CreateKeyPairFiles(privateKeyBytes []byte, publicKeyBytes []byte) error {
-	err := os.WriteFile(PrivateKeyFile, privateKeyBytes, 0600)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(PublicKeyFile, publicKeyBytes, 0600)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func CreateSSHKeys(sshConfig ssh.ServerConfig, keyGen bool) (ssh.Signer, error) {
-	// Generate SSH Keys
-	privateKey, err := GeneratePrivateKey(4096)
-	if err != nil {
-		return nil, fmt.Errorf("generatePrivateKey: %v", err)
-	}
-
-	privateKeyBytes := EncodePrivateKeyToPEM(privateKey)
-	privateKeySigner, err := ssh.ParsePrivateKey(privateKeyBytes)
-	if err != nil {
+	privateKeySigner, prErr := ssh.ParsePrivateKey(keypair.PrivateKey)
+	if prErr != nil {
 		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
 	}
 
-	sshConfig.AddHostKey(privateKeySigner)
-
-	publicKeyBytes, err := GeneratePublicKey(privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("generatePublicKey: %v", err)
-	}
-	if keyGen {
-		err = CreateKeyPairFiles(privateKeyBytes, publicKeyBytes)
-		if err != nil {
-			return nil, fmt.Errorf("createKeyPairFiles: %v", err)
-		}
-	}
 	return privateKeySigner, nil
 }
 
-func GenerateEd25519Key() (ssh.Signer, string, error) {
+func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
+	var keyPair *KeyPair
+	var err error
+
+	if _, sErr := os.Stat(keyPath); os.IsNotExist(sErr) {
+		keyPair, err = NewEd25519KeyPair()
+		if err != nil {
+			return nil, err
+		}
+		if mkErr := os.MkdirAll(path.Dir(keyPath), os.ModePerm); mkErr != nil {
+			return nil, fmt.Errorf("failed to create directory - %v", mkErr)
+		}
+		file, oErr := os.Create(keyPath)
+		if oErr != nil {
+			return nil, fmt.Errorf("failed to open file %s", keyPath)
+		}
+		defer func() { _ = file.Close() }()
+		keyPairBytes, jErr := json.Marshal(keyPair)
+		if jErr != nil {
+			return nil, fmt.Errorf("failed to marshal keypair - %v", jErr)
+		}
+		if _, wErr := file.Write(keyPairBytes); wErr != nil {
+			return nil, fmt.Errorf("failed to save keypair in %s - %v", keyPath, wErr)
+		}
+	} else {
+		file, oErr := os.ReadFile(keyPath)
+		if oErr != nil {
+			return nil, fmt.Errorf("failed to open file %s", keyPath)
+		}
+
+		if jErr := json.Unmarshal(file, &keyPair); jErr != nil {
+			return nil, fmt.Errorf("failed to unmarshal file - %v", jErr)
+		}
+	}
+
+	privateKeySigner, prErr := ssh.ParsePrivateKey(keyPair.PrivateKey)
+	if prErr != nil {
+		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
+	}
+
+	return privateKeySigner, nil
+}
+
+func GenerateFingerprint(publicKey ssh.PublicKey) (string, error) {
+	h := sha256.New()
+	if _, hErr := h.Write(publicKey.Marshal()); hErr != nil {
+		return "", fmt.Errorf("failed to generate hash - %v", hErr)
+	}
+
+	return base64.RawStdEncoding.EncodeToString(h.Sum(nil)), nil
+}
+
+func NewEd25519KeyPair() (*KeyPair, error) {
 	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
 
 	// MarshalPKCS8PrivateKey supports ed25519
 	pvBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
 	if mErr != nil {
-		return nil, "", mErr
+		return nil, mErr
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{
 		Type:    "PRIVATE KEY",
@@ -112,27 +102,24 @@ func GenerateEd25519Key() (ssh.Signer, string, error) {
 		Bytes:   pvBytes,
 	})
 
-	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
-	if prErr != nil {
-		return nil, "", fmt.Errorf("ParsePrivateKey: %v", err)
-	}
-
 	pbKey, pbErr := ssh.NewPublicKey(publicKey)
 	if pbErr != nil {
-		return nil, "", pbErr
+		return nil, pbErr
 	}
 
 	fingerprint, fErr := GenerateFingerprint(pbKey)
 	if fErr != nil {
-		return nil, "", fErr
+		return nil, fErr
 	}
 
-	return privateKeySigner, fingerprint, nil
+	return &KeyPair{
+		PrivateKey:  pemBytes,
+		FingerPrint: fingerprint,
+	}, nil
 }
 
-func GenerateFingerprint(publicKey ssh.PublicKey) (string, error) {
-	h := sha256.New()
-	h.Write(publicKey.Marshal())
-
-	return base64.RawStdEncoding.EncodeToString(h.Sum(nil)), nil
+func (k *KeyPair) ExtractKeyFromPem() string {
+	// Extract only the key from the Pem and base64 encode it
+	block, _ := pem.Decode(k.PrivateKey)
+	return base64.StdEncoding.EncodeToString(block.Bytes)
 }
