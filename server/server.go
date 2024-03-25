@@ -175,6 +175,10 @@ func NewServer(args []string) {
 
 		s.sshConf.NoClientAuth = false
 		s.sshConf.PublicKeyCallback = s.clientVerification
+	} else {
+		if s.certJarFile != "" {
+			s.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
+		}
 	}
 
 	fingerprint, gErr := scrypt.GenerateFingerprint(signer.PublicKey())
