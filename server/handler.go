@@ -1,9 +1,12 @@
 package server
 
 import (
-	"github.com/gorilla/websocket"
+	"context"
+	"fmt"
 	"html/template"
+	"net"
 	"net/http"
+	"slider/pkg/conf"
 	"slider/pkg/slog"
 	"strings"
 )
@@ -44,7 +47,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{HandshakeTimeout: s.conf.timeout}
+	var upgrader = conf.NewWebSocketUpgrader()
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -56,6 +59,30 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
 
 	session := s.newWebSocketSession(wsConn)
+	defer s.dropWebSocketSession(session)
+
+	s.NewSSHServer(session)
+}
+
+func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool) {
+	wsConfig := conf.NewWebSocketDialer()
+
+	wsConn, _, err := wsConfig.DialContext(
+		context.Background(),
+		fmt.Sprintf("ws://%s", clientAddr.String()), http.Header{})
+	if err != nil {
+		s.Errorf(
+			"Failed to open a WebSocket connection to \"%s\": %v",
+			clientAddr.String(),
+			err,
+		)
+		return
+	}
+	defer func() { _ = wsConn.Close() }()
+
+	session := s.newWebSocketSession(wsConn)
+	session.notifier = notifier
+
 	defer s.dropWebSocketSession(session)
 
 	s.NewSSHServer(session)

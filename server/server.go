@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
@@ -22,8 +23,8 @@ import (
 const clientCertsFile = "client-certs.json"
 const serverCertFile = "server-cert.json"
 
-// config creates the server configuration build from flags
-type config struct {
+// serverConf creates the server configuration build from flags
+type serverConf struct {
 	keyGen    bool
 	keyFile   string
 	authFile  string
@@ -52,7 +53,7 @@ type certTrack struct {
 
 type server struct {
 	*slog.Logger
-	conf              *config
+	conf              *serverConf
 	sshConf           *ssh.ServerConfig
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
@@ -70,7 +71,7 @@ func NewServer(args []string) {
 	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
-	keepalive := serverFlags.Duration("keepalive", 60*time.Second, "Sets keepalive interval vs Clients")
+	keepalive := serverFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
@@ -91,7 +92,7 @@ func NewServer(args []string) {
 		return
 	}
 
-	conf := &config{
+	conf := &serverConf{
 		addr: address{
 			host: *ip,
 			port: *port,

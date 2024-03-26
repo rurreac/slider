@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func (s *server) NewSSHServer(session *Session) {
-	netConn := sconn.WsConnToNetConn(session.shellWsConn)
+	netConn := sconn.WsConnToNetConn(session.wsConn)
 
 	var shellConn *ssh.ServerConn
 	var newChan <-chan ssh.NewChannel
@@ -21,6 +22,9 @@ func (s *server) NewSSHServer(session *Session) {
 	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
 	if err != nil {
 		s.Errorf("Failed to create SSH server %v", err)
+		if session.notifier != nil {
+			session.notifier <- false
+		}
 		return
 	}
 	session.addSessionSSHConnection(shellConn)
@@ -35,10 +39,14 @@ func (s *server) NewSSHServer(session *Session) {
 
 	s.Debugf(
 		"SSH Connection received from: address: %s, client version: %s, session: %v",
-		session.shellConn.RemoteAddr().String(),
-		session.shellConn.ClientVersion(),
-		session.shellConn.SessionID(),
+		session.sshConn.RemoteAddr().String(),
+		session.sshConn.ClientVersion(),
+		session.sshConn.SessionID(),
 	)
+
+	if session.notifier != nil {
+		session.notifier <- true
+	}
 
 	if s.conf.keepalive > 0 {
 		go session.keepAlive(s.conf.keepalive)
@@ -109,10 +117,14 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				session.Errorf("Keep-Alive Session ID %d - Connection error while replying.", session.sessionID)
 				return
 			}
-		case "interpreter":
-			i := &interpreter.Interpreter{}
-			_ = json.Unmarshal(r.Payload, i)
-			session.ClientInterpreter = i
+		case "client-info":
+			ci := &conf.ClientInfo{}
+			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
+				s.Errorf("Failed to parse Client Info - %v", jErr)
+			}
+			session.ClientInterpreter = ci.Interpreter
+			session.IsListener = ci.IsListener
+
 			_ = session.replyConnRequest(r, true, nil)
 		default:
 			ssh.DiscardRequests(connReq)

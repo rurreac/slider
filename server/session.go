@@ -27,17 +27,19 @@ import (
 // Session represents a session from a client to the server
 type Session struct {
 	*slog.Logger
+	notifier          chan bool
 	hostIP            string
 	sessionID         int64
-	shellWsConn       *websocket.Conn
-	shellConn         *ssh.ServerConn
-	shellChannel      ssh.Channel
+	wsConn            *websocket.Conn
+	sshConn           *ssh.ServerConn
+	sshChannel        ssh.Channel
 	shellOpened       bool
 	rawTerm           bool
 	KeepAliveChan     chan bool
 	keepAliveOn       bool
 	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
+	IsListener        bool
 	sessionMutex      sync.Mutex
 	fingerprint       string
 }
@@ -58,7 +60,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	session := &Session{
 		sessionID:     sc,
 		hostIP:        host,
-		shellWsConn:   wsConn,
+		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
 		SocksInstance: &ssocks.Instance{
@@ -69,7 +71,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrackMutex.Unlock()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
-		sc, sa, sa, session.shellWsConn.RemoteAddr().String())
+		sc, sa, sa, session.wsConn.RemoteAddr().String())
 	return session
 }
 
@@ -90,13 +92,13 @@ func (s *server) dropWebSocketSession(session *Session) {
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
 	s.sessionTrack.SessionActive = sa
 
-	_ = session.shellWsConn.Close()
+	_ = session.wsConn.Close()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		s.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,
-		session.shellWsConn.RemoteAddr().String(),
+		session.wsConn.RemoteAddr().String(),
 	)
 
 	delete(s.sessionTrack.Sessions, session.sessionID)
@@ -113,13 +115,13 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 
 func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 	session.sessionMutex.Lock()
-	session.shellConn = sshConn
+	session.sshConn = sshConn
 	session.sessionMutex.Unlock()
 }
 
 func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Lock()
-	session.shellChannel = channel
+	session.sshChannel = channel
 	session.sessionMutex.Unlock()
 }
 
@@ -137,7 +139,7 @@ func (session *Session) setKeepAliveOn(aliveCheck bool) {
 
 func (session *Session) closeSessionChannel() {
 	session.sessionMutex.Lock()
-	_ = session.shellChannel.Close()
+	_ = session.sshChannel.Close()
 	session.sessionMutex.Unlock()
 }
 
@@ -154,7 +156,7 @@ func (session *Session) sessionExecute(initTermState *term.State) error {
 	}()
 
 	// Copy ssh channel to stdout. Copy will stop on exit.
-	if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
+	if _, outCopyErr := io.Copy(os.Stdout, session.sshChannel); outCopyErr != nil {
 		return fmt.Errorf("copy stdout: %v", outCopyErr)
 	}
 	return nil
@@ -214,7 +216,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 
 	go func() {
 		// Copy ssh channel to stdout. Copy will stop on exit.
-		_, _ = io.Copy(os.Stdout, session.shellChannel)
+		_, _ = io.Copy(os.Stdout, session.sshChannel)
 
 		// Remote Shell is closed, print out message
 		fmt.Printf("%s", msgOut)
@@ -223,12 +225,12 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
 	// This io.Copy always requires input as os.Stdin is a blocker
 	// Copy all stdin to ssh channel.
-	_, _ = io.Copy(session.shellChannel, os.Stdin)
+	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
 	session.Debugf(
 		"Session ID %d - Closed Reverse Shell (%s).",
 		session.sessionID,
-		session.shellWsConn.RemoteAddr().String(),
+		session.wsConn.RemoteAddr().String(),
 	)
 }
 
@@ -297,7 +299,7 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 	var pOk bool
 	var resPayload []byte
 
-	pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
+	pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
 	if err != nil || !pOk {
 		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%v'\"", pOk, resPayload, err)
 	}
@@ -325,7 +327,7 @@ func (session *Session) socksEnable(port int) {
 		Logger:     session.Logger,
 		IsEndpoint: true,
 		Port:       port,
-		SSHConn:    session.shellConn,
+		SSHConn:    session.sshConn,
 	}
 	session.sessionMutex.Lock()
 	session.SocksInstance = ssocks.New(sConfig)
@@ -338,7 +340,7 @@ func (session *Session) socksEnable(port int) {
 
 func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
 	go func() {
 		for s := range action.UploadToClient(fileList) {
 			status <- s
@@ -351,7 +353,7 @@ func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
 
 func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
 	go func() {
 		for s := range action.DownloadFromClient(fileList) {
 			status <- s
@@ -364,7 +366,7 @@ func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
 
 func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action, err := sio.NewBatchAction(session.shellConn, fileListPath)
+	fileList, action, err := sio.NewBatchAction(session.sshConn, fileListPath)
 	if err != nil {
 		status <- sio.Status{
 			FileInfo: sio.FileInfo{},
