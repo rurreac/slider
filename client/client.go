@@ -61,7 +61,7 @@ Flags:
 
 func NewClient(args []string) {
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
-	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
+	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
 	keepAlive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
@@ -190,13 +190,8 @@ func (c *client) newSSHClient(session *Session) {
 	c.Infof("Server connected (%s)", session.wsConn.RemoteAddr().String())
 	c.Debugf("%sSSH Session %v\n", session.logID, session.sshConn.SessionID())
 
-	// Send Interpreter Information to Server
-	clientInfo, cErr := newClientInfo()
-	if cErr != nil {
-		c.Fatalf("Failed to generate Client Info - %v", cErr)
-	}
-	clientInfo.IsListener = c.isListener
-	session.addInterpreter(clientInfo.Interpreter)
+	// Send Client Information to Server
+	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter, IsListener: c.isListener}
 	go session.sendClientInfo(clientInfo)
 
 	if c.keepalive > 0 {

@@ -103,13 +103,18 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		var payload []byte
 		switch r.Type {
 		case "window-size":
-			if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-				tSize := interpreter.TermSize{
-					Rows: height,
-					Cols: width,
-				}
-				payload, _ = json.Marshal(tSize)
+			tSize := interpreter.TermSize{}
+			// Could be checking size from os.Stdin Fd
+			//  but os.Stdout Fd is the one that works with Windows as well
+			width, height, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil {
+				session.Errorf("Failed to obtain terminal size")
 			}
+			tSize = interpreter.TermSize{
+				Rows: height,
+				Cols: width,
+			}
+			payload, _ = json.Marshal(tSize)
 			_ = session.replyConnRequest(r, true, payload)
 		case "keep-alive":
 			replyErr := session.replyConnRequest(r, true, []byte("pong"))

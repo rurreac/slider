@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
-	"os"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"slider/pkg/ssocks"
@@ -19,7 +18,6 @@ type Session struct {
 	logID         string
 	sessionID     int64
 	serverAddr    string
-	ptyFile       *os.File
 	wsConn        *websocket.Conn
 	sshConn       ssh.Conn
 	keepalive     time.Duration
@@ -33,6 +31,7 @@ type Session struct {
 
 func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	c.sessionTrackMutex.Lock()
+	defer c.sessionTrackMutex.Unlock()
 	sc := atomic.AddInt64(&c.sessionTrack.SessionCount, 1)
 	sa := atomic.AddInt64(&c.sessionTrack.SessionActive, 1)
 	c.sessionTrack.SessionCount = sc
@@ -59,9 +58,12 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 			wsConn.RemoteAddr().String(),
 		)
 	}
-
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		c.Fatalf("Interpreter not supported - %v", iErr)
+	}
+	session.interpreter = i
 	c.sessionTrack.Sessions[sc] = session
-	c.sessionTrackMutex.Unlock()
 
 	c.Debugf("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.wsConn.RemoteAddr().String())
@@ -94,5 +96,7 @@ func (c *client) dropWebSocketSession(session *Session) {
 }
 
 func (s *Session) addInterpreter(i *interpreter.Interpreter) {
+	s.sessionMutex.Lock()
 	s.interpreter = i
+	s.sessionMutex.Unlock()
 }

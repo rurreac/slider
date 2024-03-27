@@ -8,6 +8,7 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
 	"io"
+	"os"
 	"os/exec"
 	"slider/pkg/interpreter"
 )
@@ -46,14 +47,15 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 			s.Errorf("pty-req %v", errSSHReq)
 		}
 
-		s.ptyFile, _ = pty.StartWithSize(cmd, &pty.Winsize{
+		ptyF, _ := pty.StartWithSize(cmd, &pty.Winsize{
 			Rows: uint16(termSize.Rows),
 			Cols: uint16(termSize.Cols),
 		})
+		s.setPtyFile(ptyF)
 
 		// Copy all SSH session output to the term
 		go func() {
-			if _, outCopyErr := io.Copy(s.ptyFile, channel); outCopyErr != nil {
+			if _, outCopyErr := io.Copy(s.interpreter.Pty, channel); outCopyErr != nil {
 				s.Debugf("Copy stdout: %s", outCopyErr)
 			}
 		}()
@@ -62,7 +64,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		_ = s.replyConnRequest(request, true, []byte("shell-ready"))
 
 		// Copy term output to SSH session stdin
-		if _, inCopyErr := io.Copy(channel, s.ptyFile); inCopyErr != nil {
+		if _, inCopyErr := io.Copy(channel, s.interpreter.Pty); inCopyErr != nil {
 			s.Debugf("Copy stdin: %s", inCopyErr)
 		}
 	} else {
@@ -94,4 +96,10 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 			s.Errorf("failed to execute command error - %v", runErr)
 		}
 	}
+}
+
+func (s *Session) setPtyFile(ptyF *os.File) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.interpreter.Pty = ptyF
 }

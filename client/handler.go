@@ -3,7 +3,6 @@ package client
 import (
 	"net/http"
 	"slider/pkg/conf"
-	"slider/pkg/interpreter"
 	"strings"
 )
 
@@ -40,12 +39,6 @@ func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	session := c.newWebSocketSession(wsConn)
 	defer c.dropWebSocketSession(session)
-
-	i, iErr := interpreter.NewInterpreter()
-	if iErr != nil {
-		session.Fatalf("Interpreter not supported - %v", iErr)
-	}
-	session.addInterpreter(i)
 
 	session.disconnect = make(chan bool, 1)
 

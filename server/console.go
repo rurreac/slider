@@ -107,15 +107,15 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	s.console.PrintWarnSelect("Console does not recognize Command: ", fCmd...)
 
 	// If a Shell was not set just return
-	if s.ServerInterpreter.Shell == "" {
+	if s.serverInterpreter.Shell == "" {
 		return
 	}
 
 	// Else, we'll try to execute the command locally
 	s.console.PrintlnWarn("Will run an OS command locally instead...")
-	fCmd = append(s.ServerInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
-	cmd := exec.Command(s.ServerInterpreter.Shell, fCmd...) //nolint:gosec
+	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
@@ -265,7 +265,7 @@ func (s *server) sessionsCommand(args ...string) {
 			s.console.Printf("%s", err)
 			return
 		}
-		session.sessionInteractive(s.console.InitState, s.ServerInterpreter.WinChangeCall)
+		session.sessionInteractive(s.console.InitState, s.serverInterpreter.WinChangeCall)
 		return
 	}
 

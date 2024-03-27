@@ -48,7 +48,7 @@ type server struct {
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
 	console           Console
-	ServerInterpreter *interpreter.Interpreter
+	serverInterpreter *interpreter.Interpreter
 	certTrack         *certTrack
 	certTrackMutex    sync.Mutex
 	certJarFile       string
@@ -59,7 +59,7 @@ type server struct {
 
 func NewServer(args []string) {
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
-	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error]")
+	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
 	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
 	port := serverFlags.String("port", "8080", "Port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
@@ -116,7 +116,7 @@ func NewServer(args []string) {
 		},
 		sshConf:           sshConf,
 		console:           Console{},
-		ServerInterpreter: i,
+		serverInterpreter: i,
 		certTrack: &certTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},

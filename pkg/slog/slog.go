@@ -16,24 +16,26 @@ type LogBuff struct {
 }
 
 type Logger struct {
-	LogLevel int
-	debug    bool
+	logLevel int
 	logger   *log.Logger
 	logBuff  *LogBuff
 	colorOn  bool
 }
 
-const LvlDebug = 0
-const LvlInfo = 1
-const LvlWarn = 2
-const LvlError = 3
+const (
+	lvlDebug = 0
+	lvlInfo  = 1
+	lvlWarn  = 2
+	lvlError = 3
+	disabled = 9
+)
 
 var (
-	DEBUG = " DEBU "
-	INFO  = " INFO "
-	WARN  = " WARN "
-	ERROR = " ERRO "
-	FATAL = " FATA "
+	DEBUG = "DEBU"
+	INFO  = "INFO"
+	WARN  = "WARN"
+	ERROR = "ERRO"
+	FATAL = "FATA"
 )
 
 func (lb *LogBuff) Write(p []byte) (int, error) {
@@ -51,27 +53,11 @@ func NewLogger(prefix string) *Logger {
 		buff: make([]byte, 0),
 	}
 	l := &Logger{
-		LogLevel: LvlInfo,
+		logLevel: lvlInfo,
 		logger:   log.New(os.Stdout, prefix, log.LstdFlags|log.Lmsgprefix),
-		debug:    false,
 		logBuff:  lb,
 	}
 	return l
-}
-
-func (l *Logger) WithDebug() {
-	l.LogLevel = LvlDebug
-}
-func (l *Logger) WithInfo() {
-	l.LogLevel = LvlInfo
-}
-
-func (l *Logger) WithWarn() {
-	l.LogLevel = LvlWarn
-}
-
-func (l *Logger) WithError() {
-	l.LogLevel = LvlError
 }
 
 func (l *Logger) WithColors() {
@@ -102,45 +88,47 @@ func (l *Logger) Printf(t string, args ...interface{}) {
 }
 
 func (l *Logger) Debugf(t string, args ...interface{}) {
-	if l.LogLevel == LvlDebug {
-		l.logger.Printf(DEBUG+t, args...)
+	if l.logLevel == lvlDebug {
+		l.logger.Printf(" "+DEBUG+" "+t, args...)
 	}
 }
 
 func (l *Logger) Warnf(t string, args ...interface{}) {
-	if l.LogLevel <= LvlWarn {
-		l.logger.Printf(WARN+t, args...)
+	if l.logLevel <= lvlWarn {
+		l.logger.Printf(" "+WARN+" "+t, args...)
 	}
 }
 
 func (l *Logger) Infof(t string, args ...interface{}) {
-	if l.LogLevel <= LvlInfo {
-		l.logger.Printf(INFO+t, args...)
+	if l.logLevel <= lvlInfo {
+		l.logger.Printf(" "+INFO+" "+t, args...)
 	}
 }
 
 func (l *Logger) Fatalf(t string, args ...interface{}) {
-	l.logger.Fatalf(FATAL+t, args...)
+	l.logger.Fatalf(" "+FATAL+" "+t, args...)
 }
 
 func (l *Logger) Errorf(t string, args ...interface{}) {
-	if l.LogLevel <= LvlError {
-		l.logger.Printf(ERROR+t, args...)
+	if l.logLevel <= lvlError {
+		l.logger.Printf(" "+ERROR+" "+t, args...)
 	}
 }
 
 func (l *Logger) SetLevel(verbosity string) error {
 	switch strings.ToUpper(verbosity) {
 	case "DEBUG":
-		l.WithDebug()
+		l.logLevel = lvlDebug
 	case "INFO":
-		l.WithInfo()
+		l.logLevel = lvlInfo
 	case "WARN":
-		l.WithWarn()
+		l.logLevel = lvlWarn
 	case "ERROR":
-		l.WithError()
+		l.logLevel = lvlError
+	case "OFF":
+		l.logLevel = disabled
 	default:
-		return fmt.Errorf("wrong log level, expected one of [debug|info|warn|error]")
+		return fmt.Errorf("wrong log level, expected one of [debug|info|warn|error|off]")
 	}
 	return nil
 }

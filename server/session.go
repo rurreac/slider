@@ -198,8 +198,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
 		//		according to window-change events on the Server Terminal, sending Connection Requests.
 		if winChangeCall != 0 {
-			winChange := make(chan os.Signal, 1)
-			defer close(winChange)
+			winChange := make(chan os.Signal)
 			signal.Notify(winChange, winChangeCall)
 
 			go session.captureWindowChange(winChange)
@@ -241,7 +240,9 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	// TODO: Events could be packed in 3-5s since the first event sending the just the latest.
 	for range winChange {
 		if session.shellOpened {
-			if cols, rows, sizeErr := term.GetSize(int(os.Stdin.Fd())); sizeErr == nil {
+			// Could be checking size from os.Stdin Fd
+			//  but os.Stdout Fd is the one that works with Windows as well
+			if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
 				session.Debugf(
 					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
 					session.sessionID,
@@ -303,7 +304,7 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 	var resPayload []byte
 
 	pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
-	if err != nil || !pOk {
+	if err != nil {
 		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%v'\"", pOk, resPayload, err)
 	}
 
