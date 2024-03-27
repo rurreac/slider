@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"runtime"
+	"strings"
 	"syscall"
 )
 
@@ -31,20 +32,30 @@ type TermSize struct {
 	Cols int `json:"cols"`
 }
 
+func IsPtyOn() bool {
+	return conpty.IsConPtyAvailable()
+}
+
 func NewInterpreter() (*Interpreter, error) {
 	// TODO: Logic to decide running "cmd" or "powershell" (default to "cmd")
 	i := &Interpreter{}
 
 	i.Arch = runtime.GOARCH
 	i.System = runtime.GOOS
-	i.User = "--"
-	if u, uErr := user.Current(); uErr == nil {
-		i.User = u.Username
-	}
 	var hErr error
 	i.Hostname, hErr = os.Hostname()
 	if hErr != nil {
 		i.Hostname = "--"
+	}
+	i.User = "--"
+	if u, uErr := user.Current(); uErr == nil {
+		i.User = u.Username
+		fUserName := strings.Split(u.Username, string(os.PathSeparator))
+		// If the username does not identify a Domain User
+		// remove the hostname part from the username
+		if fUserName[0] == i.Hostname {
+			i.User = fUserName[1]
+		}
 	}
 
 	// TODO: Default path but might not be this one

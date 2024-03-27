@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 
@@ -11,7 +12,12 @@ import (
 )
 
 func (s *server) NewSSHServer(session *Session) {
-	netConn := sconn.WsConnToNetConn(session.shellWsConn)
+	netConn := sconn.WsConnToNetConn(session.wsConn)
+
+	s.Debugf(
+		"Established WebSocket connection with client \"%s\"",
+		netConn.RemoteAddr().String(),
+	)
 
 	var shellConn *ssh.ServerConn
 	var newChan <-chan ssh.NewChannel
@@ -21,6 +27,9 @@ func (s *server) NewSSHServer(session *Session) {
 	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
 	if err != nil {
 		s.Errorf("Failed to create SSH server %v", err)
+		if session.notifier != nil {
+			session.notifier <- false
+		}
 		return
 	}
 	session.addSessionSSHConnection(shellConn)
@@ -29,19 +38,18 @@ func (s *server) NewSSHServer(session *Session) {
 	}
 
 	s.Debugf(
-		"New SSH Server with WebSocket as underlying transport connected to client \"%s\"",
-		netConn.RemoteAddr().String(),
+		"Upgraded Websocket transport to SSH Connection: address: %s, client version: %s, session: %v",
+		session.sshConn.RemoteAddr().String(),
+		session.sshConn.ClientVersion(),
+		session.sshConn.SessionID(),
 	)
 
-	s.Debugf(
-		"SSH Connection received from: address: %s, client version: %s, session: %v",
-		session.shellConn.RemoteAddr().String(),
-		session.shellConn.ClientVersion(),
-		session.shellConn.SessionID(),
-	)
+	if session.notifier != nil {
+		session.notifier <- true
+	}
 
-	if s.conf.keepalive > 0 {
-		go session.keepAlive(s.conf.keepalive)
+	if s.keepalive > 0 {
+		go session.keepAlive(s.keepalive)
 	}
 
 	// Requests and NewChannel channels must be serviced/discarded or the connection hangs
@@ -95,24 +103,33 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		var payload []byte
 		switch r.Type {
 		case "window-size":
-			if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-				tSize := interpreter.TermSize{
-					Rows: height,
-					Cols: width,
-				}
-				payload, _ = json.Marshal(tSize)
+			tSize := interpreter.TermSize{}
+			// Could be checking size from os.Stdin Fd
+			//  but os.Stdout Fd is the one that works with Windows as well
+			width, height, err := term.GetSize(int(os.Stdout.Fd()))
+			if err != nil {
+				session.Errorf("Failed to obtain terminal size")
 			}
+			tSize = interpreter.TermSize{
+				Rows: height,
+				Cols: width,
+			}
+			payload, _ = json.Marshal(tSize)
 			_ = session.replyConnRequest(r, true, payload)
 		case "keep-alive":
 			replyErr := session.replyConnRequest(r, true, []byte("pong"))
 			if replyErr != nil {
-				session.Errorf("Keep-Alive Session ID %d - Connection error while replying.", session.sessionID)
+				session.Errorf("Session ID %d (KeepAlive)- Connection error while replying.", session.sessionID)
 				return
 			}
-		case "interpreter":
-			i := &interpreter.Interpreter{}
-			_ = json.Unmarshal(r.Payload, i)
-			session.ClientInterpreter = i
+		case "client-info":
+			ci := &conf.ClientInfo{}
+			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
+				s.Errorf("Failed to parse Client Info - %v", jErr)
+			}
+			session.ClientInterpreter = ci.Interpreter
+			session.IsListener = ci.IsListener
+
 			_ = session.replyConnRequest(r, true, nil)
 		default:
 			ssh.DiscardRequests(connReq)

@@ -1,10 +1,11 @@
 package server
 
 import (
-	"github.com/gorilla/websocket"
-	"html/template"
+	"context"
+	"fmt"
+	"net"
 	"net/http"
-	"slider/pkg/slog"
+	"slider/pkg/conf"
 	"strings"
 )
 
@@ -18,22 +19,6 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/health":
 		_, err = w.Write([]byte("OK"))
-	case "/stats":
-		if s.LogLevel == slog.LvlDebug {
-			statsTmpl := template.Must(template.New("stats").Parse(`
-			{{if not .Sessions}}
-				<div>No Sessions</div> 
-			{{else}}
-				<div>Active sessions: {{.SessionActive}}</div>
-				{{range $sessionId, $addr := .Sessions }}
-					<li>Session {{$addr}} -> {{$sessionId}}</li>
-				{{end}}
-			{{end}}`))
-			if err = statsTmpl.Execute(w, s.sessionTrack); err == nil {
-				return
-			}
-		}
-		fallthrough
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		_, err = w.Write([]byte("Not Found"))
@@ -44,7 +29,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = websocket.Upgrader{HandshakeTimeout: s.conf.timeout}
+	var upgrader = conf.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -56,6 +41,30 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
 
 	session := s.newWebSocketSession(wsConn)
+	defer s.dropWebSocketSession(session)
+
+	s.NewSSHServer(session)
+}
+
+func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool) {
+	wsConfig := conf.DefaultWebSocketDialer
+
+	wsConn, _, err := wsConfig.DialContext(
+		context.Background(),
+		fmt.Sprintf("ws://%s", clientAddr.String()), http.Header{})
+	if err != nil {
+		s.Errorf(
+			"Failed to open a WebSocket connection to \"%s\": %v",
+			clientAddr.String(),
+			err,
+		)
+		return
+	}
+	defer func() { _ = wsConn.Close() }()
+
+	session := s.newWebSocketSession(wsConn)
+	session.notifier = notifier
+
 	defer s.dropWebSocketSession(session)
 
 	s.NewSSHServer(session)

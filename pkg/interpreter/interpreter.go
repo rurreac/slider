@@ -75,6 +75,13 @@ func findSafeShell() string {
 	return ""
 }
 
+func IsPtyOn() bool {
+	if slices.Contains(nixPty, runtime.GOOS) {
+		return true
+	}
+	return false
+}
+
 func NewInterpreter() (*Interpreter, error) {
 	// TODO: We may want to let the user choose what shell to run?
 	i := &Interpreter{
@@ -93,9 +100,7 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 
-	if slices.Contains(nixPty, i.System) {
-		i.PtyOn = true
-	}
+	i.PtyOn = IsPtyOn()
 
 	// For some reason a combination of non a PTY terminal and a ZSH shell breaks the i/o assignment
 	// while sending a reverse shell and the command stdin defaults to io.Stdin.

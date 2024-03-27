@@ -27,17 +27,19 @@ import (
 // Session represents a session from a client to the server
 type Session struct {
 	*slog.Logger
+	notifier          chan bool
 	hostIP            string
 	sessionID         int64
-	shellWsConn       *websocket.Conn
-	shellConn         *ssh.ServerConn
-	shellChannel      ssh.Channel
+	wsConn            *websocket.Conn
+	sshConn           *ssh.ServerConn
+	sshChannel        ssh.Channel
 	shellOpened       bool
 	rawTerm           bool
 	KeepAliveChan     chan bool
 	keepAliveOn       bool
 	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
+	IsListener        bool
 	sessionMutex      sync.Mutex
 	fingerprint       string
 }
@@ -58,18 +60,20 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	session := &Session{
 		sessionID:     sc,
 		hostIP:        host,
-		shellWsConn:   wsConn,
+		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
 		SocksInstance: &ssocks.Instance{
 			InstanceConfig: &ssocks.InstanceConfig{},
 		},
 	}
+
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
 
 	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
-		sc, sa, sa, session.shellWsConn.RemoteAddr().String())
+		sc, sa, sa, session.wsConn.RemoteAddr().String())
+
 	return session
 }
 
@@ -90,13 +94,13 @@ func (s *server) dropWebSocketSession(session *Session) {
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
 	s.sessionTrack.SessionActive = sa
 
-	_ = session.shellWsConn.Close()
+	_ = session.wsConn.Close()
 
-	s.Infof("Sessions -> Global: %d, Active: %d (Dropped Session ID %d: %s)",
+	s.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		s.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,
-		session.shellWsConn.RemoteAddr().String(),
+		session.wsConn.RemoteAddr().String(),
 	)
 
 	delete(s.sessionTrack.Sessions, session.sessionID)
@@ -113,13 +117,13 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 
 func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 	session.sessionMutex.Lock()
-	session.shellConn = sshConn
+	session.sshConn = sshConn
 	session.sessionMutex.Unlock()
 }
 
 func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Lock()
-	session.shellChannel = channel
+	session.sshChannel = channel
 	session.sessionMutex.Unlock()
 }
 
@@ -137,7 +141,7 @@ func (session *Session) setKeepAliveOn(aliveCheck bool) {
 
 func (session *Session) closeSessionChannel() {
 	session.sessionMutex.Lock()
-	_ = session.shellChannel.Close()
+	_ = session.sshChannel.Close()
 	session.sessionMutex.Unlock()
 }
 
@@ -154,7 +158,7 @@ func (session *Session) sessionExecute(initTermState *term.State) error {
 	}()
 
 	// Copy ssh channel to stdout. Copy will stop on exit.
-	if _, outCopyErr := io.Copy(os.Stdout, session.shellChannel); outCopyErr != nil {
+	if _, outCopyErr := io.Copy(os.Stdout, session.sshChannel); outCopyErr != nil {
 		return fmt.Errorf("copy stdout: %v", outCopyErr)
 	}
 	return nil
@@ -194,8 +198,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
 		//		according to window-change events on the Server Terminal, sending Connection Requests.
 		if winChangeCall != 0 {
-			winChange := make(chan os.Signal, 1)
-			defer close(winChange)
+			winChange := make(chan os.Signal)
 			signal.Notify(winChange, winChangeCall)
 
 			go session.captureWindowChange(winChange)
@@ -214,7 +217,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 
 	go func() {
 		// Copy ssh channel to stdout. Copy will stop on exit.
-		_, _ = io.Copy(os.Stdout, session.shellChannel)
+		_, _ = io.Copy(os.Stdout, session.sshChannel)
 
 		// Remote Shell is closed, print out message
 		fmt.Printf("%s", msgOut)
@@ -223,12 +226,12 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
 	// This io.Copy always requires input as os.Stdin is a blocker
 	// Copy all stdin to ssh channel.
-	_, _ = io.Copy(session.shellChannel, os.Stdin)
+	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
 	session.Debugf(
-		"Session ID %d - Closed Reverse Shell (%s).",
+		"Session ID %d - Closed Reverse Shell (%s)",
 		session.sessionID,
-		session.shellWsConn.RemoteAddr().String(),
+		session.wsConn.RemoteAddr().String(),
 	)
 }
 
@@ -237,9 +240,12 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	// TODO: Events could be packed in 3-5s since the first event sending the just the latest.
 	for range winChange {
 		if session.shellOpened {
-			if cols, rows, sizeErr := term.GetSize(int(os.Stdin.Fd())); sizeErr == nil {
+			// Could be checking size from os.Stdin Fd
+			//  but os.Stdout Fd is the one that works with Windows as well
+			if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
 				session.Debugf(
-					"Terminal size changed: rows %d cols %d.\n",
+					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
+					session.sessionID,
 					rows,
 					cols,
 				)
@@ -274,13 +280,13 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Debugf("Keep-Alive SessionID %d - KeepAlive Check Stopped.", session.sessionID)
+			session.Debugf("Session ID %d - KeepAlive Check Stopped", session.sessionID)
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
 				session.Errorf(
-					"Keep-Alive SessionID %d - Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
+					"Session ID %d - KeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
 					session.sessionID,
 					ok,
 					p,
@@ -297,8 +303,8 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 	var pOk bool
 	var resPayload []byte
 
-	pOk, resPayload, err = session.shellConn.SendRequest(requestType, wantReply, payload)
-	if err != nil || !pOk {
+	pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
+	if err != nil {
 		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%v'\"", pOk, resPayload, err)
 	}
 
@@ -311,9 +317,9 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
 	}
 	session.Debugf(
-		"Replying Connection Request Type \"%s\" from SessionID %d, will send \"%v\" %s",
-		request.Type,
+		"Session ID %d - Replying Connection Request Type \"%s\", will send \"%v\" %s",
 		session.sessionID,
+		request.Type,
 		ok,
 		pMsg,
 	)
@@ -325,20 +331,20 @@ func (session *Session) socksEnable(port int) {
 		Logger:     session.Logger,
 		IsEndpoint: true,
 		Port:       port,
-		SSHConn:    session.shellConn,
+		SSHConn:    session.sshConn,
 	}
 	session.sessionMutex.Lock()
 	session.SocksInstance = ssocks.New(sConfig)
 	session.sessionMutex.Unlock()
 
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
-		session.Errorf("Session ID %d - SOCKS - %v", session.sessionID, sErr)
+		session.Errorf("Session ID %d (Socks) - %v", session.sessionID, sErr)
 	}
 }
 
 func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
 	go func() {
 		for s := range action.UploadToClient(fileList) {
 			status <- s
@@ -351,7 +357,7 @@ func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
 
 func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.shellConn, src, dst)
+	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
 	go func() {
 		for s := range action.DownloadFromClient(fileList) {
 			status <- s
@@ -364,7 +370,7 @@ func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
 
 func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status {
 	status := make(chan sio.Status)
-	fileList, action, err := sio.NewBatchAction(session.shellConn, fileListPath)
+	fileList, action, err := sio.NewBatchAction(session.sshConn, fileListPath)
 	if err != nil {
 		status <- sio.Status{
 			FileInfo: sio.FileInfo{},
