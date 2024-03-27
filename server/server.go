@@ -23,16 +23,6 @@ import (
 const clientCertsFile = "client-certs.json"
 const serverCertFile = "server-cert.json"
 
-// serverConf creates the server configuration build from flags
-type serverConf struct {
-	keyGen    bool
-	keyFile   string
-	authFile  string
-	addr      address
-	timeout   time.Duration
-	keepalive time.Duration
-}
-
 type address struct {
 	host string
 	port string
@@ -53,7 +43,7 @@ type certTrack struct {
 
 type server struct {
 	*slog.Logger
-	conf              *serverConf
+	addr              address
 	sshConf           *ssh.ServerConfig
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
@@ -64,6 +54,7 @@ type server struct {
 	certJarFile       string
 	authOn            bool
 	certSaveOn        bool
+	keepalive         time.Duration
 }
 
 func NewServer(args []string) {
@@ -92,15 +83,6 @@ func NewServer(args []string) {
 		return
 	}
 
-	conf := &serverConf{
-		addr: address{
-			host: *ip,
-			port: *port,
-		},
-		keepalive: *keepalive,
-		keyGen:    false,
-	}
-
 	sshConf := &ssh.ServerConfig{
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
@@ -112,7 +94,8 @@ func NewServer(args []string) {
 	}
 
 	log := slog.NewLogger("Server")
-	if lvErr := log.SetLevel(*verbose); lvErr != nil {
+	lvErr := log.SetLevel(*verbose)
+	if lvErr != nil {
 		fmt.Printf("%v", lvErr)
 		return
 	}
@@ -123,7 +106,10 @@ func NewServer(args []string) {
 	}
 
 	s := &server{
-		conf:   conf,
+		addr: address{
+			host: *ip,
+			port: *port,
+		},
 		Logger: log,
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
@@ -136,6 +122,7 @@ func NewServer(args []string) {
 		},
 		certJarFile: *certJarFile,
 		authOn:      *auth,
+		keepalive:   *keepalive,
 	}
 
 	var signer ssh.Signer
@@ -190,14 +177,14 @@ func NewServer(args []string) {
 
 	l, lisErr := net.Listen(
 		"tcp",
-		fmt.Sprintf("%s:%s", s.conf.addr.host, s.conf.addr.port),
+		fmt.Sprintf("%s:%s", s.addr.host, s.addr.port),
 	)
 	if lisErr != nil {
 		s.Fatalf("Listener: %v", lisErr)
 
 	}
 
-	s.Infof("Listening on %s://%s:%s", l.Addr().Network(), conf.addr.host, conf.addr.port)
+	s.Infof("Listening on %s://%s:%s", l.Addr().Network(), s.addr.host, s.addr.port)
 	s.Infof("Press CTR^C to access the Slider Console")
 
 	// Hold the execution until exit from the console
@@ -211,13 +198,13 @@ func NewServer(args []string) {
 	go func() {
 		for range sig {
 			// Send logs to a buffer
-			s.Logger.LogToBuffer()
+			s.LogToBuffer()
 			// Run a Slider Console (NewConsole locks until termination),
 			// 'out' will always be equal to "bg" or "exit"
 			out := s.NewConsole()
 			// Restore logs from buffer and resume output to stdout
-			s.Logger.BufferOut()
-			s.Logger.LogToStdout()
+			s.BufferOut()
+			s.LogToStdout()
 			if out == "exit" {
 				break
 			}

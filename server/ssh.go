@@ -14,6 +14,11 @@ import (
 func (s *server) NewSSHServer(session *Session) {
 	netConn := sconn.WsConnToNetConn(session.wsConn)
 
+	s.Debugf(
+		"Established WebSocket connection with client \"%s\"",
+		netConn.RemoteAddr().String(),
+	)
+
 	var shellConn *ssh.ServerConn
 	var newChan <-chan ssh.NewChannel
 	var reqChan <-chan *ssh.Request
@@ -33,12 +38,7 @@ func (s *server) NewSSHServer(session *Session) {
 	}
 
 	s.Debugf(
-		"New SSH Server with WebSocket as underlying transport connected to client \"%s\"",
-		netConn.RemoteAddr().String(),
-	)
-
-	s.Debugf(
-		"SSH Connection received from: address: %s, client version: %s, session: %v",
+		"Upgraded Websocket transport to SSH Connection: address: %s, client version: %s, session: %v",
 		session.sshConn.RemoteAddr().String(),
 		session.sshConn.ClientVersion(),
 		session.sshConn.SessionID(),
@@ -48,8 +48,8 @@ func (s *server) NewSSHServer(session *Session) {
 		session.notifier <- true
 	}
 
-	if s.conf.keepalive > 0 {
-		go session.keepAlive(s.conf.keepalive)
+	if s.keepalive > 0 {
+		go session.keepAlive(s.keepalive)
 	}
 
 	// Requests and NewChannel channels must be serviced/discarded or the connection hangs
@@ -114,7 +114,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "keep-alive":
 			replyErr := session.replyConnRequest(r, true, []byte("pong"))
 			if replyErr != nil {
-				session.Errorf("Keep-Alive Session ID %d - Connection error while replying.", session.sessionID)
+				session.Errorf("Session ID %d (KeepAlive)- Connection error while replying.", session.sessionID)
 				return
 			}
 		case "client-info":

@@ -3,11 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"net"
 	"net/http"
 	"slider/pkg/conf"
-	"slider/pkg/slog"
 	"strings"
 )
 
@@ -21,22 +19,6 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/health":
 		_, err = w.Write([]byte("OK"))
-	case "/stats":
-		if s.LogLevel == slog.LvlDebug {
-			statsTmpl := template.Must(template.New("stats").Parse(`
-			{{if not .Sessions}}
-				<div>No Sessions</div> 
-			{{else}}
-				<div>Active sessions: {{.SessionActive}}</div>
-				{{range $sessionId, $addr := .Sessions }}
-					<li>Session {{$addr}} -> {{$sessionId}}</li>
-				{{end}}
-			{{end}}`))
-			if err = statsTmpl.Execute(w, s.sessionTrack); err == nil {
-				return
-			}
-		}
-		fallthrough
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		_, err = w.Write([]byte("Not Found"))
@@ -47,7 +29,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = conf.NewWebSocketUpgrader()
+	var upgrader = conf.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -65,7 +47,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool) {
-	wsConfig := conf.NewWebSocketDialer()
+	wsConfig := conf.DefaultWebSocketDialer
 
 	wsConn, _, err := wsConfig.DialContext(
 		context.Background(),

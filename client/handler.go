@@ -27,7 +27,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = conf.NewWebSocketUpgrader()
+	var upgrader = conf.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {

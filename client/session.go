@@ -16,6 +16,7 @@ import (
 
 type Session struct {
 	*slog.Logger
+	logID         string
 	sessionID     int64
 	serverAddr    string
 	ptyFile       *os.File
@@ -48,15 +49,16 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		disconnect:    make(chan bool, 1),
+		Logger:        c.Logger,
 	}
 
-	session.Logger = slog.NewLogger(
-		fmt.Sprintf(
-			"Session ID %d - %s",
-			session.sessionID,
+	if c.isListener {
+		session.logID = fmt.Sprintf(
+			"Session ID %d (%s) - ",
+			sc,
 			wsConn.RemoteAddr().String(),
-		),
-	)
+		)
+	}
 
 	c.sessionTrack.Sessions[sc] = session
 	c.sessionTrackMutex.Unlock()
@@ -80,7 +82,7 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	c.Debugf("Sessions -> Global: %d, Active: %d (Dropped Session ID %d: %s)",
+	c.Debugf("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		c.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,
