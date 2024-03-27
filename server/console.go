@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slider/pkg/colors"
+	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"sort"
 	"strings"
@@ -105,15 +107,15 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	s.console.PrintWarnSelect("Console does not recognize Command: ", fCmd...)
 
 	// If a Shell was not set just return
-	if s.ServerInterpreter.Shell == "" {
+	if s.serverInterpreter.Shell == "" {
 		return
 	}
 
 	// Else, we'll try to execute the command locally
 	s.console.PrintlnWarn("Will run an OS command locally instead...")
-	fCmd = append(s.ServerInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
-	cmd := exec.Command(s.ServerInterpreter.Shell, fCmd...) //nolint:gosec
+	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
@@ -210,7 +212,7 @@ func (s *server) sessionsCommand(args ...string) {
 
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tConnection\tSocks\tFingerprint\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tFingerprint\t\n")
 
 			for _, i := range keys {
 				session := s.sessionTrack.Sessions[int64(i)]
@@ -224,13 +226,18 @@ func (s *server) sessionsCommand(args ...string) {
 					if fingerprint == "" {
 						fingerprint = "--"
 					}
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t\n",
+					var inOut = "<-"
+					if session.IsListener {
+						inOut = "->"
+					}
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 						session.sessionID,
 						session.ClientInterpreter.Arch,
 						session.ClientInterpreter.System,
 						session.ClientInterpreter.User,
 						session.ClientInterpreter.Hostname,
-						session.shellWsConn.RemoteAddr().String(),
+						inOut,
+						session.wsConn.RemoteAddr().String(),
 						socksPort,
 						fingerprint,
 					)
@@ -258,7 +265,7 @@ func (s *server) sessionsCommand(args ...string) {
 			s.console.Printf("%s", err)
 			return
 		}
-		session.sessionInteractive(s.console.InitState, s.ServerInterpreter.WinChangeCall)
+		session.sessionInteractive(s.console.InitState, s.serverInterpreter.WinChangeCall)
 		return
 	}
 
@@ -334,7 +341,7 @@ func (s *server) socksCommand(args ...string) {
 
 		// Give some time to check
 		socksTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(5 * time.Second)
+		timeout := time.Now().Add(conf.Timeout)
 		for {
 			select {
 			case <-socksTicker.C:
@@ -535,5 +542,56 @@ func (s *server) certsCommand(args ...string) {
 		_ = twn.Flush()
 
 		return
+	}
+}
+
+func (s *server) connectCommand(args ...string) {
+	connectFlags := flag.NewFlagSet("connect", flag.ContinueOnError)
+	connectFlags.Usage = func() {
+		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
+	}
+	if err := connectFlags.Parse(args); err != nil {
+		return
+	}
+	if len(connectFlags.Args()) == 0 || len(connectFlags.Args()) > 1 {
+		connectFlags.Usage()
+		return
+	}
+	clientAddr, rErr := net.ResolveTCPAddr("tcp", connectFlags.Args()[0])
+	if rErr != nil {
+		s.console.PrintlnErrorStep("Argument \"%s\" is not a valid address", connectFlags.Args()[0])
+		return
+	}
+	var ip = clientAddr.IP.String()
+	if clientAddr.IP == nil {
+		ip = "127.0.0.1"
+	}
+	s.console.PrintlnDebugStep("Establishing Connection to %s:%d (Timeout: %s)", ip, clientAddr.Port, conf.Timeout)
+
+	notifier := make(chan bool, 1)
+	timeout := time.Now().Add(conf.Timeout)
+	ticker := time.NewTicker(500 * time.Millisecond)
+
+	go s.newClientConnector(clientAddr, notifier)
+
+	for {
+		select {
+		case connected := <-notifier:
+			if connected {
+				s.console.PrintlnOkStep("Successfully connected to Client %s:%d", ip, clientAddr.Port)
+				close(notifier)
+				return
+			} else {
+				s.console.PrintlnErrorStep("Failed to connect to Client %s:%d", ip, clientAddr.Port)
+				close(notifier)
+				return
+			}
+		case t := <-ticker.C:
+			if t.After(timeout) {
+				s.console.PrintlnErrorStep("Timed out connecting to Client %s:%d", ip, clientAddr.Port)
+				close(notifier)
+				return
+			}
+		}
 	}
 }

@@ -93,6 +93,17 @@ Usage: certs [flags]
 Flags:
 `
 
+// Console Client Connect Command
+const connectCmd = "connect"
+const connectDesc = "Receives the address of a Client to connect to"
+const connectUsage = `
+
+Connects to a Client configured as Listener and creates a new Session
+
+Usage: connect <client_address:port>
+
+`
+
 type commandStruct struct {
 	desc    string
 	cmdFunc func(args ...string)
@@ -129,6 +140,10 @@ func (s *server) initCommands() map[string]commandStruct {
 			desc:    downloadDesc,
 			cmdFunc: s.downloadCommand,
 		},
+		connectCmd: {
+			desc:    connectDesc,
+			cmdFunc: s.connectCommand,
+		},
 	}
 
 	if s.authOn {
@@ -148,7 +163,7 @@ func (s *server) printConsoleHelp() {
 	commands := s.initCommands()
 	var cmdNames []string
 
-	for k, _ := range commands {
+	for k := range commands {
 		cmdNames = append(cmdNames, k)
 	}
 	sort.Strings(cmdNames)
