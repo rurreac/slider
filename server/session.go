@@ -239,28 +239,24 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	// Packing Window Change events together so only the latest event of the ones collected
 	// is sent drastically reduces the number of messages sent from Server to Client.
-	var checker bool
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	sizeEvent := make([]*interpreter.TermSize, 0)
-	for {
+	for session.shellOpened {
 		select {
 		case <-winChange:
-			if session.shellOpened {
-				checker = true
-				// Could be checking size from os.Stdin Fd
-				//  but os.Stdout Fd is the one that works with Windows as well
-				if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
-					newTermSize := &interpreter.TermSize{
-						Rows: rows,
-						Cols: cols,
-					}
-					sizeEvent = append(sizeEvent, newTermSize)
+			// Could be checking size from os.Stdin Fd
+			//  but os.Stdout Fd is the one that works with Windows as well
+			if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
+				newTermSize := &interpreter.TermSize{
+					Rows: rows,
+					Cols: cols,
 				}
+				sizeEvent = append(sizeEvent, newTermSize)
 			}
 		case <-ticker.C:
 			eventSize := len(sizeEvent)
-			if eventSize > 0 || checker {
+			if eventSize > 0 {
 				lastEvent := sizeEvent[eventSize-1]
 				session.Debugf(
 					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
@@ -279,7 +275,6 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 					}
 				}
 				sizeEvent = make([]*interpreter.TermSize, 0)
-				checker = false
 			}
 		}
 	}
