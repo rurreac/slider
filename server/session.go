@@ -223,8 +223,8 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 		fmt.Printf("%s", msgOut)
 	}()
 
-	// TODO: Copy should terminate if Shell is closed otherwise user interaction is required to force an EOF error.
-	// This io.Copy always requires input as os.Stdin is a blocker
+	// TODO: Terminate Copy if Shell is closed otherwise forcing an EOF error is required, is it possible?
+	// This io.Copy always requires input as os.Stdin is blocker
 	// Copy all stdin to ssh channel.
 	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
@@ -237,23 +237,34 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 
 // captureWindowChange captures windows size changes and send them to the Client PTY
 func (session *Session) captureWindowChange(winChange chan os.Signal) {
-	// TODO: Events could be packed in 3-5s since the first event sending the just the latest.
-	for range winChange {
-		if session.shellOpened {
+	// Packing Window Change events together so only the latest event of the ones collected
+	// is sent drastically reduces the number of messages sent from Server to Client.
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	sizeEvent := make([]*interpreter.TermSize, 0)
+	for session.shellOpened {
+		select {
+		case <-winChange:
 			// Could be checking size from os.Stdin Fd
 			//  but os.Stdout Fd is the one that works with Windows as well
 			if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
-				session.Debugf(
-					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
-					session.sessionID,
-					rows,
-					cols,
-				)
 				newTermSize := &interpreter.TermSize{
 					Rows: rows,
 					Cols: cols,
 				}
-				if newTermSizeBytes, mErr := json.Marshal(newTermSize); mErr == nil {
+				sizeEvent = append(sizeEvent, newTermSize)
+			}
+		case <-ticker.C:
+			eventSize := len(sizeEvent)
+			if eventSize > 0 {
+				lastEvent := sizeEvent[eventSize-1]
+				session.Debugf(
+					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
+					session.sessionID,
+					lastEvent.Rows,
+					lastEvent.Cols,
+				)
+				if newTermSizeBytes, mErr := json.Marshal(lastEvent); mErr == nil {
 					// Send window-change event without expecting confirmation or answer
 					if _, _, err := session.sendRequest(
 						"window-change",
@@ -263,11 +274,8 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 						session.Errorf("%v", err)
 					}
 				}
-			} else {
-				break
+				sizeEvent = make([]*interpreter.TermSize, 0)
 			}
-		} else {
-			break
 		}
 	}
 }
