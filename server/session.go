@@ -241,6 +241,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	// is sent drastically reduces the number of messages sent from Server to Client.
 	var checker bool
 	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 	sizeEvent := make([]*interpreter.TermSize, 0)
 	for {
 		select {
