@@ -88,11 +88,6 @@ func NewServer(args []string) {
 		ServerVersion: "SSH-slider-server",
 	}
 
-	i, iErr := interpreter.NewInterpreter()
-	if iErr != nil {
-		panic(iErr)
-	}
-
 	log := slog.NewLogger("Server")
 	lvErr := log.SetLevel(*verbose)
 	if lvErr != nil {
@@ -101,7 +96,7 @@ func NewServer(args []string) {
 	}
 
 	// It is safe to assume that if PTY is On then colors are supported.
-	if i.PtyOn && !*colorless {
+	if interpreter.IsPtyOn() && !*colorless {
 		log.WithColors()
 	}
 
@@ -114,9 +109,8 @@ func NewServer(args []string) {
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
-		sshConf:           sshConf,
-		console:           Console{},
-		serverInterpreter: i,
+		sshConf: sshConf,
+		console: Console{},
 		certTrack: &certTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
@@ -124,6 +118,12 @@ func NewServer(args []string) {
 		authOn:      *auth,
 		keepalive:   *keepalive,
 	}
+
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		s.Fatalf("%v", iErr)
+	}
+	s.serverInterpreter = i
 
 	var signer ssh.Signer
 	var keyErr error
