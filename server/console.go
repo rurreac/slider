@@ -546,7 +546,7 @@ func (s *server) certsCommand(args ...string) {
 }
 
 func (s *server) connectCommand(args ...string) {
-	connectFlags := flag.NewFlagSet("connect", flag.ContinueOnError)
+	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
 	connectFlags.Usage = func() {
 		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
 	}
