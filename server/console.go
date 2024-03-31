@@ -137,8 +137,13 @@ func (s *server) autocompleteCommand(input string, cmdList []string) (string, in
 			return cmd, len(cmd)
 		}
 	}
+
 	if count == 1 {
-		substring = cmd
+		return cmd, len(cmd)
+	}
+
+	if count == 0 {
+		substring = input
 	}
 
 	return substring, len(substring)
