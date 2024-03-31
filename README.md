@@ -191,6 +191,8 @@ Slider > help
 Slider > sessions -h
 Interacts with Client Sessions
 
+When run without parameters, all available Sessions will be listed.
+
 Usage: sessions [flags]
 
 Flags:
@@ -198,7 +200,6 @@ Flags:
     	Starts Interactive Shell on a Session ID
   -k int
     	Kills Session ID
-  -l	Lists Server Sessions
 ```
 Each connection from a Slider Client creates a new Session, and when that connection is broken or terminated, the
 Session is dropped.
@@ -263,6 +264,7 @@ by the OS, but we can also specify a port using the `-p`.
 
 ##### Upload
 ```
+Slider > upload -h
 Uploads file passed as an argument to Client
 
 Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
@@ -281,6 +283,7 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 
 ##### Download
 ```
+Slider > download -h
 Downloads file passed as an argument from Client
 
 * If no destination name is given, file will be downloaded with the same basename to the Server CWD.
@@ -307,10 +310,11 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 Slider > certs -h
 Interacts with the Server Certificate Jar
 
+When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
+
 Usage: certs [flags]
 
 Flags:
-  -l	List all available Key Pairs
   -n	Generate a new Key Pair
   -r int
     	Remove matching index from the Certificate Jar
