@@ -43,6 +43,8 @@ const sessionsCmd = "sessions"
 const sessionsDesc = "Interacts with Client Sessions"
 const sessionsUsage = `
 
+When run without parameters, all available Sessions will be listed.
+
 Usage: sessions [flags]
 
 Flags:
@@ -87,6 +89,8 @@ Flags:
 const certsCmd = "certs"
 const certsDesc = "Interacts with the Server Certificate Jar"
 const certsUsage = `
+
+When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
 
 Usage: certs [flags]
 
