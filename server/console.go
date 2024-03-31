@@ -49,7 +49,7 @@ func (s *server) NewConsole() string {
 
 	// List of the Ordered the commands for autocompletion
 	var cmdList []string
-	for k, _ := range commands {
+	for k := range commands {
 		cmdList = append(cmdList, k)
 	}
 	slices.Sort(cmdList)
