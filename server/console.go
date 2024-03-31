@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"slider/pkg/colors"
 	"slider/pkg/conf"
 	"slider/pkg/sio"
@@ -29,7 +30,10 @@ type Console struct {
 func (s *server) NewConsole() string {
 	var out string
 
-	// Set Screen
+	// Get available Commands
+	commands := s.initCommands()
+
+	// Initialize Term
 	s.console.InitState, _ = term.MakeRaw(int(os.Stdin.Fd()))
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
@@ -42,6 +46,24 @@ func (s *server) NewConsole() string {
 
 	// Set Console
 	s.console.Term = term.NewTerminal(screen, "")
+
+	// List of the Ordered the commands for autocompletion
+	var cmdList []string
+	for k := range commands {
+		cmdList = append(cmdList, k)
+	}
+	slices.Sort(cmdList)
+
+	// Simple autocompletion
+	s.console.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// If TAB key is pressed and text was written
+		if key == 9 && len(line) > 0 {
+			newLine, newPos := s.autocompleteCommand(line, cmdList)
+			return newLine, newPos, true
+		}
+		return line, pos, false
+	}
+
 	s.console.Output = log.New(s.console.Term, "", 0)
 
 	// Set Console
@@ -81,8 +103,6 @@ func (s *server) NewConsole() string {
 			fCmd = args[0]
 		}
 
-		commands := s.initCommands()
-
 		switch fCmd {
 		case exitCmd, bgCmd:
 			consoleInput = false
@@ -101,6 +121,32 @@ func (s *server) NewConsole() string {
 	}
 
 	return out
+}
+
+func (s *server) autocompleteCommand(input string, cmdList []string) (string, int) {
+	var cmd string
+	var substring string
+	var count int
+
+	for _, c := range cmdList {
+		if strings.HasPrefix(c, input) {
+			cmd = c
+			substring = strings.SplitAfter(c, input)[0]
+			count++
+		} else if count == 1 {
+			return cmd, len(cmd)
+		}
+	}
+
+	if count == 1 {
+		return cmd, len(cmd)
+	}
+
+	if count == 0 {
+		substring = input
+	}
+
+	return substring, len(substring)
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
@@ -181,10 +227,10 @@ func (s *server) executeCommand(args ...string) {
 }
 
 func (s *server) sessionsCommand(args ...string) {
+	var list bool
 	sessionsFlags := flag.NewFlagSet(sessionsCmd, flag.ContinueOnError)
 	sessionsFlags.SetOutput(s.console.Term)
 
-	sList := sessionsFlags.Bool("l", false, "Lists Server Sessions")
 	sInteract := sessionsFlags.Int("i", 0, "Starts Interactive Shell on a Session ID")
 	sKill := sessionsFlags.Int("k", 0, "Kills Session ID")
 	sessionsFlags.Usage = func() {
@@ -195,14 +241,24 @@ func (s *server) sessionsCommand(args ...string) {
 		return
 	}
 
-	if len(args) == 0 || sessionsFlags.NArg() > 1 || (*sList && ((*sInteract + *sKill) > 0)) {
+	if len(args) == 0 {
+		list = true
+	}
+
+	if !list && ((*sInteract > 0 && *sKill > 0) || (*sInteract == 0 && *sKill == 0)) {
+		s.console.Printf("Flags '-i' and '-k' are mutually exclusive, nor can have 0 value.")
+		return
+	}
+
+	if sessionsFlags.NArg() > 0 {
+		s.console.Printf("Unexpected arguments: %s", sessionsFlags.Args())
 		sessionsFlags.Usage()
 		return
 	}
 
 	var err error
 
-	if *sList {
+	if list {
 		if len(s.sessionTrack.Sessions) > 0 {
 			var keys []int
 			for i := range s.sessionTrack.Sessions {
@@ -431,7 +487,7 @@ func (s *server) downloadCommand(args ...string) {
 		}
 
 		if *dFile == "" && downloadFlags.NFlag() >= 2 {
-			s.console.PrintlnDebugStep("Need to provide a filelist")
+			s.console.PrintlnDebugStep("Need to provide a file list")
 			return
 		} else if *dFile != "" {
 			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetSliderHome())
@@ -475,10 +531,10 @@ func (s *server) downloadCommand(args ...string) {
 }
 
 func (s *server) certsCommand(args ...string) {
+	var list bool
 	certsFlags := flag.NewFlagSet(certsCmd, flag.ContinueOnError)
 	certsFlags.SetOutput(s.console.Term)
 	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
-	cList := certsFlags.Bool("l", false, "List all available Key Pairs")
 	cRemove := certsFlags.Int("r", 0, "Remove matching index from the Certificate Jar")
 	certsFlags.Usage = func() {
 		s.console.PrintCommandUsage(certsFlags, certsDesc+certsUsage)
@@ -487,8 +543,13 @@ func (s *server) certsCommand(args ...string) {
 		return
 	}
 
-	if !*cList && !*cNew && *cRemove == 0 {
-		certsFlags.Usage()
+	if *cNew && *cRemove > 0 {
+		s.console.Printf("Flags '-n' and '-k' are mutually exclusive.")
+		return
+	}
+
+	if !*cNew && *cRemove == 0 || len(args) == 0 {
+		list = true
 	}
 
 	if *cRemove > 0 {
@@ -500,7 +561,7 @@ func (s *server) certsCommand(args ...string) {
 		return
 	}
 
-	if *cList {
+	if list {
 		if len(s.certTrack.Certs) > 0 {
 			var keys []int
 			for i := range s.certTrack.Certs {
@@ -546,7 +607,7 @@ func (s *server) certsCommand(args ...string) {
 }
 
 func (s *server) connectCommand(args ...string) {
-	connectFlags := flag.NewFlagSet("connect", flag.ContinueOnError)
+	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
 	connectFlags.Usage = func() {
 		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
 	}
