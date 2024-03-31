@@ -12,7 +12,7 @@
 
 ## What is Slider
 
-**Slider** is server / client binary that can ack as basic a Command & Control C2 or an Agent. 
+**Slider** is server / client binary that can act as basic a Command & Control (C2) or an Agent. 
 
 The main purpose of Slider was having a small tool, easy to transfer or go much unnoticed, that would help maintaining 
 persistence during Pentesting, specially on those cases where the use of some frameworks would be limited for whatever 
