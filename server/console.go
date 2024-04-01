@@ -449,10 +449,9 @@ func (s *server) uploadCommand(args ...string) {
 
 		for statusChan := range session.uploadFile(src, dst) {
 			if statusChan.Success {
-				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\" (sha256:%s)",
+				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\"",
 					src,
 					statusChan.FileName,
-					statusChan.CheckSum,
 				)
 			} else {
 				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %v", src, statusChan.Err)
@@ -494,9 +493,8 @@ func (s *server) downloadCommand(args ...string) {
 
 			for statusChan := range session.downloadFileBatch(*dFile) {
 				if statusChan.Success {
-					s.console.PrintlnOkStep("Downloaded \"%s\" (sha256:%s)",
+					s.console.PrintlnOkStep("Downloaded \"%s\"",
 						statusChan.FileName,
-						statusChan.CheckSum,
 					)
 				} else {
 					s.console.PrintlnErrorStep("Failed to Download \"%v\"", statusChan.Err)
