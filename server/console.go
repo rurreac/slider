@@ -516,10 +516,9 @@ func (s *server) downloadCommand(args ...string) {
 
 		for statusChan := range session.downloadFile(src, dst) {
 			if statusChan.Success {
-				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\" (sha256:%s)",
+				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\"",
 					src,
 					statusChan.FileName,
-					statusChan.CheckSum,
 				)
 			} else {
 				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
