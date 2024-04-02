@@ -20,9 +20,14 @@ persistence, specially on those cases where the use of some frameworks would be 
 reason. 
 Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
 
-Slider is a Server and a Client within the same binary that can be used to send a fully interactive reverse shell from
-Client to Server but also, run commands remotely, upload / download files, as well as running a reverse socks v5 server,
-all through a cyphered connection, while allowing clients and servers authenticate to each other.
+Slider is a Server and a Client within the same binary that can be used to... 
+* Send a fully interactive Reverse Shell from Client to Server, 
+* Run commands remotely, 
+* Upload / download files, 
+* Run a reverse socks v5 server, 
+
+...all through a cyphered connection, while allowing clients and servers authenticate and verify each other through
+[Ed25519](https://ed25519.cr.yp.to/) key pairs.
 
 ## How does it work?
 In a normal scenario, a Slider Server runs a web server on a given port, waiting for Slider clients to establish websocket
