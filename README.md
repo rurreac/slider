@@ -25,22 +25,18 @@ Client to Server but also, run commands remotely, upload / download files, as we
 all through a cyphered connection, while allowing clients and servers authenticate to each other.
 
 ## How does it work?
-In a nutshell, Slider works this way:
+In a normal scenario, a Slider Server runs a web server on a given port, waiting for Slider clients to establish websocket
+connections. 
 
-```mermaid
-sequenceDiagram
-    participant server
-    participant client
-    server ->> server: HTTP Server listens on port X
-    client ->> server: Client connects thought HTTP to Server and requests upgrade to Websocket
-    client --> server: Websocket connection is created and session is established
-    server ->> server: Websocket connection is transformed to net.Conn
-    client ->> client: Websocket connection is transformed to net.Conn
-    server ->> server: net.Conn is used to create an SSH Server
-    client ->> client: net.Conn is used to create an SSH Client
-    client ->> server: Client connects to Server through SSH
-    server --> client: Server Interaction through SSH requests and responses through its integrated console
-```
+Those websocket connections are then transformed into network connections which are then reused to create an SSH Server on
+the Server side and an SSH Client on the Client side, encrypting this way the connection and providing a way to authenticate
+Servers and Clients to each other. 
+
+Once the connectivity is established (a Session is created) all functionality is requested through SSH requests and
+responses with data streamed through SSH Channels or, in some cases, through SSH requests / response payloads.
+
+Clients can also be listeners, in these scenarios Servers will interactively connect to Clients, initiating websocket
+client connections while remaining as SSH Servers. 
 
 ## External Dependencies
 For the sake of keeping the size contained, external libraries are used when they remove a particular overhead or 
