@@ -167,6 +167,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	if err := cmd.Run(); err != nil {
 		s.console.PrintlnErrorStep("%v", err)
 	}
+	s.console.Println("")
 
 }
 
@@ -219,10 +220,12 @@ func (s *server) executeCommand(args ...string) {
 			s.console.PrintlnErrorStep("%v", err)
 			continue
 		}
+		// TODO: output and error should be managed here
 		if sErr := session.sessionExecute(s.console.InitState); sErr != nil {
 			s.console.PrintlnErrorStep("%v", sErr)
 			continue
 		}
+		s.console.Println("")
 	}
 }
 
@@ -449,10 +452,9 @@ func (s *server) uploadCommand(args ...string) {
 
 		for statusChan := range session.uploadFile(src, dst) {
 			if statusChan.Success {
-				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\" (sha256:%s)",
+				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\"",
 					src,
 					statusChan.FileName,
-					statusChan.CheckSum,
 				)
 			} else {
 				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %v", src, statusChan.Err)
@@ -494,9 +496,8 @@ func (s *server) downloadCommand(args ...string) {
 
 			for statusChan := range session.downloadFileBatch(*dFile) {
 				if statusChan.Success {
-					s.console.PrintlnOkStep("Downloaded \"%s\" (sha256:%s)",
+					s.console.PrintlnOkStep("Downloaded \"%s\"",
 						statusChan.FileName,
-						statusChan.CheckSum,
 					)
 				} else {
 					s.console.PrintlnErrorStep("Failed to Download \"%v\"", statusChan.Err)
@@ -518,10 +519,9 @@ func (s *server) downloadCommand(args ...string) {
 
 		for statusChan := range session.downloadFile(src, dst) {
 			if statusChan.Success {
-				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\" (sha256:%s)",
+				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\"",
 					src,
 					statusChan.FileName,
-					statusChan.CheckSum,
 				)
 			} else {
 				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
