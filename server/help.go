@@ -52,7 +52,7 @@ Flags:
 
 // Console Socks Command
 const socksCmd = "socks"
-const socksDesc = "Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server"
+const socksDesc = "Runs or Kills a Reverse Socks server"
 const socksUsage = `
 
 Usage: socks [flags]

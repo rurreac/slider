@@ -1,45 +1,34 @@
 # SLIDER
 
-- [What is Slider](#what-is-slider)
-- [How does it work?](#how-does-it-work)
-- [Server](#server)
-    - [Environment Variables](#environment-variables)
-    - [Flags Overview](#server-flags-overview)
-    - [Console](#console)
-- [Client](#client)
-    - [Flags Overview](#client-flags-overview)
-- [External Dependencies](#external-dependencies)
+**Slider** is a server / client in a binary that can act as basic a Command & Control (C2) or an Agent. 
 
-## What is Slider
-
-**Slider** is server / client binary that can act as basic a Command & Control (C2) or an Agent. 
-
-The main purpose of Slider was having a small tool, easy to transfer or go much unnoticed, that would help maintaining 
-persistence during Pentesting, specially on those cases where the use of some frameworks would be limited for whatever 
+The main purpose of Slider was having a small tool, easy to transfer and go much unnoticed, that would help maintaining 
+persistence, specially on those cases where the use of some frameworks would be limited for whatever 
 reason. 
 Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
 
-Slider is a Server and a Client within the same binary that can be used to send a fully interactive reverse shell from
-Client to Server but also, run commands remotely, upload / download files, as well as running a reverse socks v5 server,
-all through a cyphered connection, while allowing clients and servers authenticate to each other.
+Slider can be used to: 
+* Send a fully interactive Reverse Shell from Client to Server, 
+* Run commands remotely, 
+* Upload / download files, 
+* Run a reverse socks v5 server, 
+
+All through a cyphered connection, while allowing clients and servers authenticate and verify each other through
+[Ed25519](https://ed25519.cr.yp.to/) key pairs.
 
 ## How does it work?
-In a nutshell, Slider works this way:
+In a normal scenario, a Slider Server runs a web server on a given port, waiting for Slider clients to establish websocket
+connections. 
 
-```mermaid
-sequenceDiagram
-    participant server
-    participant client
-    server ->> server: HTTP Server listens on port X
-    client ->> server: Client connects thought HTTP to Server and requests upgrade to Websocket
-    client --> server: Websocket connection is created and session is established
-    server ->> server: Websocket connection is transformed to net.Conn
-    client ->> client: Websocket connection is transformed to net.Conn
-    server ->> server: net.Conn is used to create an SSH Server
-    client ->> client: net.Conn is used to create an SSH Client
-    client ->> server: Client connects to Server through SSH
-    server --> client: Server Interact with Client Session through its integrated console
-```
+Those websocket connections are then transformed into network connections which are then reused to create an SSH Server on
+the Server side and an SSH Client on the Client side, encrypting this way the connection and providing a way to authenticate
+Servers and Clients to each other. 
+
+Once the connectivity is established (a Session is created) all functionality is requested through SSH requests and
+responses with data streamed through SSH Channels or, in some cases, through SSH requests / response payloads.
+
+Clients can also be listeners, in these scenarios Servers will interactively connect to Clients, initiating websocket
+client connections while remaining as SSH Servers. 
 
 ## External Dependencies
 For the sake of keeping the size contained, external libraries are used when they remove a particular overhead or 
@@ -90,6 +79,9 @@ Flags:
   -verbose string
     	Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
+
+![Sever](./doc/server.gif)
+
 ### Environment Variables
 
 #### `SLIDER_HOME`:
@@ -136,6 +128,8 @@ environment variable.
 
 The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CERT_JAR](#slider_cert_jar)" + `/.certs`
 on *nix hosts, or `\certs` on Windows hosts.
+
+![Sever Auth](./doc/server_auth.gif)
 
 #### `-colorless`:
 By default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using colors. If this flag is passed
@@ -207,6 +201,8 @@ to list Sessions, kill a Session or receive a Shell from a given Session.
 If the Client host is running *nix OS or a Windows version with ConPTY (introduced in 2018) the spawned Shell will be
 fully interactive as well.
 
+![Console Sessions](./doc/console_sessions.gif)
+
 ##### Connect
 ```
 Slider > connect -h
@@ -220,6 +216,8 @@ Regular Clients automatically connect back to the Server, but if we want to open
 then we'll need to use the `connect` command.
 This command will try to open a Session in the background, and you will be notified whether the connection was
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
+
+![Console Connect](./doc/console_connect.gif)
 
 ##### Execute
 ```
@@ -237,10 +235,12 @@ If you want to run a single OS command on a client rather than interacting with 
 `execute` command.
 Note that `execute` will allow you to pass redirections or pipes to the Client as part of the command as well.
 
+![Console Execute](./doc/console_execute.gif)
+
 ##### Socks
 ```
 Slider > socks -h
-Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server
+Runs or Kills a Reverse Socks server
 
 Usage: socks [flags]
 
@@ -260,6 +260,8 @@ Channel.
 By default `socks` only requires specifying a Client Session and the Server local port will be automatically assigned
 by the OS, but we can also specify a port using the `-p`.
 
+![Console Socks](./doc/console_socks.gif)
+
 ##### Upload
 ```
 Slider > upload -h
@@ -278,6 +280,8 @@ if the file exists and the User that is running the Client has the right permiss
 be overridden.
 
 Checksum of the file is checked, if there is a mismatch you'll be warned.
+
+![Console Upload](./doc/console_upload.gif)
 
 ##### Download
 ```
@@ -303,6 +307,8 @@ Each file will be saved with a concatenated name of the filepath as its basename
 
 Checksum of the file is checked, if there is a mismatch you'll be warned.
 
+![Console Download](./doc/console_download.gif)
+
 ##### Certs
 ```
 Slider > certs -h
@@ -322,6 +328,8 @@ The `certs` command requires that authentication is enabled on the Server otherw
 Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
+
+![Console Certs](./doc/console_certs.gif)
 
 ## Client
 
@@ -351,6 +359,8 @@ Flags:
   -verbose string
     	Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
+
+![Client](./doc/client.gif)
 
 ### Client Flags Overview
 
@@ -398,5 +408,19 @@ certificate in the Server Certificate Jar will be authorized to connect.
 Typically, you would like to use `-fingerprints` to authenticate Servers on publicly exposed Clients (running as Listeners)
 and `-key` to authenticate Clients on Servers with `-auth` enabled.
 
+## Credits
 
+This project is built on top the idea of using SSH over a websocket connection. 
 
+The concept is not new, there are quite a few online services for such matter and if you are interested only on 
+traversing through networks, then should definitively check [Chisel](https://github.com/jpillora/chisel) out, which 
+brought us here and is way more versed and versatile in this matter.
+
+As stated in the [dependencies](#external-dependencies) section:
+* [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
+* [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
+* [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
+* [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
+
+Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs), tape samples in 
+the [doc](./doc) folder.
