@@ -5,6 +5,7 @@ package interpreter
 import (
 	"fmt"
 	"github.com/UserExistsError/conpty"
+	"golang.org/x/sys/windows"
 	"os"
 	"os/user"
 	"runtime"
@@ -33,7 +34,32 @@ type TermSize struct {
 }
 
 func IsPtyOn() bool {
-	return conpty.IsConPtyAvailable()
+	available := conpty.IsConPtyAvailable()
+	if available {
+		// Even when ConPTY is available, if Slider is not running on a Windows Terminal
+		// character sequences are not available until an OS command is invoked within Slider.
+		// This is somehow normal Windows behavior, but breaks the character output until it happens.
+		// The reason is cause ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
+		// enabled by default.
+		// The following will enable those values if they are not, regardless of the terminal, or return false
+		outHandle := windows.Handle(os.Stdout.Fd())
+		var lpMode uint32
+		// https://learn.microsoft.com/en-us/windows/console/getconsolemode
+		if err := windows.GetConsoleMode(outHandle, &lpMode); err != nil {
+			return false
+		}
+		// https://learn.microsoft.com/en-us/windows/console/setconsolemode
+		if lpMode != windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT {
+			if err := windows.SetConsoleMode(outHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
+				return false
+			}
+			errHandle := windows.Handle(os.Stderr.Fd())
+			if err := windows.SetConsoleMode(errHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
+				return false
+			}
+		}
+	}
+	return available
 }
 
 func NewInterpreter() (*Interpreter, error) {
