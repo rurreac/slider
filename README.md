@@ -1,13 +1,13 @@
 # SLIDER
 
-**Slider** is server / client binary that can act as basic a Command & Control (C2) or an Agent. 
+**Slider** is a server / client in a binary that can act as basic a Command & Control (C2) or an Agent. 
 
-The main purpose of Slider was having a small tool, easy to transfer or go much unnoticed, that would help maintaining 
+The main purpose of Slider was having a small tool, easy to transfer and go much unnoticed, that would help maintaining 
 persistence, specially on those cases where the use of some frameworks would be limited for whatever 
 reason. 
 Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
 
-Slider is a Server and a Client within the same binary that can be used to: 
+Slider can be used to: 
 * Send a fully interactive Reverse Shell from Client to Server, 
 * Run commands remotely, 
 * Upload / download files, 
