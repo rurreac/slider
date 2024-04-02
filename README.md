@@ -1,18 +1,5 @@
 # SLIDER
 
-- [What is Slider](#what-is-slider)
-- [How does it work?](#how-does-it-work)
-- [External Dependencies](#external-dependencies)
-- [Server](#server)
-    - [Environment Variables](#environment-variables)
-    - [Flags Overview](#server-flags-overview)
-    - [Console](#console)
-- [Client](#client)
-    - [Flags Overview](#client-flags-overview)
-- [Credits](#credits) 
-
-## What is Slider
-
 **Slider** is server / client binary that can act as basic a Command & Control (C2) or an Agent. 
 
 The main purpose of Slider was having a small tool, easy to transfer or go much unnoticed, that would help maintaining 
@@ -20,13 +7,13 @@ persistence, specially on those cases where the use of some frameworks would be 
 reason. 
 Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
 
-Slider is a Server and a Client within the same binary that can be used to... 
+Slider is a Server and a Client within the same binary that can be used to: 
 * Send a fully interactive Reverse Shell from Client to Server, 
 * Run commands remotely, 
 * Upload / download files, 
 * Run a reverse socks v5 server, 
 
-...all through a cyphered connection, while allowing clients and servers authenticate and verify each other through
+All through a cyphered connection, while allowing clients and servers authenticate and verify each other through
 [Ed25519](https://ed25519.cr.yp.to/) key pairs.
 
 ## How does it work?
@@ -435,5 +422,5 @@ As stated in the [dependencies](#external-dependencies) section:
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
 
-Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs), you can find all tape samples
-in the [doc](./doc) folder.
+Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs), tape samples in 
+the [doc](./doc) folder.
