@@ -36,12 +36,12 @@ type TermSize struct {
 func IsPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
 	if available {
-		// Even if ConPTY is available, if Slider is not running on a Windows Terminal
-		// colors (among other things) are not available until an OS command is invoked within Slider,
-		// this is somehow the normal Windows behavior.
+		// Even when ConPTY is available, if Slider is not running on a Windows Terminal
+		// character sequences are not available until an OS command is invoked within Slider.
+		// This is somehow normal Windows behavior, but breaks the character output until it happens.
 		// The reason is cause ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
 		// enabled by default.
-		// The following will enable those values or return false
+		// The following will enable those values if they are not, regardless of the terminal, or return false
 		outHandle := windows.Handle(os.Stdout.Fd())
 		var lpMode uint32
 		// https://learn.microsoft.com/en-us/windows/console/getconsolemode
