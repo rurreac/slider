@@ -5,6 +5,7 @@ package interpreter
 import (
 	"fmt"
 	"github.com/UserExistsError/conpty"
+	"golang.org/x/sys/windows"
 	"os"
 	"os/user"
 	"runtime"
@@ -33,7 +34,32 @@ type TermSize struct {
 }
 
 func IsPtyOn() bool {
-	return conpty.IsConPtyAvailable()
+	available := conpty.IsConPtyAvailable()
+	if available {
+		// Even if ConPTY is available, if Slider is not running on a Windows Terminal
+		// colors (among other things) are not available until an OS command is invoked within Slider,
+		// this is somehow the normal Windows behavior.
+		// The reason is cause ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
+		// enabled by default.
+		// The following will enable those values or return false
+		outHandle := windows.Handle(os.Stdout.Fd())
+		var lpMode uint32
+		// https://learn.microsoft.com/en-us/windows/console/getconsolemode
+		if err := windows.GetConsoleMode(outHandle, &lpMode); err != nil {
+			return false
+		}
+		// https://learn.microsoft.com/en-us/windows/console/setconsolemode
+		if lpMode != windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT {
+			if err := windows.SetConsoleMode(outHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
+				return false
+			}
+			errHandle := windows.Handle(os.Stderr.Fd())
+			if err := windows.SetConsoleMode(errHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
+				return false
+			}
+		}
+	}
+	return available
 }
 
 func NewInterpreter() (*Interpreter, error) {
