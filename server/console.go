@@ -167,6 +167,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	if err := cmd.Run(); err != nil {
 		s.console.PrintlnErrorStep("%v", err)
 	}
+	s.console.Println("")
 
 }
 
@@ -219,10 +220,12 @@ func (s *server) executeCommand(args ...string) {
 			s.console.PrintlnErrorStep("%v", err)
 			continue
 		}
+		// TODO: output and error should be managed here
 		if sErr := session.sessionExecute(s.console.InitState); sErr != nil {
 			s.console.PrintlnErrorStep("%v", sErr)
 			continue
 		}
+		s.console.Println("")
 	}
 }
 
