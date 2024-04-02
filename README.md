@@ -207,6 +207,8 @@ to list Sessions, kill a Session or receive a Shell from a given Session.
 If the Client host is running *nix OS or a Windows version with ConPTY (introduced in 2018) the spawned Shell will be
 fully interactive as well.
 
+![Console Sessions](./doc/console_sessions.gif)
+
 ##### Connect
 ```
 Slider > connect -h
@@ -220,6 +222,8 @@ Regular Clients automatically connect back to the Server, but if we want to open
 then we'll need to use the `connect` command.
 This command will try to open a Session in the background, and you will be notified whether the connection was
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
+
+![Console Connect](./doc/console_connect.gif)
 
 ##### Execute
 ```
@@ -237,10 +241,12 @@ If you want to run a single OS command on a client rather than interacting with 
 `execute` command.
 Note that `execute` will allow you to pass redirections or pipes to the Client as part of the command as well.
 
+![Console Execute](./doc/console_execute.gif)
+
 ##### Socks
 ```
 Slider > socks -h
-Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server
+Runs or Kills a Reverse Socks server
 
 Usage: socks [flags]
 
@@ -260,6 +266,8 @@ Channel.
 By default `socks` only requires specifying a Client Session and the Server local port will be automatically assigned
 by the OS, but we can also specify a port using the `-p`.
 
+![Console Socks](./doc/console_socks.gif)
+
 ##### Upload
 ```
 Slider > upload -h
@@ -278,6 +286,8 @@ if the file exists and the User that is running the Client has the right permiss
 be overridden.
 
 Checksum of the file is checked, if there is a mismatch you'll be warned.
+
+![Console Upload](./doc/console_upload.gif)
 
 ##### Download
 ```
@@ -303,6 +313,8 @@ Each file will be saved with a concatenated name of the filepath as its basename
 
 Checksum of the file is checked, if there is a mismatch you'll be warned.
 
+![Console Download](./doc/console_download.gif)
+
 ##### Certs
 ```
 Slider > certs -h
@@ -322,6 +334,8 @@ The `certs` command requires that authentication is enabled on the Server otherw
 Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
+
+![Console Certs](./doc/console_certs.gif)
 
 ## Client
 
