@@ -23,11 +23,6 @@ import (
 const clientCertsFile = "client-certs.json"
 const serverCertFile = "server-cert.json"
 
-type address struct {
-	host string
-	port string
-}
-
 // sessionTrack keeps track of sessions and clients
 type sessionTrack struct {
 	SessionCount  int64              // Number of Sessions created
@@ -43,7 +38,6 @@ type certTrack struct {
 
 type server struct {
 	*slog.Logger
-	addr              address
 	sshConf           *ssh.ServerConfig
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
@@ -60,8 +54,8 @@ type server struct {
 func NewServer(args []string) {
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
 	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	ip := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
-	port := serverFlags.String("port", "8080", "Port where Server will listen")
+	address := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
+	port := serverFlags.Int("port", 8080, "Port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
@@ -101,10 +95,6 @@ func NewServer(args []string) {
 	}
 
 	s := &server{
-		addr: address{
-			host: *ip,
-			port: *port,
-		},
 		Logger: log,
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
@@ -169,23 +159,20 @@ func NewServer(args []string) {
 		}
 	}
 
-	fingerprint, gErr := scrypt.GenerateFingerprint(signer.PublicKey())
-	if gErr != nil {
-		s.Fatalf("Failed to generate fingerprint - %v", gErr)
-	}
-	s.Infof("Server Fingerprint: %s", fingerprint)
-
-	l, lisErr := net.Listen(
-		"tcp",
-		fmt.Sprintf("%s:%s", s.addr.host, s.addr.port),
-	)
-	if lisErr != nil {
-		s.Fatalf("Listener: %v", lisErr)
-
+	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
+	serverAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
+	if rErr != nil {
+		s.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
+		return
 	}
 
-	s.Infof("Listening on %s://%s:%s", l.Addr().Network(), s.addr.host, s.addr.port)
-	s.Infof("Press CTR^C to access the Slider Console")
+	go func() {
+		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
+		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
+			s.Fatalf("%s", sErr)
+		}
+	}()
+	s.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
 
 	// Hold the execution until exit from the console
 	wg := sync.WaitGroup{}
@@ -211,14 +198,7 @@ func NewServer(args []string) {
 		}
 		wg.Done()
 	}()
-	go func() {
-		// TODO: net/http serve has no support for timeouts
-		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
-		if sErr := http.Serve(l, handler); sErr != nil {
-			s.Fatalf("%s", sErr)
-		}
-	}()
-
+	s.Infof("Press CTR^C to access the Slider Console")
 	wg.Wait()
 	s.Printf("Server down...")
 }

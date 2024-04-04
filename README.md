@@ -180,7 +180,8 @@ Slider > help
 
 ##### Sessions
 ```
-Slider > sessions -h
+Slider > sessions -l
+flag provided but not defined: -l
 Interacts with Client Sessions
 
 When run without parameters, all available Sessions will be listed.
@@ -188,6 +189,8 @@ When run without parameters, all available Sessions will be listed.
 Usage: sessions [flags]
 
 Flags:
+  -d int
+    	Disconnect Session ID
   -i int
     	Starts Interactive Shell on a Session ID
   -k int
@@ -196,10 +199,18 @@ Flags:
 Each connection from a Slider Client creates a new Session, and when that connection is broken or terminated, the
 Session is dropped.
 The `sessions` command allows you to interact with each opened Session. Through the `sessions` command it is possible
-to list Sessions, kill a Session or receive a Shell from a given Session.
+to list, kill, disconnect or receive a Shell from a given Session.
 
 If the Client host is running *nix OS or a Windows version with ConPTY (introduced in 2018) the spawned Shell will be
 fully interactive as well.
+
+A note between killing a Session and disconnecting from a Session: 
+* Disconnect, closes the Session at the Server side, it would be equivalent to terminating the Server. 
+  * If the Client is configured with the `-retry` option, the Client will reconnect to the Server if available of the next
+  try, creating a new Session.
+  * If the Client is not configured with the `-retry` option, and is Not configured with the `-listener` option, once it
+runs its next keepalive check will shut down.  
+* Kill, is equivalent to terminate the execution of the Client, independently if it's a regular Client or a Listener one. 
 
 ![Console Sessions](./doc/console_sessions.gif)
 
@@ -356,6 +367,8 @@ Flags:
     	Client will listen for incoming Server connections
   -port int
     	Listener Port (default 8081)
+  -retry
+    	Retries reconnection indefinitely
   -verbose string
     	Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
@@ -397,6 +410,18 @@ This value can be changed to any other duration value or set to `0` to completel
 Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
 the keepalive will leave not listener clients hanging forever.
 
+#### `-retry`:
+Retry, is an available option on regular clients. a client configured with the `-retry` flag will try to reconnect to 
+the server according to its `-keepalive` value. You will very likely want to tune `-keepalive` to either short 
+reconnection intervals or expand them, according to your needs.
+
+Enabling `-retry` will only have an effect if the Client was able to connect to the Server at least once, in other words, 
+if the Client fails to connect to the Server on the first run it will terminate its execution as usual.
+
+Combining Client `-retry` with Server `-auth` and maintaining different Certificate Jar Files, is a great way to work 
+between different "Workspaces" where using one Certificate Jar or another will determine what Clients will automatically
+reconnect to your Server and create a Session.
+
 #### `-key`:
 A Slider Key represents an Ed25519 private key base64 encoded.
 
@@ -422,5 +447,5 @@ As stated in the [dependencies](#external-dependencies) section:
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
 
-Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs), tape samples in 
+Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs). Tape samples in 
 the [doc](./doc) folder.
