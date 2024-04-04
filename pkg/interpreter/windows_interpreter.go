@@ -36,7 +36,7 @@ type TermSize struct {
 func IsPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
 	if available {
-		// Even when ConPTY is available, if Slider is not running on a Windows Terminal
+		// Even when ConPTY is available, if Slider is not running on a Windows Terminal, control
 		// character sequences are not available until an OS command is invoked within Slider.
 		// This is somehow normal Windows behavior, but breaks the character output until it happens.
 		// The reason is cause ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
@@ -84,7 +84,6 @@ func NewInterpreter() (*Interpreter, error) {
 		}
 	}
 
-	// TODO: Default path but might not be this one
 	if conpty.IsConPtyAvailable() {
 		i.PtyOn = true
 	}
