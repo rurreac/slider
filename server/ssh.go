@@ -14,7 +14,7 @@ import (
 func (s *server) NewSSHServer(session *Session) {
 	netConn := sconn.WsConnToNetConn(session.wsConn)
 
-	s.Debugf(
+	s.Logger.Debugf(
 		"Established WebSocket connection with client \"%s\"",
 		netConn.RemoteAddr().String(),
 	)
@@ -26,7 +26,7 @@ func (s *server) NewSSHServer(session *Session) {
 
 	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
 	if err != nil {
-		s.Errorf("Failed to create SSH server %v", err)
+		s.Logger.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
 			session.notifier <- false
 		}
@@ -37,7 +37,7 @@ func (s *server) NewSSHServer(session *Session) {
 		session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
 	}
 
-	s.Debugf(
+	s.Logger.Debugf(
 		"Upgraded Websocket transport to SSH Connection: address: %s, client version: %s, session: %v",
 		session.sshConn.RemoteAddr().String(),
 		session.sshConn.ClientVersion(),
@@ -69,7 +69,7 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 		case "session":
 			sshChan, chanReq, err = nc.Accept()
 			if err != nil {
-				session.Errorf(
+				session.Logger.Errorf(
 					"Session ID %d - handleSSHChannels (Accept): Failed to accept the channel \"%s\".\n%v",
 					session.sessionID,
 					nc.ChannelType(),
@@ -78,7 +78,7 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 				return
 			}
 			session.addSessionChannel(sshChan)
-			session.Debugf(
+			session.Logger.Debugf(
 				"Session ID %d - Accepted SSH \"%s\" Channel Connection.",
 				session.sessionID,
 				nc.ChannelType(),
@@ -87,7 +87,7 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 		default:
 			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
 			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
-				session.Warnf("Session ID %d - handleSSHnewChannels (session): Received Unknown channel type.\n%s",
+				session.Logger.Warnf("Session ID %d - handleSSHnewChannels (session): Received Unknown channel type.\n%s",
 					session.sessionID,
 					err,
 				)
@@ -108,7 +108,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			//  but os.Stdout Fd is the one that works with Windows as well
 			width, height, err := term.GetSize(int(os.Stdout.Fd()))
 			if err != nil {
-				session.Errorf("Failed to obtain terminal size")
+				session.Logger.Errorf("Failed to obtain terminal size")
 			}
 			tSize = interpreter.TermSize{
 				Rows: height,
@@ -125,7 +125,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "client-info":
 			ci := &conf.ClientInfo{}
 			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
-				s.Errorf("Failed to parse Client Info - %v", jErr)
+				s.Logger.Errorf("Failed to parse Client Info - %v", jErr)
 			}
 			session.ClientInterpreter = ci.Interpreter
 			session.IsListener = ci.IsListener
@@ -146,11 +146,11 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 			ok = true
 			session.rawTerm = true
 			_ = session.replyConnRequest(r, ok, nil)
-			session.Debugf("Session ID %d - Client Requested Raw Terminal...", session.sessionID)
+			session.Logger.Debugf("Session ID %d - Client Requested Raw Terminal...", session.sessionID)
 		case "reverse-shell":
 			ok = true
 			_ = session.replyConnRequest(r, ok, nil)
-			session.Debugf("Session ID %d - Client will send Reverse Shell...", session.sessionID)
+			session.Logger.Debugf("Session ID %d - Client will send Reverse Shell...", session.sessionID)
 			return
 		default:
 			_ = session.replyConnRequest(r, ok, nil)

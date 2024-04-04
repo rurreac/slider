@@ -120,7 +120,7 @@ func (si *Instance) runComm(conn *net.TCPConn) {
 	defer func() { _ = conn.Close() }()
 	socksChan, reqs, oErr := si.SSHConn.OpenChannel("socks5", nil)
 	if oErr != nil {
-		si.Errorf("SOCKS - failed to open \"socks5\" channel - %v", oErr)
+		si.Logger.Errorf("SOCKS - failed to open \"socks5\" channel - %v", oErr)
 	}
 	defer func() { _ = socksChan.Close() }()
 	go ssh.DiscardRequests(reqs)
@@ -142,11 +142,11 @@ func (si *Instance) Stop() error {
 	if !si.socksEnabled {
 		return fmt.Errorf("socks is not running")
 	}
-	si.Debugf("SOCKS - Triggering Shutdown")
+	si.Logger.Debugf("SOCKS - Triggering Shutdown")
 	si.stopSignal <- true
 	<-si.done
 	close(si.done)
-	si.Debugf("SOCKS - Endpoint down")
+	si.Logger.Debugf("SOCKS - Endpoint down")
 
 	return nil
 }
