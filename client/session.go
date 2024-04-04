@@ -60,12 +60,12 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	}
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {
-		c.Fatalf("Interpreter not supported - %v", iErr)
+		c.Logger.Fatalf("Interpreter not supported - %v", iErr)
 	}
 	session.interpreter = i
 	c.sessionTrack.Sessions[sc] = session
 
-	c.Debugf("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
+	c.Logger.Debugf("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.wsConn.RemoteAddr().String())
 	return session
 }
@@ -84,7 +84,7 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	c.Debugf("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
+	c.Logger.Debugf("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		c.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,

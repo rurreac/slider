@@ -11,6 +11,6 @@ func (s *Session) updatePtySize(rows int, cols int) {
 		X:    uint16(cols),
 		Y:    uint16(rows),
 	}); sizeErr != nil {
-		s.Errorf("%s%v", s.logID, sizeErr)
+		s.Logger.Errorf("%s%v", s.logID, sizeErr)
 	}
 }

@@ -15,16 +15,16 @@ func (s *server) loadCertJar() error {
 	case "1", "", "true":
 		s.certSaveOn = true
 	case "0", "false":
-		s.Warnf("Environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
+		s.Logger.Warnf("Environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
 	default:
-		s.Warnf("Unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
+		s.Logger.Warnf("Unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
 	}
 
 	_, sErr := os.Stat(s.certJarFile)
 	if sErr != nil {
 		if os.IsNotExist(sErr) {
 			_, nErr := s.newCertItem()
-			s.Warnf("Slider Certificates file not found, initialized with a new certificate")
+			s.Logger.Warnf("Slider Certificates file not found, initialized with a new certificate")
 			return nErr
 		}
 		return fmt.Errorf("failed to load %s file - %v", s.certJarFile, sErr)
@@ -46,7 +46,7 @@ func (s *server) loadCertJar() error {
 		if _, nErr := s.newCertItem(); nErr != nil {
 			return fmt.Errorf("failed to initialize Certificate Jar - %v", nErr)
 		}
-		s.Warnf("Certificate Jar was empty, initialized with a new certificate")
+		s.Logger.Warnf("Certificate Jar was empty, initialized with a new certificate")
 		return nil
 	}
 
@@ -60,7 +60,7 @@ func (s *server) loadCertJar() error {
 	s.certTrack.CertCount = ids[len(ids)-1]
 	s.certTrackMutex.Unlock()
 
-	s.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
+	s.Logger.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
 
 	return nil
 }
@@ -115,20 +115,20 @@ func (s *server) saveCertJar() {
 
 	jsonCertJar, jErr := json.Marshal(s.certTrack.Certs)
 	if jErr != nil {
-		s.Errorf("Failed to marshall Certificate Jar - %v", jErr)
+		s.Logger.Errorf("Failed to marshall Certificate Jar - %v", jErr)
 		return
 	}
 
 	// Create or truncate, it's ok to trash existing content
 	file, oErr := os.Create(s.certJarFile)
 	if oErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
+		s.Logger.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
 		return
 	}
 	defer func() { _ = file.Close() }()
 	_, wErr := file.Write(jsonCertJar)
 	if wErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
+		s.Logger.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
 		return
 	}
 }

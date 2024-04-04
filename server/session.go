@@ -71,7 +71,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
 
-	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
+	s.Logger.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.wsConn.RemoteAddr().String())
 
 	return session
@@ -96,7 +96,7 @@ func (s *server) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	s.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
+	s.Logger.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		s.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,
@@ -228,7 +228,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 	// Copy all stdin to ssh channel.
 	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
-	session.Debugf(
+	session.Logger.Debugf(
 		"Session ID %d - Closed Reverse Shell (%s)",
 		session.sessionID,
 		session.wsConn.RemoteAddr().String(),
@@ -258,7 +258,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 			eventSize := len(sizeEvent)
 			if eventSize > 0 {
 				lastEvent := sizeEvent[eventSize-1]
-				session.Debugf(
+				session.Logger.Debugf(
 					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
 					session.sessionID,
 					lastEvent.Rows,
@@ -271,7 +271,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 						false,
 						newTermSizeBytes,
 					); err != nil {
-						session.Errorf("%v", err)
+						session.Logger.Errorf("%v", err)
 					}
 				}
 				sizeEvent = make([]*interpreter.TermSize, 0)
@@ -288,12 +288,12 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Debugf("Session ID %d - KeepAlive Check Stopped", session.sessionID)
+			session.Logger.Debugf("Session ID %d - KeepAlive Check Stopped", session.sessionID)
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
-				session.Errorf(
+				session.Logger.Errorf(
 					"Session ID %d - KeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
 					session.sessionID,
 					ok,
@@ -324,7 +324,7 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 	if len(payload) != 0 {
 		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
 	}
-	session.Debugf(
+	session.Logger.Debugf(
 		"Session ID %d - Replying Connection Request Type \"%s\", will send \"%v\" %s",
 		session.sessionID,
 		request.Type,
@@ -346,7 +346,7 @@ func (session *Session) socksEnable(port int) {
 	session.sessionMutex.Unlock()
 
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
-		session.Errorf("Session ID %d (Socks) - %v", session.sessionID, sErr)
+		session.Logger.Errorf("Session ID %d (Socks) - %v", session.sessionID, sErr)
 	}
 }
 

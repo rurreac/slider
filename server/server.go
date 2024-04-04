@@ -111,7 +111,7 @@ func NewServer(args []string) {
 
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {
-		s.Fatalf("%v", iErr)
+		s.Logger.Fatalf("%v", iErr)
 	}
 	s.serverInterpreter = i
 
@@ -125,11 +125,11 @@ func NewServer(args []string) {
 		}
 
 		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !*keyStore && *keyPath != "" {
-			s.Fatalf("Failed load Server Key, %s does not exist", kp)
+			s.Logger.Fatalf("Failed load Server Key, %s does not exist", kp)
 		} else if os.IsNotExist(sErr) && *keyStore {
-			s.Infof("Storing New Server Certificate on %s", kp)
+			s.Logger.Infof("Storing New Server Certificate on %s", kp)
 		} else {
-			s.Infof("Importing existing Server Certificate from %s", kp)
+			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
 		}
 
 		signer, keyErr = scrypt.NewSSHSignerFromFile(kp)
@@ -137,42 +137,41 @@ func NewServer(args []string) {
 		signer, keyErr = scrypt.NewSSHSigner()
 	}
 	if keyErr != nil {
-		s.Fatalf("%v", keyErr)
+		s.Logger.Fatalf("%v", keyErr)
 	}
 	s.sshConf.AddHostKey(signer)
 
 	if *auth {
-		s.Warnf("Client Authentication enabled, a valid certificate will be required")
+		s.Logger.Warnf("Client Authentication enabled, a valid certificate will be required")
 
 		if s.certJarFile == "" {
 			s.certJarFile = sio.GetSliderHome() + clientCertsFile
 		}
 		if lcErr := s.loadCertJar(); lcErr != nil {
-			s.Fatalf("%v", lcErr)
+			s.Logger.Fatalf("%v", lcErr)
 		}
 
 		s.sshConf.NoClientAuth = false
 		s.sshConf.PublicKeyCallback = s.clientVerification
 	} else {
 		if s.certJarFile != "" {
-			s.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
+			s.Logger.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
 		}
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 	serverAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 	if rErr != nil {
-		s.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
-		return
+		s.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 	}
 
 	go func() {
 		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
-			s.Fatalf("%s", sErr)
+			s.Logger.Fatalf("%s", sErr)
 		}
 	}()
-	s.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
+	s.Logger.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
 
 	// Hold the execution until exit from the console
 	wg := sync.WaitGroup{}
@@ -185,22 +184,22 @@ func NewServer(args []string) {
 	go func() {
 		for range sig {
 			// Send logs to a buffer
-			s.LogToBuffer()
+			s.Logger.LogToBuffer()
 			// Run a Slider Console (NewConsole locks until termination),
 			// 'out' will always be equal to "bg" or "exit"
 			out := s.NewConsole()
 			// Restore logs from buffer and resume output to stdout
-			s.BufferOut()
-			s.LogToStdout()
+			s.Logger.BufferOut()
+			s.Logger.LogToStdout()
 			if out == "exit" {
 				break
 			}
 		}
 		wg.Done()
 	}()
-	s.Infof("Press CTR^C to access the Slider Console")
+	s.Logger.Infof("Press CTR^C to access the Slider Console")
 	wg.Wait()
-	s.Printf("Server down...")
+	s.Logger.Printf("Server down...")
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -210,10 +209,10 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 	}
 
 	if s.isAllowedFingerprint(fp) {
-		s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
+		s.Logger.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
 		return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
 	}
-	s.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
+	s.Logger.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
 
 	return nil, fmt.Errorf("client key not authorized")
 }
