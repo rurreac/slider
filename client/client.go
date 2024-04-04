@@ -478,11 +478,3 @@ func (s *Session) handleFileDownloadChannel(channel ssh.NewChannel) {
 	// Copy file over channel
 	_, _ = downloadChan.Write(file)
 }
-
-func newClientInfo() (*conf.ClientInfo, error) {
-	ci, err := interpreter.NewInterpreter()
-	if err != nil {
-		return &conf.ClientInfo{}, err
-	}
-	return &conf.ClientInfo{Interpreter: ci}, nil
-}
