@@ -46,6 +46,7 @@ type client struct {
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
 	isListener        bool
+	firstRun          bool
 }
 
 const clientHelp = `
@@ -59,7 +60,10 @@ Usage: ./slider client [flags] <[server_address]:port>
 Flags:
 `
 
+var shutdown = make(chan bool, 1)
+
 func NewClient(args []string) {
+	defer close(shutdown)
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
 	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
 	keepAlive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
@@ -69,6 +73,7 @@ func NewClient(args []string) {
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
+	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
 	clientFlags.Usage = func() {
 		fmt.Printf(clientHelp)
 		clientFlags.PrintDefaults()
@@ -79,7 +84,10 @@ func NewClient(args []string) {
 		return
 	}
 
-	if slices.Contains(clientFlags.Args(), "help") || (len(clientFlags.Args()) == 0 && !*listener) || (len(clientFlags.Args()) > 0 && *listener) {
+	if slices.Contains(clientFlags.Args(), "help") ||
+		(len(clientFlags.Args()) == 0 && !*listener) ||
+		(len(clientFlags.Args()) > 0 && *listener) ||
+		*retry && *listener {
 		clientFlags.Usage()
 		return
 	}
@@ -103,6 +111,7 @@ func NewClient(args []string) {
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
+		firstRun: true,
 	}
 
 	c.sshConfig = &ssh.ClientConfig{
@@ -130,47 +139,66 @@ func NewClient(args []string) {
 
 	if *listener {
 		c.isListener = *listener
-		l, lisErr := net.Listen(
-			"tcp",
-			fmt.Sprintf("%s:%d", *address, *port),
-		)
-		if lisErr != nil {
-			c.Fatalf("Listener: %v", lisErr)
 
-		}
-
-		c.Infof("Listening on %s://%s:%d", l.Addr().Network(), *address, *port)
-		go func() {
-			// TODO: net/http serve has no support for timeouts
-			handler := http.Handler(http.HandlerFunc(c.handleHTTPConn))
-			if sErr := http.Serve(l, handler); sErr != nil {
-				c.Fatalf("%s", sErr)
-			}
-		}()
-	} else {
-		c.serverAddr = clientFlags.Args()[0]
-		c.wsConfig = conf.DefaultWebSocketDialer
-		wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), fmt.Sprintf("ws://%s", c.serverAddr), c.httpHeaders)
-		if wErr != nil {
-			c.Fatalf("Can't connect to Server address: %s", wErr)
+		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
+		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
+		if rErr != nil {
+			c.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 			return
 		}
 
-		session := c.newWebSocketSession(wsConn)
-		session.disconnect = make(chan bool, 1)
+		go func() {
+			handler := http.Handler(http.HandlerFunc(c.handleHTTPConn))
+			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
+				c.Fatalf("%s", sErr)
+			}
+		}()
+		c.Infof("Listening on %s://%s", clientAddr.Network(), clientAddr.String())
+		<-shutdown
+	} else {
+		serverAddr, rErr := net.ResolveTCPAddr("tcp", clientFlags.Args()[0])
+		if rErr != nil {
+			c.Fatalf("Not a valid IP address \"%s\"", clientFlags.Args()[0])
+			return
+		}
+		c.serverAddr = serverAddr.String()
+		c.wsConfig = conf.DefaultWebSocketDialer
 
-		go c.newSSHClient(session)
+		for loop := true; loop; {
+			c.startConnection()
 
-		<-session.disconnect
-		close(session.disconnect)
+			// When the Client is not Listener a Server disconnection
+			// will shut down the Client
+			select {
+			case <-shutdown:
+				loop = false
+			default:
 
-		// When the Client is not Listener a Server disconnection
-		// will shut down the Client
-		c.shutdown <- true
+				if !*retry || c.firstRun {
+					loop = false
+					continue
+				}
+				time.Sleep(c.keepalive)
+			}
+		}
 	}
 
-	<-c.shutdown
-	close(c.shutdown)
+	c.Printf("Client down...")
+}
+
+func (c *client) startConnection() {
+	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), fmt.Sprintf("ws://%s", c.serverAddr), c.httpHeaders)
+	if wErr != nil {
+		c.Errorf("Can't connect to Server address: %s", wErr)
+		return
+	}
+	session := c.newWebSocketSession(wsConn)
+	session.disconnect = make(chan bool, 1)
+
+	go c.newSSHClient(session)
+
+	<-session.disconnect
+	close(session.disconnect)
 }
 
 func (c *client) newSSHClient(session *Session) {
@@ -196,6 +224,10 @@ func (c *client) newSSHClient(session *Session) {
 
 	if c.keepalive > 0 {
 		go session.keepAlive(c.keepalive)
+	}
+
+	if c.firstRun {
+		c.firstRun = false
 	}
 
 	go session.handleGlobalChannels(newChan)
@@ -310,9 +342,10 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			s.updatePtySize(termSize.Rows, termSize.Cols)
 		case "checksum-verify":
 			go s.verifyFileCheckSum(req)
-		case "disconnect":
+		case "shutdown":
 			s.Warnf("%sServer requested Client disconnection.", s.logID)
 			_ = s.replyConnRequest(req, true, []byte("disconnected"))
+			shutdown <- true
 			s.disconnect <- true
 		default:
 			s.Debugf("%sReceived unknown Connection Request Type: \"%s\"", s.logID, req.Type)
@@ -353,7 +386,7 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-s.disconnect:
-			s.Infof("%sDisconnecting from Server %s...", s.logID, s.wsConn.RemoteAddr().String())
+			s.Infof("%sDisconnected from Server %s", s.logID, s.wsConn.RemoteAddr().String())
 			return
 		case <-ticker.C:
 			_, p, sendErr := s.sendConnRequest("keep-alive", true, []byte("ping"))

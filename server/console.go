@@ -235,6 +235,7 @@ func (s *server) sessionsCommand(args ...string) {
 	sessionsFlags.SetOutput(s.console.Term)
 
 	sInteract := sessionsFlags.Int("i", 0, "Starts Interactive Shell on a Session ID")
+	sDisconnect := sessionsFlags.Int("d", 0, "Disconnect Session ID")
 	sKill := sessionsFlags.Int("k", 0, "Kills Session ID")
 	sessionsFlags.Usage = func() {
 		s.console.PrintCommandUsage(sessionsFlags, sessionsDesc+sessionsUsage)
@@ -248,8 +249,8 @@ func (s *server) sessionsCommand(args ...string) {
 		list = true
 	}
 
-	if !list && ((*sInteract > 0 && *sKill > 0) || (*sInteract == 0 && *sKill == 0)) {
-		s.console.Printf("Flags '-i' and '-k' are mutually exclusive, nor can have 0 value.")
+	if !list && ((*sInteract > 0 && *sKill > 0 && *sDisconnect > 0) || (*sInteract == 0 && *sKill == 0 && *sDisconnect == 0)) {
+		s.console.Printf("Flags '-i', '-d' and '-k' are mutually exclusive, nor can have 0 value.")
 		return
 	}
 
@@ -328,6 +329,20 @@ func (s *server) sessionsCommand(args ...string) {
 		return
 	}
 
+	if *sDisconnect > 0 {
+		session, sessErr := s.getSession(*sDisconnect)
+		if sessErr != nil {
+			s.console.PrintlnDebugStep("Unknown Session ID %d", *sDisconnect)
+			return
+		}
+		if cErr := session.wsConn.Close(); cErr != nil {
+			s.console.PrintlnErrorStep("Failed to close connection to Session ID %d", session.sessionID)
+			return
+		}
+		s.console.PrintlnOkStep("Closed connection to Session ID %d", session.sessionID)
+		return
+	}
+
 	if *sKill > 0 {
 		session, sessErr := s.getSession(*sKill)
 		if sessErr != nil {
@@ -335,11 +350,11 @@ func (s *server) sessionsCommand(args ...string) {
 			return
 		}
 		if _, _, err = session.sendRequest(
-			"disconnect",
+			"shutdown",
 			true,
 			nil,
 		); err != nil {
-			s.console.Printf("%s", err)
+			s.console.PrintlnErrorStep("Client did not answer properly to the request: %s", err)
 			return
 		}
 		s.console.PrintlnOkStep("SessionID %d terminated gracefully", *sKill)
