@@ -180,8 +180,7 @@ Slider > help
 
 ##### Sessions
 ```
-Slider > sessions -l
-flag provided but not defined: -l
+Slider > sessions -h
 Interacts with Client Sessions
 
 When run without parameters, all available Sessions will be listed.
