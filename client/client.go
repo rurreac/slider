@@ -341,8 +341,8 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 		case "checksum-verify":
 			go s.verifyFileCheckSum(req)
 		case "shutdown":
-			s.Logger.Warnf("%sServer requested Client disconnection.", s.logID)
-			_ = s.replyConnRequest(req, true, []byte("disconnected"))
+			s.Logger.Warnf("%sServer requested Client shutdown", s.logID)
+			_ = s.replyConnRequest(req, true, nil)
 			shutdown <- true
 			s.disconnect <- true
 		default:
