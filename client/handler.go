@@ -21,7 +21,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 		_, err = w.Write([]byte("Not Found"))
 	}
 	if err != nil {
-		c.Errorf("handleClient: %v", err)
+		c.Logger.Errorf("handleClient: %v", err)
 	}
 }
 
@@ -30,12 +30,12 @@ func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {
-		c.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
+		c.Logger.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	c.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
+	c.Logger.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
 
 	session := c.newWebSocketSession(wsConn)
 	defer c.dropWebSocketSession(session)

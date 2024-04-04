@@ -24,7 +24,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		_, err = w.Write([]byte("Not Found"))
 	}
 	if err != nil {
-		s.Errorf("handleClient: %v", err)
+		s.Logger.Errorf("handleClient: %v", err)
 	}
 }
 
@@ -33,12 +33,12 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
+		s.Logger.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	s.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
+	s.Logger.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
 
 	session := s.newWebSocketSession(wsConn)
 	defer s.dropWebSocketSession(session)
@@ -53,7 +53,7 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool)
 		context.Background(),
 		fmt.Sprintf("ws://%s", clientAddr.String()), http.Header{})
 	if err != nil {
-		s.Errorf(
+		s.Logger.Errorf(
 			"Failed to open a WebSocket connection to \"%s\": %v",
 			clientAddr.String(),
 			err,
