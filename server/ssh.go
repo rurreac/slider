@@ -119,7 +119,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "keep-alive":
 			replyErr := session.replyConnRequest(r, true, []byte("pong"))
 			if replyErr != nil {
-				session.Errorf("Session ID %d (KeepAlive)- Connection error while replying.", session.sessionID)
+				session.Logger.Errorf("Session ID %d (KeepAlive)- Connection error while replying.", session.sessionID)
 				return
 			}
 		case "client-info":
