@@ -44,25 +44,6 @@ type Session struct {
 	fingerprint       string
 }
 
-type CmdOutput struct {
-	io.Reader
-	io.Writer
-	buff []byte
-}
-
-func (co CmdOutput) Read(p []byte) (int, error) {
-	return len(p), nil
-}
-
-func (co CmdOutput) Write(p []byte) (int, error) {
-	co.buff = append(co.buff, p...)
-	return len(co.buff), nil
-}
-
-func (co CmdOutput) Close() error {
-	return nil
-}
-
 // newWebSocketSession adds a new session and stores the client info
 func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrackMutex.Lock()
