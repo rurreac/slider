@@ -221,11 +221,13 @@ func (s *server) executeCommand(args ...string) {
 			continue
 		}
 		// TODO: output and error should be managed here
-		if sErr := session.sessionExecute(s.console.InitState); sErr != nil {
+
+		cmdOut, sErr := session.sessionExecute()
+		if sErr != nil {
 			s.console.PrintlnErrorStep("%v", sErr)
 			continue
 		}
-		s.console.Println("")
+		s.console.Printf("%s", cmdOut)
 	}
 }
 

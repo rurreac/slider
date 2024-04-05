@@ -243,7 +243,11 @@ Flags:
 ```
 If you want to run a single OS command on a client rather than interacting with the session itself you can use Console
 `execute` command.
-Note that `execute` will allow you to pass redirections or pipes to the Client as part of the command as well.
+Note that `execute`:
+* Allows you to pass redirections or pipes to the Client as part of the command as well.
+* A loading prompt will be visible if the command takes a while to process. If you are expecting an output with lots 
+of data, this is a good indication that you should run the command from an interactive Shell instead to reduce the 
+unnecessary overhead.
 
 ![Console Execute](./doc/console_execute.gif)
 

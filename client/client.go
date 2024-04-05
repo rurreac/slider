@@ -360,21 +360,25 @@ func (s *Session) sendCommandExec(request *ssh.Request) {
 	}
 	defer func() { _ = channel.Close() }()
 
+	// Notify Server we are good to go
+	if err := s.replyConnRequest(request, true, []byte("exec-ready")); err != nil {
+		s.Logger.Errorf("%sFailed to send reply to request \"%s\"", s.logID, request.Type)
+	}
+
 	rcvCmd := string(request.Payload)
 	s.Logger.Debugf("%sReceived Bytes Payload: %v, Command: \"%s\"", s.logID, request.Payload, rcvCmd)
 
 	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
 
-	out, _ := cmd.CombinedOutput()
+	out, coErr := cmd.CombinedOutput()
+	if coErr != nil {
+		out = []byte(fmt.Sprintf("Failed to process command: %s", coErr))
+	}
 	_, cwErr := channel.Write(out)
 	if cwErr != nil {
 		s.Logger.Errorf("%sFailed to write command \"%s\" output into channel", s.logID, rcvCmd)
 	}
 
-	// Notify Server we are good to go
-	if err := s.replyConnRequest(request, true, []byte("exec-ready")); err != nil {
-		s.Logger.Errorf("%sFailed to send reply to request \"%s\"", s.logID, request.Type)
-	}
 }
 
 func (s *Session) keepAlive(keepalive time.Duration) {
