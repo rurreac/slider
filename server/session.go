@@ -44,6 +44,25 @@ type Session struct {
 	fingerprint       string
 }
 
+type CmdOutput struct {
+	io.Reader
+	io.Writer
+	buff []byte
+}
+
+func (co CmdOutput) Read(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (co CmdOutput) Write(p []byte) (int, error) {
+	co.buff = append(co.buff, p...)
+	return len(co.buff), nil
+}
+
+func (co CmdOutput) Close() error {
+	return nil
+}
+
 // newWebSocketSession adds a new session and stores the client info
 func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrackMutex.Lock()
@@ -145,23 +164,45 @@ func (session *Session) closeSessionChannel() {
 	session.sessionMutex.Unlock()
 }
 
-func (session *Session) sessionExecute(initTermState *term.State) error {
-	// Remote Command won't execute on PTY, so terminal must be restored
-	// and make RAW once the output is finished
-	_ = term.Restore(int(os.Stdin.Fd()), initTermState)
-	defer func() {
-		// Force terminal back to RAW for Slider Console
-		_, _ = term.MakeRaw(int(os.Stdin.Fd()))
+func (session *Session) sessionExecute() ([]byte, error) {
+	defer session.closeSessionChannel()
 
-		// Close SSH Session
-		session.closeSessionChannel()
-	}()
+	showLoading := make(chan bool, 1)
+	defer close(showLoading)
+	go func(c chan bool) {
+		var loadingPos int
+		loading := []string{"\\", "|", "/", "-"}
 
-	// Copy ssh channel to stdout. Copy will stop on exit.
-	if _, outCopyErr := io.Copy(os.Stdout, session.sshChannel); outCopyErr != nil {
-		return fmt.Errorf("copy stdout: %v", outCopyErr)
+		ticker := time.NewTicker(250 * time.Millisecond)
+		for loop := true; loop; {
+			select {
+			case <-ticker.C:
+				fmt.Printf("\r%s", loading[loadingPos])
+				if loadingPos == 3 {
+					loadingPos = 0
+				}
+				loadingPos++
+			case loop = <-c:
+			}
+		}
+	}(showLoading)
+
+	cmdOut := make([]byte, 0)
+	for loop := true; loop; {
+		partialOut := make([]byte, 1024)
+		i, sErr := session.sshChannel.Read(partialOut)
+		if sErr == io.EOF {
+			cmdOut = append(cmdOut, partialOut[:i]...)
+			loop = false
+			continue
+		} else if sErr != nil {
+			break
+		}
+		cmdOut = append(cmdOut, partialOut...)
 	}
-	return nil
+	showLoading <- false
+
+	return cmdOut, nil
 }
 
 func (session *Session) sessionInteractive(initTermState *term.State, winChangeCall syscall.Signal) {
