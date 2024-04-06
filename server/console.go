@@ -93,7 +93,7 @@ func (s *server) NewConsole() string {
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
 			// line, error = "", io.EOF
 			// We will background gracefully when this happens
-			s.console.Println("")
+			fmt.Printf("\r\n%sLogging...%s\r\n", colors.Console.Warn, colors.Reset)
 			return "bg"
 		}
 		args := make([]string, 0)
@@ -220,7 +220,6 @@ func (s *server) executeCommand(args ...string) {
 			s.console.PrintlnErrorStep("%v", err)
 			continue
 		}
-		// TODO: output and error should be managed here
 
 		cmdOut, sErr := session.sessionExecute()
 		if sErr != nil {
@@ -418,22 +417,20 @@ func (s *server) socksCommand(args ...string) {
 		// Give some time to check
 		socksTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for {
-			select {
-			case <-socksTicker.C:
-				if time.Now().Before(timeout) {
-					port, _ := session.SocksInstance.GetEndpointPort()
-					if port == 0 {
-						continue
-					}
-					s.console.PrintlnOkStep("Socks Endpoint running on Port: %d", port)
-					return
+		for range socksTicker.C {
+			if time.Now().Before(timeout) {
+				port, _ := session.SocksInstance.GetEndpointPort()
+				if port == 0 {
+					continue
 				}
-				s.console.PrintlnErrorStep("Socks Endpoint doesn't appear to be running")
+				s.console.PrintlnOkStep("Socks Endpoint running on Port: %d", port)
 				return
 			}
+			s.console.PrintlnErrorStep("Socks Endpoint doesn't appear to be running")
+			return
 		}
 	}
+
 	socksFlags.Usage()
 }
 

@@ -64,7 +64,7 @@ func NewServer(args []string) {
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
 
 	serverFlags.Usage = func() {
-		fmt.Printf(serverHelp)
+		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
 		fmt.Println()
 	}
