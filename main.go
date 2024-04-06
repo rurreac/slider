@@ -22,9 +22,7 @@ Usage:
 Available Commands:
   client	Runs a Slider Client instance
   server	Runs a Slider Server instance
-  help		Print this information out
-
-`
+  help		Print this information out`
 
 func main() {
 	flag.Parse()
@@ -42,6 +40,6 @@ func main() {
 	case "client":
 		client.NewClient(flags)
 	default:
-		fmt.Printf(help)
+		fmt.Printf("%s\n\n", help)
 	}
 }

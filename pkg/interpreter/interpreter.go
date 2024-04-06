@@ -76,10 +76,7 @@ func findSafeShell() string {
 }
 
 func IsPtyOn() bool {
-	if slices.Contains(nixPty, runtime.GOOS) {
-		return true
-	}
-	return false
+	return slices.Contains(nixPty, runtime.GOOS)
 }
 
 func NewInterpreter() (*Interpreter, error) {

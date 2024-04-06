@@ -40,7 +40,6 @@ type client struct {
 	wsConfig          *websocket.Dialer
 	httpHeaders       http.Header
 	sshConfig         *ssh.ClientConfig
-	verbose           string
 	shutdown          chan bool
 	serverFingerprint []string
 	sessionTrack      *sessionTrack
@@ -57,8 +56,7 @@ to the defined Slider Server.
 
 Usage: ./slider client [flags] <[server_address]:port>
 
-Flags:
-`
+Flags:`
 
 var shutdown = make(chan bool, 1)
 
@@ -75,7 +73,7 @@ func NewClient(args []string) {
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
 	clientFlags.Usage = func() {
-		fmt.Printf(clientHelp)
+		fmt.Println(clientHelp)
 		clientFlags.PrintDefaults()
 		fmt.Println()
 	}
@@ -408,15 +406,6 @@ func (s *Session) sendConnRequest(reqType string, wantReply bool, payload []byte
 func (s *Session) replyConnRequest(req *ssh.Request, reply bool, payload []byte) error {
 	s.Logger.Debugf("%sReplying Connection Request Type \"%s\" with Payload: \"%s\"", s.logID, req.Type, payload)
 	return req.Reply(reply, payload)
-}
-
-func (s *Session) sendSessionRequest(sshSession *ssh.Session, requestType string, ok bool, payload []byte) error {
-	okR, err := sshSession.SendRequest(requestType, ok, payload)
-	if err != nil {
-		return fmt.Errorf("%s %v", requestType, err)
-	}
-	s.Logger.Debugf("%sSent Session Request \"%s\", received: \"%v\" from server.\n", s.logID, requestType, okR)
-	return nil
 }
 
 func (s *Session) handleSocksChannel(channel ssh.NewChannel) {

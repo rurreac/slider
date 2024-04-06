@@ -52,7 +52,7 @@ func (s *server) loadCertJar() error {
 
 	// Calculate latest CertID
 	var ids []int64
-	for i, _ := range s.certTrack.Certs {
+	for i := range s.certTrack.Certs {
 		ids = append(ids, i)
 	}
 	slices.Sort(ids)
@@ -108,11 +108,6 @@ func (s *server) dropCertItem(certID int64) error {
 }
 
 func (s *server) saveCertJar() {
-	var keys []int
-	for id, _ := range s.certTrack.Certs {
-		keys = append(keys, int(id))
-	}
-
 	jsonCertJar, jErr := json.Marshal(s.certTrack.Certs)
 	if jErr != nil {
 		s.Logger.Errorf("Failed to marshall Certificate Jar - %v", jErr)
