@@ -34,7 +34,7 @@ type sessionTrack struct {
 }
 
 type client struct {
-	*slog.Logger
+	Logger            *slog.Logger
 	serverAddr        string
 	keepalive         time.Duration
 	wsConfig          *websocket.Dialer

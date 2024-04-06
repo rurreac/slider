@@ -26,7 +26,8 @@ import (
 
 // Session represents a session from a client to the server
 type Session struct {
-	*slog.Logger
+	Logger            *slog.Logger
+	logID             string
 	notifier          chan bool
 	hostIP            string
 	sessionID         int64
@@ -63,6 +64,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
+		logID:         fmt.Sprintf("Session ID %d - ", sc),
 		SocksInstance: &ssocks.Instance{
 			InstanceConfig: &ssocks.InstanceConfig{},
 		},
@@ -251,8 +253,8 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
 	session.Logger.Debugf(
-		"Session ID %d - Closed Reverse Shell (%s)",
-		session.sessionID,
+		"%sClosed Reverse Shell (%s)",
+		session.logID,
 		session.wsConn.RemoteAddr().String(),
 	)
 }
@@ -281,8 +283,8 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 			if eventSize > 0 {
 				lastEvent := sizeEvent[eventSize-1]
 				session.Logger.Debugf(
-					"Session ID %d - Terminal size changed: rows %d cols %d.\n",
-					session.sessionID,
+					"%sTerminal size changed: rows %d cols %d.\n",
+					session.logID,
 					lastEvent.Rows,
 					lastEvent.Cols,
 				)
@@ -310,14 +312,14 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Logger.Debugf("Session ID %d - KeepAlive Check Stopped", session.sessionID)
+			session.Logger.Debugf("%sKeepAlive Check Stopped", session.logID)
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
 				session.Logger.Errorf(
-					"Session ID %d - KeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
-					session.sessionID,
+					"%sKeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
+					session.logID,
 					ok,
 					p,
 					sendErr,
@@ -347,8 +349,8 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
 	}
 	session.Logger.Debugf(
-		"Session ID %d - Replying Connection Request Type \"%s\", will send \"%v\" %s",
-		session.sessionID,
+		"%sReplying Connection Request Type \"%s\", will send \"%v\" %s",
+		session.logID,
 		request.Type,
 		ok,
 		pMsg,
@@ -359,6 +361,7 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 func (session *Session) socksEnable(port int) {
 	sConfig := &ssocks.InstanceConfig{
 		Logger:     session.Logger,
+		LogID:      session.logID,
 		IsEndpoint: true,
 		Port:       port,
 		SSHConn:    session.sshConn,
@@ -368,7 +371,7 @@ func (session *Session) socksEnable(port int) {
 	session.sessionMutex.Unlock()
 
 	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
-		session.Logger.Errorf("Session ID %d (Socks) - %v", session.sessionID, sErr)
+		session.Logger.Errorf("%sSocks - %v", session.logID, sErr)
 	}
 }
 

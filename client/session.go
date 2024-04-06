@@ -14,7 +14,7 @@ import (
 )
 
 type Session struct {
-	*slog.Logger
+	Logger        *slog.Logger
 	logID         string
 	sessionID     int64
 	serverAddr    string
