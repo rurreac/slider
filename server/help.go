@@ -17,8 +17,7 @@ its integrated Console by pressing CTR^C at any time.
 
 Usage: ./slider server [flags]
 
-Flags:
-`
+Flags:`
 
 // Console System Commands
 const bgCmd = "bg"

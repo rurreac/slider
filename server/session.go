@@ -222,7 +222,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
 		//		according to window-change events on the Server Terminal, sending Connection Requests.
 		if winChangeCall != 0 {
-			winChange := make(chan os.Signal)
+			winChange := make(chan os.Signal, 1)
 			signal.Notify(winChange, winChangeCall)
 
 			go session.captureWindowChange(winChange)

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type Session struct {
@@ -20,7 +19,6 @@ type Session struct {
 	serverAddr    string
 	wsConn        *websocket.Conn
 	sshConn       ssh.Conn
-	keepalive     time.Duration
 	sessionMutex  sync.Mutex
 	KeepAliveChan chan bool
 	keepAliveOn   bool
@@ -93,10 +91,4 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	delete(c.sessionTrack.Sessions, session.sessionID)
 	c.sessionTrackMutex.Unlock()
-}
-
-func (s *Session) addInterpreter(i *interpreter.Interpreter) {
-	s.sessionMutex.Lock()
-	s.interpreter = i
-	s.sessionMutex.Unlock()
 }

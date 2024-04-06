@@ -102,14 +102,13 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		var payload []byte
 		switch r.Type {
 		case "window-size":
-			tSize := interpreter.TermSize{}
 			// Could be checking size from os.Stdin Fd
 			//  but os.Stdout Fd is the one that works with Windows as well
 			width, height, err := term.GetSize(int(os.Stdout.Fd()))
 			if err != nil {
 				session.Logger.Errorf("Failed to obtain terminal size")
 			}
-			tSize = interpreter.TermSize{
+			tSize := interpreter.TermSize{
 				Rows: height,
 				Cols: width,
 			}
