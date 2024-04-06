@@ -16,7 +16,8 @@ import (
 )
 
 type InstanceConfig struct {
-	*slog.Logger
+	Logger       *slog.Logger
+	LogID        string
 	Port         int
 	SSHConn      ssh.Conn
 	SocksChannel ssh.Channel
@@ -68,6 +69,7 @@ func (si *Instance) StartEndpoint() error {
 		}
 	}()
 
+	si.Logger.Debugf("%sSocks Triggering Listener", si.LogID)
 	for {
 		TCPConn, lErr := listener.AcceptTCP()
 		if lErr != nil {
@@ -120,7 +122,7 @@ func (si *Instance) runComm(conn *net.TCPConn) {
 	defer func() { _ = conn.Close() }()
 	socksChan, reqs, oErr := si.SSHConn.OpenChannel("socks5", nil)
 	if oErr != nil {
-		si.Logger.Errorf("SOCKS - failed to open \"socks5\" channel - %v", oErr)
+		si.Logger.Errorf("%sFailed to open \"socks5\" channel - %v", si.LogID, oErr)
 	}
 	defer func() { _ = socksChan.Close() }()
 	go ssh.DiscardRequests(reqs)
@@ -142,11 +144,11 @@ func (si *Instance) Stop() error {
 	if !si.socksEnabled {
 		return fmt.Errorf("socks is not running")
 	}
-	si.Logger.Debugf("SOCKS - Triggering Shutdown")
+	si.Logger.Debugf("%sSocks Triggering Shutdown", si.LogID)
 	si.stopSignal <- true
 	<-si.done
 	close(si.done)
-	si.Logger.Debugf("SOCKS - Endpoint down")
+	si.Logger.Debugf("%sSocks Endpoint down", si.LogID)
 
 	return nil
 }
