@@ -83,7 +83,6 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 				session.sessionID,
 				nc.ChannelType(),
 			)
-		case "socks5":
 		default:
 			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
 			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
