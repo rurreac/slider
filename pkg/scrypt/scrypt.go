@@ -15,7 +15,7 @@ import (
 )
 
 type KeyPair struct {
-	PrivateKey  []byte `json:"PrivateKey"`
+	PrivateKey  string `json:"PrivateKey"`
 	FingerPrint string `json:"FingerPrint"`
 }
 
@@ -25,7 +25,18 @@ func NewSSHSigner() (ssh.Signer, error) {
 		return nil, err
 	}
 
-	privateKeySigner, prErr := ssh.ParsePrivateKey(keypair.PrivateKey)
+	keyBytes, dErr := base64.RawStdEncoding.DecodeString(keypair.PrivateKey)
+	if dErr != nil {
+		return nil, dErr
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:    "PRIVATE KEY",
+		Headers: nil,
+		Bytes:   keyBytes,
+	})
+
+	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
 	if prErr != nil {
 		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
 	}
@@ -68,9 +79,20 @@ func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
 		}
 	}
 
-	privateKeySigner, prErr := ssh.ParsePrivateKey(keyPair.PrivateKey)
+	keyBytes, dErr := base64.RawStdEncoding.DecodeString(keyPair.PrivateKey)
+	if dErr != nil {
+		return nil, dErr
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{
+		Type:    "PRIVATE KEY",
+		Headers: nil,
+		Bytes:   keyBytes,
+	})
+
+	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
 	if prErr != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
+		return nil, fmt.Errorf("ParsePrivateKey: %v", prErr)
 	}
 
 	return privateKeySigner, nil
@@ -96,11 +118,6 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	if mErr != nil {
 		return nil, mErr
 	}
-	pemBytes := pem.EncodeToMemory(&pem.Block{
-		Type:    "PRIVATE KEY",
-		Headers: nil,
-		Bytes:   pvBytes,
-	})
 
 	pbKey, pbErr := ssh.NewPublicKey(publicKey)
 	if pbErr != nil {
@@ -113,13 +130,7 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	}
 
 	return &KeyPair{
-		PrivateKey:  pemBytes,
+		PrivateKey:  base64.RawStdEncoding.EncodeToString(pvBytes),
 		FingerPrint: fingerprint,
 	}, nil
-}
-
-func (k *KeyPair) ExtractKeyFromPem() string {
-	// Extract only the key from the Pem and base64 encode it
-	block, _ := pem.Decode(k.PrivateKey)
-	return base64.StdEncoding.EncodeToString(block.Bytes)
 }
