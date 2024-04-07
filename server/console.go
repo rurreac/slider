@@ -592,7 +592,7 @@ func (s *server) certsCommand(args ...string) {
 					k,
 					strings.Repeat("-", 11),
 				)
-				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].ExtractKeyFromPem())
+				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].PrivateKey)
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
 				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%d\t\n", s.getSessionByCert(s.certTrack.Certs[int64(k)].FingerPrint))
 			}
@@ -611,7 +611,7 @@ func (s *server) certsCommand(args ...string) {
 		twn := new(tabwriter.Writer)
 		twn.Init(s.console.Term, 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(twn)
-		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.ExtractKeyFromPem())
+		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
 		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
 		_, _ = fmt.Fprintln(twn)
 		_ = twn.Flush()
