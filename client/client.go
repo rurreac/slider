@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
@@ -231,14 +233,20 @@ func (c *client) newSSHClient(session *Session) {
 }
 
 func (c *client) enableKeyAuth(key string) error {
-	// TODO: Probably not the best way to accomplish this
-	p := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", key)
-	signer, pErr := ssh.ParsePrivateKey([]byte(p))
+	k, dErr := base64.RawStdEncoding.DecodeString(key)
+	if dErr != nil {
+		return dErr
+	}
+	pemKey := pem.EncodeToMemory(&pem.Block{
+		Type:    "PRIVATE KEY",
+		Headers: nil,
+		Bytes:   k,
+	})
+	signer, pErr := ssh.ParsePrivateKey(pemKey)
 	if pErr != nil {
 		return fmt.Errorf("failed to parse private key: %v", pErr)
 	}
 	c.sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
-
 	return nil
 }
 
