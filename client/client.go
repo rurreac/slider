@@ -231,14 +231,11 @@ func (c *client) newSSHClient(session *Session) {
 }
 
 func (c *client) enableKeyAuth(key string) error {
-	// TODO: Probably not the best way to accomplish this
-	p := fmt.Sprintf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----", key)
-	signer, pErr := ssh.ParsePrivateKey([]byte(p))
+	signer, pErr := scrypt.SignerFromKey(key)
 	if pErr != nil {
 		return fmt.Errorf("failed to parse private key: %v", pErr)
 	}
 	c.sshConfig.Auth = []ssh.AuthMethod{ssh.PublicKeys(signer)}
-
 	return nil
 }
 
