@@ -25,18 +25,7 @@ func NewSSHSigner() (ssh.Signer, error) {
 		return nil, err
 	}
 
-	keyBytes, dErr := base64.RawStdEncoding.DecodeString(keypair.PrivateKey)
-	if dErr != nil {
-		return nil, dErr
-	}
-
-	pemBytes := pem.EncodeToMemory(&pem.Block{
-		Type:    "PRIVATE KEY",
-		Headers: nil,
-		Bytes:   keyBytes,
-	})
-
-	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
+	privateKeySigner, prErr := SignerFromKey(keypair.PrivateKey)
 	if prErr != nil {
 		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
 	}
@@ -79,7 +68,16 @@ func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
 		}
 	}
 
-	keyBytes, dErr := base64.RawStdEncoding.DecodeString(keyPair.PrivateKey)
+	privateKeySigner, prErr := SignerFromKey(keyPair.PrivateKey)
+	if prErr != nil {
+		return nil, fmt.Errorf("ParsePrivateKey: %v", prErr)
+	}
+
+	return privateKeySigner, nil
+}
+
+func SignerFromKey(key string) (ssh.Signer, error) {
+	keyBytes, dErr := base64.RawStdEncoding.DecodeString(key)
 	if dErr != nil {
 		return nil, dErr
 	}
@@ -95,7 +93,7 @@ func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
 		return nil, fmt.Errorf("ParsePrivateKey: %v", prErr)
 	}
 
-	return privateKeySigner, nil
+	return privateKeySigner, prErr
 }
 
 func GenerateFingerprint(publicKey ssh.PublicKey) (string, error) {
