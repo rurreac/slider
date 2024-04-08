@@ -51,6 +51,12 @@ builds:
     # overriding each other.
     no_unique_dist_dir: true
 
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^doc:"
+
 upx:
   - enabled: true
     goos: ['linux', 'windows']
