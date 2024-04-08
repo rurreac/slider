@@ -35,8 +35,8 @@ builds:
     goarch: [ '386', 'amd64', 'arm64' ]
     # List of combinations of GOOS + GOARCH + GOARM to ignore.
     ignore:
-      - goos: darwin
-        goarch: 386
+      - goos: 'darwin'
+        goarch: '386'
     # If true, skip the build.
     # Useful for library projects.
     skip: false
