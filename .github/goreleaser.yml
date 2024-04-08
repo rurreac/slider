@@ -1,11 +1,12 @@
 builds:
   # You can have multiple builds defined as a yaml list
-  - # Custom ldflags.
+  - binary: slider_{{ .Os }}_{{ .Arch }}
+    # Custom ldflags.
     #
     # Default: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser'
     # Templates: allowed
     ldflags:
-      - -s -w -X conf.version={{.Version}} -X conf.commit={{.Commit}} -X conf.date={{.Date}} -X conf.goVer={{.Env.GOVERSION}}
+      - -s -w -X conf.version={{.Version}} -X conf.commit={{.Commit}} -X conf.date={{.Date}} #-X conf.goVer={{.Env.GOVERSION}}
     # Custom environment variables to be set during the builds.
     # Invalid environment variables will be ignored.
     #
@@ -26,17 +27,36 @@ builds:
     # List of combinations of GOOS + GOARCH + GOARM to ignore.
     ignore:
       - goos: 'darwin'
-        goarch: 'amd64'
-
+        goarch: '386'
+    # By default, GoReleaser will create your binaries inside
+    # `dist/${BuildID}_${BuildTarget}`, which is a unique directory per build
+    # target in the matrix.
+    # You can set subdirs within that directory using the `binary` property.
+    #
+    # However, if for some reason you don't want that unique directory to be
+    # created, you can set this property.
+    # If you do, you are responsible for keeping different builds from
+    # overriding each other.
+    no_unique_dist_dir: true
+    # Overrides allows to override some fields for specific targets.
+    # This can be specially useful when using CGO.
+    # Note: it'll only match if the full target matches.
+    #
+    # Since: v1.5
+    overrides:
+      - goos: darwin
+        goarch: arm64
+        goamd64: v1
 changelog:
   sort: asc
   filters:
     exclude:
       - "^doc:"
+      - "^action:"
 
 upx:
   - enabled: true
-    goos: ['linux', 'windows', 'darwin']
+    goos: ['linux', 'windows']
     goarch: ['386']
     # Compress argument.
     # Valid options are from '1' (faster) to '9' (better), and 'best'.
@@ -46,7 +66,7 @@ upx:
     # Whether to try all methods and filters (slow).
     brute: true
   - enabled: true
-    goos: ['linux', 'windows']
+    goos: ['linux', 'windows', 'darwin']
     goarch: ['amd64']
     compress: best
     lzma: true
