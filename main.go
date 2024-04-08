@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"slider/client"
+	"slider/pkg/conf"
 	"slider/server"
 )
 
@@ -21,8 +22,9 @@ Usage:
 
 Available Commands:
   client	Runs a Slider Client instance
+  help		Print this information out
   server	Runs a Slider Server instance
-  help		Print this information out`
+  version	Shows Binary Build info`
 
 func main() {
 	flag.Parse()
@@ -39,6 +41,8 @@ func main() {
 		server.NewServer(flags)
 	case "client":
 		client.NewClient(flags)
+	case "version":
+		conf.PrintVersion()
 	default:
 		fmt.Printf("%s\n\n", help)
 	}

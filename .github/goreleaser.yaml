@@ -1,0 +1,76 @@
+builds:
+  # You can have multiple builds defined as a yaml list
+  - # Path to main.go file or main package.
+    # Notice: when used with `gomod.proxy`, this must be a package.
+    #
+    # Default is `.`.
+    main: .
+    # Binary name.
+    # Can be a path (e.g. `bin/app`) to wrap the binary in a directory.
+    #
+    # Default: Project directory name
+    binary: slider
+    # Custom ldflags.
+    #
+    # Default: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser'
+    # Templates: allowed
+    ldflags:
+      - -s -w -X conf.version={{.Version}} -X conf.commit={{.Commit}} -X conf.date={{.Date}} -X conf.goVer={{.Env.GOVERSION}}
+    # Custom environment variables to be set during the builds.
+    # Invalid environment variables will be ignored.
+    #
+    # Default: os.Environ() ++ env config section
+    # Templates: allowed (since v1.14)
+    env:
+      - CGO_ENABLED=0
+    # GOOS list to build for.
+    # For more info refer to: https://golang.org/doc/install/source#environment
+    #
+    # Default: [ 'darwin', 'linux', 'windows' ]
+    goos: ['darwin', 'linux', 'windows']
+    # GOARCH to build for.
+    # For more info refer to: https://golang.org/doc/install/source#environment
+    #
+    # Default: [ '386', 'amd64', 'arm64' ]
+    goarch: [ '386', 'amd64', 'arm64' ]
+    # List of combinations of GOOS + GOARCH + GOARM to ignore.
+    ignore:
+      - goos: darwin
+        goarch: 386
+    # If true, skip the build.
+    # Useful for library projects.
+    skip: false
+    # By default, GoReleaser will create your binaries inside
+    # `dist/${BuildID}_${BuildTarget}`, which is a unique directory per build
+    # target in the matrix.
+    # You can set subdirs within that directory using the `binary` property.
+    #
+    # However, if for some reason you don't want that unique directory to be
+    # created, you can set this property.
+    # If you do, you are responsible for keeping different builds from
+    # overriding each other.
+    no_unique_dist_dir: true
+
+upx:
+  - enabled: true
+    goos: ['linux', 'windows']
+    goarch: ['386']
+    # Compress argument.
+    # Valid options are from '1' (faster) to '9' (better), and 'best'.
+    compress: best
+    # Whether to try LZMA (slower).
+    lzma: true
+    # Whether to try all methods and filters (slow).
+    brute: true
+  - enabled: true
+    goos: ['linux', 'windows', 'darwin']
+    goarch: ['amd64']
+    compress: best
+    lzma: true
+    brute: true
+  - enabled: true
+    goos: ['linux']
+    goarch: ['arm64']
+    compress: best
+    lzma: true
+    brute: true
