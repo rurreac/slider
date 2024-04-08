@@ -1,16 +1,6 @@
 builds:
   # You can have multiple builds defined as a yaml list
-  - # Path to main.go file or main package.
-    # Notice: when used with `gomod.proxy`, this must be a package.
-    #
-    # Default is `.`.
-    main: .
-    # Binary name.
-    # Can be a path (e.g. `bin/app`) to wrap the binary in a directory.
-    #
-    # Default: Project directory name
-    binary: slider
-    # Custom ldflags.
+  - # Custom ldflags.
     #
     # Default: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser'
     # Templates: allowed
@@ -37,19 +27,6 @@ builds:
     ignore:
       - goos: 'darwin'
         goarch: '386'
-    # If true, skip the build.
-    # Useful for library projects.
-    skip: false
-    # By default, GoReleaser will create your binaries inside
-    # `dist/${BuildID}_${BuildTarget}`, which is a unique directory per build
-    # target in the matrix.
-    # You can set subdirs within that directory using the `binary` property.
-    #
-    # However, if for some reason you don't want that unique directory to be
-    # created, you can set this property.
-    # If you do, you are responsible for keeping different builds from
-    # overriding each other.
-    no_unique_dist_dir: true
 
 changelog:
   sort: asc
