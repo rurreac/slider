@@ -26,7 +26,7 @@ builds:
     # List of combinations of GOOS + GOARCH + GOARM to ignore.
     ignore:
       - goos: 'darwin'
-        goarch: '386'
+        goarch: 'amd64'
 
 changelog:
   sort: asc
@@ -36,7 +36,7 @@ changelog:
 
 upx:
   - enabled: true
-    goos: ['linux', 'windows']
+    goos: ['linux', 'windows', 'darwin']
     goarch: ['386']
     # Compress argument.
     # Valid options are from '1' (faster) to '9' (better), and 'best'.
@@ -46,7 +46,7 @@ upx:
     # Whether to try all methods and filters (slow).
     brute: true
   - enabled: true
-    goos: ['linux', 'windows', 'darwin']
+    goos: ['linux', 'windows']
     goarch: ['amd64']
     compress: best
     lzma: true
