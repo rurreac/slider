@@ -1,3 +1,6 @@
+before:
+  hooks:
+    - go mod tidy
 builds:
   # You can have multiple builds defined as a yaml list
   - binary: slider_{{ .Os }}_{{ .Arch }}
@@ -6,7 +9,13 @@ builds:
     # Default: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser'
     # Templates: allowed
     ldflags:
-      - -s -w -X conf.Version={{.Version}} -X conf.Commit={{.Commit}} -X conf.Date={{.Date}} -X conf.GoVer={{.Env.GOVERSION}}
+      - -s -w
+      - -X slider/pkg/conf.version={{.Version}}
+      - -X slider/pkg/conf.binOS={{.Os}}
+      - -X slider/pkg/conf.binArch={{.Arch}}
+      - -X slider/pkg/conf.commit={{.Commit}}
+      - -X slider/pkg/conf.date={{.Date}}
+      - -X slider/pkg/conf.goVer={{.Env.GOVERSION}}
     # Custom environment variables to be set during the builds.
     # Invalid environment variables will be ignored.
     #
@@ -14,6 +23,7 @@ builds:
     # Templates: allowed (since v1.14)
     env:
       - CGO_ENABLED=0
+      - GOVERSION={{ .Env.GOVERSION }}
     # GOOS list to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
     #
