@@ -6,7 +6,7 @@ builds:
     # Default: '-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser'
     # Templates: allowed
     ldflags:
-      - -s -w -X conf.version={{.Version}} -X conf.commit={{.Commit}} -X conf.date={{.Date}} #-X conf.goVer={{.Env.GOVERSION}}
+      - -s -w -X conf.Version={{.Version}} -X conf.Commit={{.Commit}} -X conf.Date={{.Date}} -X conf.GoVer={{.Env.GOVERSION}}
     # Custom environment variables to be set during the builds.
     # Invalid environment variables will be ignored.
     #

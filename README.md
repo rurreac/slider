@@ -39,6 +39,8 @@ Currently, if compiled omitting the symbol table and debug information and omitt
 If also compressing it using [UPX](https://github.com/upx/upx) with the `--brute` flag, the size is kept somewhere 
 around 2mb.
 
+Slider Release Binaries are already compressed with [UPX](https://github.com/upx/upx) if supported.
+
 Currently Slider uses the following external dependencies:
 * [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
