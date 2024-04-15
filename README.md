@@ -52,7 +52,7 @@ Currently Slider uses the following external dependencies:
 
 At the time of writing and due to the experimental Shellcode feature building Slider requires CGO.
 
-If cross compiling from macOS to Linux, a C compiler (such as [Zig](https://formulae.brew.sh/formula/zig)) will be
+If cross compiling from macOS to Linux, a C/C++ compiler (such as [Zig](https://formulae.brew.sh/formula/zig)) will be
 required as well as the following environment variables.
 
 ```
@@ -185,16 +185,16 @@ Slider > help
 
   Commands  Description  
 
-  bg        Puts Console into background and returns to logging output                                          
-  certs     Interacts with the Server Certificate Jar                                                           
-  connect   Receives the address of a Client to connect to                                                      
-  download  Downloads file passed as an argument from Client                                                    
-  execute   Runs a command remotely and returns the output                                                      
-  exit      Exits Console and terminates the Server                                                             
-  help      Shows this output                                                                                   
-  sessions  Interacts with Client Sessions                                                                      
-  socks     Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server  
-  upload    Uploads file passed as an argument to Client
+  bg         Puts Console into background and returns to logging output  
+  connect    Receives the address of a Client to connect to              
+  download   Downloads file passed as an argument from Client            
+  execute    Runs a command remotely and returns the output              
+  exit       Exits Console and terminates the Server                     
+  help       Shows this output                                           
+  sessions   Interacts with Client Sessions                              
+  shellcode  Runs a ShellCode on the target Client (Experimental)        
+  socks      Runs or Kills a Reverse Socks server                        
+  upload     Uploads file passed as an argument to Client
 ```
 
 #### Commands walk through
