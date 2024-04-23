@@ -22,8 +22,26 @@ builds:
     # Default: os.Environ() ++ env config section
     # Templates: allowed (since v1.14)
     env:
-      - CGO_ENABLED=0
       - GOVERSION={{ .Env.GOVERSION }}
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
+          {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
+        {{- end }}
+        {{- if eq .Os "windows" }}
+          {{- if eq .Arch "386" }}CC=i686-w64-mingw32-gcc{{- end }}
+          {{- if eq .Arch "amd64" }}CC=x86_64-w64-mingw32-gcc{{- end }}
+        {{- end }}
+        - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64"}}CXX=o64-clang+{{- end }}
+          {{- if eq .Arch "arm64"}}CXX=aarch64-apple-darwin20.2-clang++{{- end }}
+        {{- end }}
+        {{- if eq .Os "windows" }}
+          {{- if eq .Arch "386" }}CXX=i686-w64-mingw32-g++{{- end }}
+          {{- if eq .Arch "amd64" }}CXX=x86_64-w64-mingw32-g++{{- end }}
+        {{- end }}
     # GOOS list to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
     #
