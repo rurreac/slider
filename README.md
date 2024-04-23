@@ -217,17 +217,32 @@ runs its next keepalive check will shut down.
 
 ##### Connect
 ```
-Slider > connect -h
 Receives the address of a Client to connect to
 
 Connects to a Client configured as Listener and creates a new Session
 
 Usage: connect <client_address:port>
+
+Flags:
+  -auth
+    	Forces Listener authentication if server auth enabled otherwise discarded
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
 then we'll need to use the `connect` command.
+
 This command will try to open a Session in the background, and you will be notified whether the connection was
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
+
+By default, Listeners are not forced to authenticate against Servers, instead, they are the ones that allow Servers 
+to connect by checking their Public Key fingerprint (if enabled).
+
+Generally speaking you will rarely want to do this, but two ways authentication between Listeners and Servers is possible
+by forcing a Listener authentication with the `-auth` flag. 
+
+In this case, Listeners will be required of using the `-key` flag, providing a Private Key that has been stored on
+a Server Certificate Jar.
+
+Note that if `auth` was not enabled on the server, then the connect `-auth` flag will be discarded if used. 
 
 ![Console Connect](./doc/console_connect.gif)
 

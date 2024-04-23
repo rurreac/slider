@@ -215,7 +215,7 @@ func (c *client) newSSHClient(session *Session) {
 	c.Logger.Debugf("%sSSH Session %v\n", session.logID, session.sshConn.SessionID())
 
 	// Send Client Information to Server
-	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter, IsListener: c.isListener}
+	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter}
 	go session.sendClientInfo(clientInfo)
 
 	if c.keepalive > 0 {
@@ -264,7 +264,7 @@ func (c *client) loadFingerPrint(fp string) error {
 	return nil
 }
 
-func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
+func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) error {
 	serverFingerprint, fErr := scrypt.GenerateFingerprint(key)
 	if fErr != nil {
 		return fErr
@@ -275,7 +275,7 @@ func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.Publi
 		return nil
 	}
 
-	return fmt.Errorf("server %s (%s) - verification failed", remote.String(), hostname)
+	return fmt.Errorf("server %s - verification failed (fingerprint: %s)", remote.String(), serverFingerprint)
 }
 
 func (s *Session) sendClientInfo(ci *conf.ClientInfo) {

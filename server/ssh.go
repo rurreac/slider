@@ -24,7 +24,13 @@ func (s *server) NewSSHServer(session *Session) {
 	var reqChan <-chan *ssh.Request
 	var err error
 
-	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
+	sshConf := s.sshConf
+	if s.authOn && session.isListener && !session.listenerAuth {
+		s.Logger.Debugf("Session ID %d - Autentication to Listener disabled", session.sessionID)
+		sshConf.NoClientAuth = true
+	}
+
+	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
 		s.Logger.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
@@ -33,7 +39,9 @@ func (s *server) NewSSHServer(session *Session) {
 		return
 	}
 	session.addSessionSSHConnection(shellConn)
-	if s.authOn {
+
+	// If authentication was enabled for this ssh config save the client fingerprint
+	if !sshConf.NoClientAuth {
 		session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
 	}
 
@@ -126,7 +134,6 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				s.Logger.Errorf("Failed to parse Client Info - %v", jErr)
 			}
 			session.ClientInterpreter = ci.Interpreter
-			session.IsListener = ci.IsListener
 
 			_ = session.replyConnRequest(r, true, nil)
 		default:
