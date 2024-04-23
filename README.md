@@ -385,50 +385,52 @@ This is an Experimental feature and can be removed at any time. Due to its natur
 from a reverse Shell instead of using this feature. 
 > Check [go-shellcode](https://github.com/rurreac/go-shellcode) for an example.
 
-The process of transferring a Shellcode to a Client can be considered safe since happens through an SSH connection, 
-and it's stored directly on memory.
+The process of transferring a Shellcode to a Client can be considered generally safe since happens through an SSH 
+connection, and it's executed directly from memory, avoiding any AV static analysis.
 
 There are a few caveats though for you to consider before using this feature.
 
 ###### Windows targets:
 
-1. The Shellcode sent to the client can not be encoded.
+1. Machine Code sent to the client can not be encoded.
     
 
     Encoding a Payload requires a memory allocation with READ, WRITE and EXECUTE protections since WRITE permissions
     are required to decode the Payload in the allocated memory.
-    This combination produces a hit on EDR/AV so it's avoided.
+    This combination produces a hit on EDR/AV so it's not used.
 
-2. The Shellcode can not be Staged.
+2. If it's a Shellcode can not be Staged.
 
     
-    The Shellcode will be "safely" executed once arrives the Client. If the Shellcode (a malicious one) is 
-    staged, it will be detected by Windows Defender or any other AV when reaching out for the second stage.
+    The Machine Code will be "safely" executed once arrives the Client. If this Machine Code is staged and considered
+    malicious (ie. meterpreter), it will be detected by Windows Defender or any other AV when reaching out for the 
+    second stage.
     The end result will be the AV blocking the execution and removing the Slider binary.
 
 3. Use Windows AMD64 Slider binaries if your target architecture is ARM64.
 
     
-    If you intend to use msfvenom to generate your Shellcode note that at the time of writing there are no payloads
-    for Windows ARM64. Since Windows ARM64 executes x64 binaries out of the box, default to use Slider AMD64 binaries
+    If you intend to use msfvenom to generate Machine Code / Shellcode, note that at the time of writing there are no 
+    payloads for Windows ARM64. 
+    Since Windows ARM64 executes x64 binaries out of the box, better default to use Slider AMD64 binaries
     and x64 Payloads.
 
 
 ###### Unix like Targets
 
-1. The Shellcode can be encoded.
+1. Machine Code can be encoded.
 
 
     Since Linux doesn't come with an EDR/AV out of the box the memory allocation is created with READ, WRITE and 
     EXECUTE protections which allows for the Shellcode to be decoded.
 
-2. The Shellcode might have to be Staged.
+2. If it's a Shellcode, it might have to be Staged.
 
     
-    If using msfvenom to generate the Shellcode, note that some non Staged Payloads only allow ELF as the output 
+    If using msfvenom to generate a Shellcode, note that some non Staged Payloads only allow ELF as the output 
     format, while you will find that the Staged Payload will allow you to choose the output in RAW format.
 
-    Following the same principle as in 1., this should be considered "safe".
+    Following the same principle as in 1., on most circumstances it should be considered "safe".
     
 
 ## Client

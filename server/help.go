@@ -111,10 +111,11 @@ Usage: connect <client_address:port>
 
 // Console Hex Execute Command
 const shellcodeCmd = "shellcode"
-const shellcodeDesc = "Runs a ShellCode on the target Client"
+const shellcodeDesc = "Runs Machine Code on the target Client"
 const shellcodeUsage = `
 
-Receives a HEX ShellCode string or a file containing a RAW shellcode and executes it on the target Client.
+Receives a Machine Code in a HEX string format or a file containing RAW Machine Code and executes it 
+on the target Client.
 
 Usage: shellcode [flags] [arg]
 
