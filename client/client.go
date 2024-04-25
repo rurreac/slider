@@ -112,7 +112,7 @@ func NewClient(args []string) {
 
 	if *keepalive < conf.MinKeepAlive {
 		c.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
-		*keepalive = conf.Keepalive
+		*keepalive = conf.MinKeepAlive
 	}
 	c.keepalive = *keepalive
 

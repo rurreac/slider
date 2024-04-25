@@ -111,7 +111,7 @@ func NewServer(args []string) {
 	// Ensure a minimum keepalive
 	if *keepalive < conf.MinKeepAlive {
 		s.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
-		*keepalive = conf.Keepalive
+		*keepalive = conf.MinKeepAlive
 	}
 	s.keepalive = *keepalive
 
