@@ -63,7 +63,8 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool)
 	defer func() { _ = wsConn.Close() }()
 
 	session := s.newWebSocketSession(wsConn)
-	session.notifier = notifier
+	session.setListenerOn(true)
+	session.addSessionNotifier(notifier)
 
 	defer s.dropWebSocketSession(session)
 
