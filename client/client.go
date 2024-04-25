@@ -173,7 +173,6 @@ func NewClient(args []string) {
 			case <-shutdown:
 				loop = false
 			default:
-
 				if !*retry || c.firstRun {
 					loop = false
 					continue
