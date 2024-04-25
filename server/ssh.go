@@ -57,9 +57,8 @@ func (s *server) NewSSHServer(session *Session) {
 		session.notifier <- true
 	}
 
-	if s.keepalive > 0 {
-		go session.keepAlive(s.keepalive)
-	}
+	// Set keepalive after connection is established
+	go session.keepAlive(s.keepalive)
 
 	// Requests and NewChannel channels must be serviced/discarded or the connection hangs
 	go s.handleConnRequests(session, reqChan)

@@ -140,7 +140,8 @@ then logs will have no colors.
 #### `-keepalive`:
 By default, Slider pings every Client Session (every 60s) to ensure its available, otherwise kills the Session.
 
-This value can be changed to any other duration value or set to `0` to completely disable it.
+This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
+it to this one.
 
 #### `-keypath` and `-keystore`:
 By default, everytime Slider Server is executed, a new in memory KeyPair is generated, and so it's lost on termination.
@@ -398,7 +399,8 @@ colors. If this flag is passed then logs will have no colors.
 #### `-keepalive`:
 By default, Slider pings every Server Session (every 60s) to ensure its available, otherwise kills the Session.
 
-This value can be changed to any other duration value or set to `0` to completely disable it.
+This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
+it to this one.
 
 Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
 the keepalive will leave not listener clients hanging forever.
