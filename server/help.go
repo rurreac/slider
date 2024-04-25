@@ -103,7 +103,7 @@ const connectUsage = `
 
 Connects to a Client configured as Listener and creates a new Session
 
-Usage: connect [flags] <client_address:port>
+Usage: connect <[client_address]:port>
 
 `
 
