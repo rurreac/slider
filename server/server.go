@@ -106,8 +106,14 @@ func NewServer(args []string) {
 		},
 		certJarFile: *certJarFile,
 		authOn:      *auth,
-		keepalive:   *keepalive,
 	}
+
+	// Ensure a minimum keepalive
+	if *keepalive < conf.MinKeepAlive {
+		s.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
+		*keepalive = conf.Keepalive
+	}
+	s.keepalive = *keepalive
 
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {

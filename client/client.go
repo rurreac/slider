@@ -64,7 +64,7 @@ func NewClient(args []string) {
 	defer close(shutdown)
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
 	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	keepAlive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
+	keepalive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
 	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
@@ -102,14 +102,19 @@ func NewClient(args []string) {
 	}
 
 	c := client{
-		Logger:    log,
-		keepalive: *keepAlive,
-		shutdown:  make(chan bool, 1),
+		Logger:   log,
+		shutdown: make(chan bool, 1),
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
 		firstRun: true,
 	}
+
+	if *keepalive < conf.MinKeepAlive {
+		c.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
+		*keepalive = conf.Keepalive
+	}
+	c.keepalive = *keepalive
 
 	c.sshConfig = &ssh.ClientConfig{
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -253,9 +258,8 @@ func (c *client) newSSHClient(session *Session) {
 	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter}
 	go session.sendClientInfo(clientInfo)
 
-	if c.keepalive > 0 {
-		go session.keepAlive(c.keepalive)
-	}
+	// Set keepalive after connection is established
+	go session.keepAlive(c.keepalive)
 
 	if c.firstRun {
 		c.firstRun = false
