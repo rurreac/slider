@@ -288,7 +288,7 @@ func (s *server) sessionsCommand(args ...string) {
 						fingerprint = "--"
 					}
 					var inOut = "<-"
-					if session.IsListener {
+					if session.isListener {
 						inOut = "->"
 					}
 					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
@@ -622,6 +622,7 @@ func (s *server) certsCommand(args ...string) {
 
 func (s *server) connectCommand(args ...string) {
 	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
+	connectFlags.SetOutput(s.console.Term)
 	connectFlags.Usage = func() {
 		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
 	}

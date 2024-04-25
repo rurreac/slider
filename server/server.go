@@ -62,12 +62,12 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
-
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
 		fmt.Println()
 	}
+
 	if fErr := serverFlags.Parse(args); fErr != nil {
 		return
 	}
@@ -85,7 +85,7 @@ func NewServer(args []string) {
 	log := slog.NewLogger("Server")
 	lvErr := log.SetLevel(*verbose)
 	if lvErr != nil {
-		fmt.Printf("%v", lvErr)
+		fmt.Printf("wrong log level \"%s\", %v", *verbose, lvErr)
 		return
 	}
 
@@ -127,9 +127,9 @@ func NewServer(args []string) {
 		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !*keyStore && *keyPath != "" {
 			s.Logger.Fatalf("Failed load Server Key, %s does not exist", kp)
 		} else if os.IsNotExist(sErr) && *keyStore {
-			s.Logger.Infof("Storing New Server Certificate on %s", kp)
+			s.Logger.Debugf("Storing New Server Certificate on %s", kp)
 		} else {
-			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
+			s.Logger.Debugf("Importing existing Server Certificate from %s", kp)
 		}
 
 		signer, keyErr = scrypt.NewSSHSignerFromFile(kp)
@@ -140,6 +140,11 @@ func NewServer(args []string) {
 		s.Logger.Fatalf("%v", keyErr)
 	}
 	s.sshConf.AddHostKey(signer)
+	serverFp, fErr := scrypt.GenerateFingerprint(signer.PublicKey())
+	if fErr != nil {
+		s.Logger.Fatalf("Failed to generate server fingerprint")
+	}
+	s.Logger.Infof("Server Fingerprint: %s", serverFp)
 
 	if *auth {
 		s.Logger.Warnf("Client Authentication enabled, a valid certificate will be required")
