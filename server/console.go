@@ -623,7 +623,6 @@ func (s *server) certsCommand(args ...string) {
 func (s *server) connectCommand(args ...string) {
 	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
 	connectFlags.SetOutput(s.console.Term)
-	cAuth := connectFlags.Bool("auth", false, "Forces Listener authentication if server auth enabled, otherwise discarded")
 	connectFlags.Usage = func() {
 		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
 	}
@@ -649,7 +648,7 @@ func (s *server) connectCommand(args ...string) {
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(clientAddr, *cAuth, notifier)
+	go s.newClientConnector(clientAddr, notifier)
 
 	for {
 		select {

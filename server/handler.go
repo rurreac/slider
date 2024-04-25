@@ -46,7 +46,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientAddr *net.TCPAddr, auth bool, notifier chan bool) {
+func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool) {
 	wsConfig := conf.DefaultWebSocketDialer
 
 	wsConn, _, err := wsConfig.DialContext(
@@ -64,7 +64,6 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, auth bool, notifier
 
 	session := s.newWebSocketSession(wsConn)
 	session.setListenerOn(true)
-	session.setListenerAuthOn(auth)
 	session.addSessionNotifier(notifier)
 
 	defer s.dropWebSocketSession(session)

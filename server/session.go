@@ -41,7 +41,6 @@ type Session struct {
 	SocksInstance     *ssocks.Instance
 	ClientInterpreter *interpreter.Interpreter
 	isListener        bool
-	listenerAuth      bool
 	sessionMutex      sync.Mutex
 	fingerprint       string
 }
@@ -145,12 +144,6 @@ func (session *Session) setKeepAliveOn(aliveCheck bool) {
 func (session *Session) setListenerOn(listener bool) {
 	session.sessionMutex.Lock()
 	session.isListener = listener
-	session.sessionMutex.Unlock()
-}
-
-func (session *Session) setListenerAuthOn(auth bool) {
-	session.sessionMutex.Lock()
-	session.listenerAuth = auth
 	session.sessionMutex.Unlock()
 }
 

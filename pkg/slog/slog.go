@@ -128,7 +128,7 @@ func (l *Logger) SetLevel(verbosity string) error {
 	case "OFF":
 		l.logLevel = disabled
 	default:
-		return fmt.Errorf("wrong log level, expected one of [debug|info|warn|error|off]")
+		return fmt.Errorf("expected one of [debug|info|warn|error|off]")
 	}
 	return nil
 }

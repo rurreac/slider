@@ -54,7 +54,7 @@ Slider Client
   Creates a new Slider Client instance and connects 
 to the defined Slider Server.
 
-Usage: ./slider client [flags] <[server_address]:port>
+Usage: ./slider client [flags] [<[server_address]:port>]
 
 Flags:`
 
@@ -67,7 +67,7 @@ func NewClient(args []string) {
 	keepAlive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
-	key := clientFlags.String("key", "", "Private key to use for authentication")
+	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
@@ -82,10 +82,9 @@ func NewClient(args []string) {
 		return
 	}
 
-	if slices.Contains(clientFlags.Args(), "help") ||
-		(len(clientFlags.Args()) == 0 && !*listener) ||
-		(len(clientFlags.Args()) > 0 && *listener) ||
-		*retry && *listener {
+	// Flag sanity check
+	if fErr := flagSanityCheck(clientFlags); fErr != nil {
+		fmt.Println(fErr)
 		clientFlags.Usage()
 		return
 	}
@@ -93,7 +92,7 @@ func NewClient(args []string) {
 	log := slog.NewLogger("Client")
 	lvErr := log.SetLevel(*verbose)
 	if lvErr != nil {
-		fmt.Printf("%s", lvErr)
+		fmt.Printf("wrong log level \"%s\", %s", *verbose, lvErr)
 		return
 	}
 
@@ -180,6 +179,42 @@ func NewClient(args []string) {
 	}
 
 	c.Logger.Printf("Client down...")
+}
+
+func flagSanityCheck(clientFlags *flag.FlagSet) error {
+	var flagExclusion []string
+	var clientType string
+	if conf.FlagIsDefined(clientFlags, "listener") {
+		clientType = "listener"
+		if conf.FlagIsDefined(clientFlags, "key") {
+			flagExclusion = append(flagExclusion, "-key")
+		}
+		if conf.FlagIsDefined(clientFlags, "retry") {
+			flagExclusion = append(flagExclusion, "-retry")
+		}
+		if len(clientFlags.Args()) > 0 {
+			flagExclusion = append(flagExclusion, clientFlags.Args()...)
+		}
+	} else {
+		clientType = "reverse"
+		if conf.FlagIsDefined(clientFlags, "fingerprint") {
+			flagExclusion = append(flagExclusion, "-fingerprint")
+		}
+		if conf.FlagIsDefined(clientFlags, "address") {
+			flagExclusion = append(flagExclusion, "-address")
+		}
+		if conf.FlagIsDefined(clientFlags, "port") {
+			flagExclusion = append(flagExclusion, "-port")
+		}
+		if len(clientFlags.Args()) > 1 {
+			flagExclusion = append(flagExclusion, clientFlags.Args()...)
+		}
+	}
+	if len(flagExclusion) > 0 {
+		return fmt.Errorf("%s client incompatible in order or definition with: %v", clientType, flagExclusion)
+	}
+
+	return nil
 }
 
 func (c *client) startConnection() {

@@ -25,7 +25,7 @@ func (s *server) NewSSHServer(session *Session) {
 	var err error
 
 	sshConf := s.sshConf
-	if s.authOn && session.isListener && !session.listenerAuth {
+	if s.authOn && session.isListener {
 		s.Logger.Debugf("Session ID %d - Autentication to Listener disabled", session.sessionID)
 		sshConf.NoClientAuth = true
 	}

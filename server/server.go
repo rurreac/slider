@@ -62,12 +62,12 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
-
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
 		fmt.Println()
 	}
+
 	if fErr := serverFlags.Parse(args); fErr != nil {
 		return
 	}
@@ -85,7 +85,7 @@ func NewServer(args []string) {
 	log := slog.NewLogger("Server")
 	lvErr := log.SetLevel(*verbose)
 	if lvErr != nil {
-		fmt.Printf("%v", lvErr)
+		fmt.Printf("wrong log level \"%s\", %v", *verbose, lvErr)
 		return
 	}
 
