@@ -155,7 +155,8 @@ then logs will have no colors.
 #### `-keepalive`:
 By default, Slider pings every Client Session (every 60s) to ensure its available, otherwise kills the Session.
 
-This value can be changed to any other duration value or set to `0` to completely disable it.
+This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
+it to this one.
 
 #### `-keypath` and `-keystore`:
 By default, everytime Slider Server is executed, a new in memory KeyPair is generated, and so it's lost on termination.
@@ -236,17 +237,24 @@ runs its next keepalive check will shut down.
 
 ##### Connect
 ```
-Slider > connect -h
 Receives the address of a Client to connect to
 
 Connects to a Client configured as Listener and creates a new Session
 
 Usage: connect <client_address:port>
+
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
 then we'll need to use the `connect` command.
+
 This command will try to open a Session in the background, and you will be notified whether the connection was
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
+
+Due to their purpose, Servers will disable Client authentication on connections to a Listener even if the Server is 
+started with `-auth`.
+
+Since the Server is the one that initiates the connection to the Listener and the Listener is facing the network,
+authentication of Servers will happen on the Client side with `-fingerprint`. 
 
 ![Console Connect](./doc/console_connect.gif)
 
@@ -468,8 +476,25 @@ Flags:
 
 ### Client Flags Overview
 
-#### `-listener`, `-address` and `-port`:
-A Slider Client by default connects back to a server on a given address:port, but it is also possible to run a Slider
+#### Common Client Flags
+
+#### `-colorless`:
+Same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using
+colors. If this flag is passed then logs will have no colors.
+
+#### `-keepalive`:
+By default, Slider pings every Server Session (every 60s) to ensure its available, otherwise kills the Session.
+
+This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
+it to this one.
+
+Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
+the keepalive will leave not listener clients hanging forever.
+
+#### Listener Client Flags
+
+##### `-listener`, `-address` and `-port`:
+A Slider Client by default connects back to a server on a given address:port (Reverse Client), but it is also possible to run a Slider
 Client in Listener mode (`-listener`).
 
 When used as Listener it will listen for incoming connections on a bound address (`-address`) and port (`-port`). If not
@@ -481,30 +506,19 @@ The main two reasons for using a Slider Client on Listener mode are:
 * The Server is located on a private network and a regular Client would not be able to reach it.
 * Several Servers may want to collaborate on the same Client or use a particular Client as a gateway.
 
-#### `-colorless`:
-Same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using
-colors. If this flag is passed then logs will have no colors.
-
 #### `-fingerprint`:
 A Slider fingerprint represents a sha256sum string of a base64 encoded public key.
 
-This flag could either be a sha256sum string or a file containing a list of sha256sum string, each one of them representing
-a different Slider Server. This is useful in particular when the Client is running as Listener, and we want to be able to
-authorize several Servers by their public key.
+This flag could either be a fingerprint string or a file containing a list fingerprints, each one of them representing
+a different Slider Server. This is useful when we want to be able to authorize several Servers by their public key.
 A connection from a Server with a fingerprint not successfully verified will be rejected.
 
-#### `-keepalive`:
-By default, Slider pings every Server Session (every 60s) to ensure its available, otherwise kills the Session.
-
-This value can be changed to any other duration value or set to `0` to completely disable it.
-
-Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
-the keepalive will leave not listener clients hanging forever.
+#### Reverse Client Flags
 
 #### `-retry`:
-Retry, is an available option on regular clients. a client configured with the `-retry` flag will try to reconnect to 
-the server according to its `-keepalive` value. You will very likely want to tune `-keepalive` to either short 
-reconnection intervals or expand them, according to your needs.
+A Reverse Client configured with the `-retry` flag will try to reconnect to the server according to its `-keepalive` 
+value. You will very likely want to tune `-keepalive` to either short reconnection intervals or expand them fitting 
+your needs.
 
 Enabling `-retry` will only have an effect if the Client was able to connect to the Server at least once, in other words, 
 if the Client fails to connect to the Server on the first run it will terminate its execution as usual.
@@ -521,8 +535,9 @@ Keys will only be used against a Server with authentication enabled otherwise wi
 A Client would use a key generated by the Server and stored in its Certificate Jar, since a Client using any
 certificate in the Server Certificate Jar will be authorized to connect.
 
-Typically, you would like to use `-fingerprints` to authenticate Servers on publicly exposed Clients (running as Listeners)
-and `-key` to authenticate Clients on Servers with `-auth` enabled.
+`-key` offers a way to authenticate Clients on Servers with `-auth` enabled. If the Server was not configured with 
+authentication, providing `-key` won't have any effect.
+
 
 ## Credits
 

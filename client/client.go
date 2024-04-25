@@ -55,7 +55,7 @@ Slider Client
   Creates a new Slider Client instance and connects 
 to the defined Slider Server.
 
-Usage: ./slider client [flags] <[server_address]:port>
+Usage: ./slider client [flags] [<[server_address]:port>]
 
 Flags:`
 
@@ -65,10 +65,10 @@ func NewClient(args []string) {
 	defer close(shutdown)
 	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
 	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	keepAlive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
+	keepalive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
-	key := clientFlags.String("key", "", "Private key to use for authentication")
+	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
@@ -83,10 +83,9 @@ func NewClient(args []string) {
 		return
 	}
 
-	if slices.Contains(clientFlags.Args(), "help") ||
-		(len(clientFlags.Args()) == 0 && !*listener) ||
-		(len(clientFlags.Args()) > 0 && *listener) ||
-		*retry && *listener {
+	// Flag sanity check
+	if fErr := flagSanityCheck(clientFlags); fErr != nil {
+		fmt.Println(fErr)
 		clientFlags.Usage()
 		return
 	}
@@ -94,7 +93,7 @@ func NewClient(args []string) {
 	log := slog.NewLogger("Client")
 	lvErr := log.SetLevel(*verbose)
 	if lvErr != nil {
-		fmt.Printf("%s", lvErr)
+		fmt.Printf("wrong log level \"%s\", %s", *verbose, lvErr)
 		return
 	}
 
@@ -104,14 +103,19 @@ func NewClient(args []string) {
 	}
 
 	c := client{
-		Logger:    log,
-		keepalive: *keepAlive,
-		shutdown:  make(chan bool, 1),
+		Logger:   log,
+		shutdown: make(chan bool, 1),
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
 		firstRun: true,
 	}
+
+	if *keepalive < conf.MinKeepAlive {
+		c.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
+		*keepalive = conf.MinKeepAlive
+	}
+	c.keepalive = *keepalive
 
 	c.sshConfig = &ssh.ClientConfig{
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
@@ -170,7 +174,6 @@ func NewClient(args []string) {
 			case <-shutdown:
 				loop = false
 			default:
-
 				if !*retry || c.firstRun {
 					loop = false
 					continue
@@ -181,6 +184,42 @@ func NewClient(args []string) {
 	}
 
 	c.Logger.Printf("Client down...")
+}
+
+func flagSanityCheck(clientFlags *flag.FlagSet) error {
+	var flagExclusion []string
+	var clientType string
+	if conf.FlagIsDefined(clientFlags, "listener") {
+		clientType = "listener"
+		if conf.FlagIsDefined(clientFlags, "key") {
+			flagExclusion = append(flagExclusion, "-key")
+		}
+		if conf.FlagIsDefined(clientFlags, "retry") {
+			flagExclusion = append(flagExclusion, "-retry")
+		}
+		if len(clientFlags.Args()) > 0 {
+			flagExclusion = append(flagExclusion, clientFlags.Args()...)
+		}
+	} else {
+		clientType = "reverse"
+		if conf.FlagIsDefined(clientFlags, "fingerprint") {
+			flagExclusion = append(flagExclusion, "-fingerprint")
+		}
+		if conf.FlagIsDefined(clientFlags, "address") {
+			flagExclusion = append(flagExclusion, "-address")
+		}
+		if conf.FlagIsDefined(clientFlags, "port") {
+			flagExclusion = append(flagExclusion, "-port")
+		}
+		if len(clientFlags.Args()) > 1 {
+			flagExclusion = append(flagExclusion, clientFlags.Args()...)
+		}
+	}
+	if len(flagExclusion) > 0 {
+		return fmt.Errorf("%s client incompatible in order or definition with: %v", clientType, flagExclusion)
+	}
+
+	return nil
 }
 
 func (c *client) startConnection() {
@@ -216,12 +255,11 @@ func (c *client) newSSHClient(session *Session) {
 	c.Logger.Debugf("%sSSH Session %v\n", session.logID, session.sshConn.SessionID())
 
 	// Send Client Information to Server
-	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter, IsListener: c.isListener}
+	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter}
 	go session.sendClientInfo(clientInfo)
 
-	if c.keepalive > 0 {
-		go session.keepAlive(c.keepalive)
-	}
+	// Set keepalive after connection is established
+	go session.keepAlive(c.keepalive)
 
 	if c.firstRun {
 		c.firstRun = false
@@ -265,7 +303,7 @@ func (c *client) loadFingerPrint(fp string) error {
 	return nil
 }
 
-func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.PublicKey) error {
+func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) error {
 	serverFingerprint, fErr := scrypt.GenerateFingerprint(key)
 	if fErr != nil {
 		return fErr
@@ -276,7 +314,7 @@ func (c *client) verifyServerKey(hostname string, remote net.Addr, key ssh.Publi
 		return nil
 	}
 
-	return fmt.Errorf("server %s (%s) - verification failed", remote.String(), hostname)
+	return fmt.Errorf("server %s - verification failed (fingerprint: %s)", remote.String(), serverFingerprint)
 }
 
 func (s *Session) sendClientInfo(ci *conf.ClientInfo) {

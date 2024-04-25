@@ -24,7 +24,14 @@ func (s *server) NewSSHServer(session *Session) {
 	var reqChan <-chan *ssh.Request
 	var err error
 
-	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, s.sshConf)
+	sshConf := s.sshConf
+	// Use a new SSH Configuration with authentication disabled
+	// when the Server connects to a Listener Client
+	if s.authOn && session.isListener {
+		sshConf.NoClientAuth = true
+	}
+
+	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
 		s.Logger.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
@@ -33,7 +40,9 @@ func (s *server) NewSSHServer(session *Session) {
 		return
 	}
 	session.addSessionSSHConnection(shellConn)
-	if s.authOn {
+
+	// If authentication was enabled for this ssh config save the client fingerprint
+	if !sshConf.NoClientAuth {
 		session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
 	}
 
@@ -48,9 +57,8 @@ func (s *server) NewSSHServer(session *Session) {
 		session.notifier <- true
 	}
 
-	if s.keepalive > 0 {
-		go session.keepAlive(s.keepalive)
-	}
+	// Set keepalive after connection is established
+	go session.keepAlive(s.keepalive)
 
 	// Requests and NewChannel channels must be serviced/discarded or the connection hangs
 	go s.handleConnRequests(session, reqChan)
@@ -126,7 +134,6 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				s.Logger.Errorf("Failed to parse Client Info - %v", jErr)
 			}
 			session.ClientInterpreter = ci.Interpreter
-			session.IsListener = ci.IsListener
 
 			_ = session.replyConnRequest(r, true, nil)
 		default:
