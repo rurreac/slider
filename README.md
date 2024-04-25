@@ -76,39 +76,39 @@ Usage: ./slider server [flags]
 
 Flags:
   -address string
-        Server will bind to this address (default "0.0.0.0")
+    	Server will bind to this address (default "0.0.0.0")
   -auth
-        Enables Key authentication of Clients
+    	Enables Key authentication of Clients
   -certs string
-        Path of a valid slider-certs json file
+    	Path of a valid slider-certs json file
   -colorless
         Disables logging colors
   -experimental
         Enable experimental features
   -keepalive duration
-        Sets keepalive interval vs Clients (default 1m0s)
+    	Sets keepalive interval vs Clients (default 1m0s)
   -keypath string
-        Path for reading or storing a Server key
+    	Path for reading or storing a Server key
   -keystore
-        Store Server key for later use
-  -port int
-        Port where Server will listen (default 8080)
+    	Store Server key for later use
+  -port string
+    	Port where Server will listen (default "8080")
   -verbose string
-        Adds verbosity [debug|info|warn|error|off] (default "info")
+    	Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
 
 ![Sever](./doc/server.gif)
 
 ### Environment Variables
 
-#### `SLIDER_HOME`:
+##### `SLIDER_HOME`:
 When defined, Slider will use this path to save all information.
 
 When not defined / the environment variable does not exist or has an empty value:
 1. Slider will try to obtain the User Home directory. If this fails,
 2. Slider will use the current working path.
 
-#### `SLIDER_CERT_JAR`:
+##### `SLIDER_CERT_JAR`:
 When not defined or its value is `1` or `true`. Changes to certificates (creation or deletion),
 will be stored.
 
@@ -119,10 +119,10 @@ Slider only creates and uses [Ed25519](https://ed25519.cr.yp.to/) keys.
 
 ### Server Flags Overview
 
-#### `-address`:
+##### `-address`:
 Local address to bind to. By default, Slider binds to all local addresses
 
-#### `-auth` and `-certs`:
+##### `-auth` and `-certs`:
 By default, Slider Clients do not require any authentication to connect to Server.
 
 * `-auth`: Enables and requires SSH Key-Based authentication to all Clients.
@@ -148,17 +148,17 @@ on *nix hosts, or `\certs` on Windows hosts.
 
 ![Sever Auth](./doc/server_auth.gif)
 
-#### `-colorless`:
+##### `-colorless`:
 By default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using colors. If this flag is passed
 then logs will have no colors.
 
-#### `-keepalive`:
+##### `-keepalive`:
 By default, Slider pings every Client Session (every 60s) to ensure its available, otherwise kills the Session.
 
 This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
 it to this one.
 
-#### `-keypath` and `-keystore`:
+##### `-keypath` and `-keystore`:
 By default, everytime Slider Server is executed, a new in memory KeyPair is generated, and so it's lost on termination.
 
 When the flag `-keystore` is provided, Slider will store a new KeyPair in disk, but:
@@ -168,14 +168,14 @@ When the flag `-keystore` is provided, Slider will store a new KeyPair in disk, 
     1. If the path exists, Slider will attempt to load its KeyPair.
     2. If the path does not exist, Slider will save a new KeyPair in this path.
 
-#### `-port`:
+##### `-port`:
 By default, Slider listens in port `8080`. Specify any other port using this flag.
 
-#### `-verbose`:
+##### `-verbose`:
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
 fatal logs will be shown.
 
-#### `-experimental`
+##### `-experimental`
 Extends Slider functionality with features that are either unstable, being tested and/or susceptible to be removed at
 any time.
 
@@ -478,11 +478,11 @@ Flags:
 
 #### Common Client Flags
 
-#### `-colorless`:
+##### `-colorless`:
 Same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using
 colors. If this flag is passed then logs will have no colors.
 
-#### `-keepalive`:
+##### `-keepalive`:
 By default, Slider pings every Server Session (every 60s) to ensure its available, otherwise kills the Session.
 
 This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
@@ -506,7 +506,7 @@ The main two reasons for using a Slider Client on Listener mode are:
 * The Server is located on a private network and a regular Client would not be able to reach it.
 * Several Servers may want to collaborate on the same Client or use a particular Client as a gateway.
 
-#### `-fingerprint`:
+##### `-fingerprint`:
 A Slider fingerprint represents a sha256sum string of a base64 encoded public key.
 
 This flag could either be a fingerprint string or a file containing a list fingerprints, each one of them representing
@@ -515,7 +515,7 @@ A connection from a Server with a fingerprint not successfully verified will be 
 
 #### Reverse Client Flags
 
-#### `-retry`:
+##### `-retry`:
 A Reverse Client configured with the `-retry` flag will try to reconnect to the server according to its `-keepalive` 
 value. You will very likely want to tune `-keepalive` to either short reconnection intervals or expand them fitting 
 your needs.
@@ -527,7 +527,7 @@ Combining Client `-retry` with Server `-auth` and maintaining different Certific
 between different "Workspaces" where using one Certificate Jar or another will determine what Clients will automatically
 reconnect to your Server and create a Session.
 
-#### `-key`:
+##### `-key`:
 A Slider Key represents an Ed25519 private key base64 encoded.
 
 Keys will only be used against a Server with authentication enabled otherwise will be disregarded.
