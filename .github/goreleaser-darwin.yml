@@ -61,9 +61,6 @@ changelog:
       - "^doc:"
       - "^action:"
 
-checksum:
-  disable: true
-
 upx:
   - enabled: true
     goos: ['darwin']
@@ -81,3 +78,6 @@ archives:
     # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, and `binary`.
     # Default: 'tar.gz'
     format: tar.gz
+
+checksum:
+  name_template: {{ .ArtifactName }}_checksum.txt

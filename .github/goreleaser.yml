@@ -81,8 +81,6 @@ upx:
     lzma: true
     brute: true
 
-checksum:
-  disable: true
 
 archives:
   - # Archive format.
@@ -101,3 +99,6 @@ archives:
         #
         # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, `binary`, and `none`.
         format: zip
+
+checksum:
+  name_template: {{ .ArtifactName }}_checksum.txt
