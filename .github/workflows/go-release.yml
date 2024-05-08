@@ -5,7 +5,7 @@ on:
       - v*
 jobs:
   win-lin-binary:
-    name: Create Release
+    name: Linux / Windows Binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,6 +27,7 @@ jobs:
         with:
           args: release --config .github/goreleaser.yml
   darwin-binary:
+    name: Macos Binaries
     runs-on: macos-latest
     steps:
       - name: Checkout
