@@ -101,4 +101,4 @@ archives:
         format: zip
 
 checksum:
-  name_template: {{ .ArtifactName }}_checksum.txt
+  name_template: {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_checksum.txt
