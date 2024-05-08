@@ -60,7 +60,6 @@ changelog:
     exclude:
       - "^doc:"
       - "^action:"
-
 upx:
   - enabled: true
     goos: ['darwin']
@@ -68,7 +67,8 @@ upx:
     compress: best
     lzma: true
     brute: true
-
+checksum:
+  name_template: {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_checksum.txt
 archives:
   - # Archive format.
     #
@@ -78,6 +78,3 @@ archives:
     # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, and `binary`.
     # Default: 'tar.gz'
     format: tar.gz
-
-checksum:
-  name_template: {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_checksum.txt
