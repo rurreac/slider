@@ -60,6 +60,9 @@ upx:
     lzma: true
     brute: true
 
+checksum:
+  disable: true
+
 archives:
   - # Archive format.
     #
