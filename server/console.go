@@ -674,6 +674,7 @@ func (s *server) connectCommand(args ...string) {
 
 func (s *server) shellcodeCommand(args ...string) {
 	hexExecFlags := flag.NewFlagSet(shellcodeCmd, flag.ContinueOnError)
+	hexExecFlags.SetOutput(s.console.Term)
 	hSession := hexExecFlags.Int("s", 0, "Execute on this Session")
 	hexExecFlags.Usage = func() {
 		s.console.PrintCommandUsage(hexExecFlags, shellcodeDesc+shellcodeUsage)
