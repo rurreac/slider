@@ -13,7 +13,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Install Zig Compiler for CGO support
-        run: sudo apt install -y gcc-aarch64-linux-gnu lib32gcc-s1
+        run: sudo apt install -y gcc-aarch64-linux-gnu gcc-i686-linux-gnu
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
