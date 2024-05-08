@@ -673,18 +673,18 @@ func (s *server) connectCommand(args ...string) {
 }
 
 func (s *server) shellcodeCommand(args ...string) {
-	hexExecFlags := flag.NewFlagSet(shellcodeCmd, flag.ContinueOnError)
-	hexExecFlags.SetOutput(s.console.Term)
-	hSession := hexExecFlags.Int("s", 0, "Execute on this Session")
-	hexExecFlags.Usage = func() {
-		s.console.PrintCommandUsage(hexExecFlags, shellcodeDesc+shellcodeUsage)
+	shellcodeFlags := flag.NewFlagSet(shellcodeCmd, flag.ContinueOnError)
+	shellcodeFlags.SetOutput(s.console.Term)
+	hSession := shellcodeFlags.Int("s", 0, "Execute on this Session")
+	shellcodeFlags.Usage = func() {
+		s.console.PrintCommandUsage(shellcodeFlags, shellcodeDesc+shellcodeUsage)
 	}
-	if pErr := hexExecFlags.Parse(args); pErr != nil {
+	if pErr := shellcodeFlags.Parse(args); pErr != nil {
 		return
 	}
-	argSize := len(hexExecFlags.Args())
+	argSize := len(shellcodeFlags.Args())
 	if *hSession <= 0 || argSize > 1 || argSize == 0 {
-		hexExecFlags.Usage()
+		shellcodeFlags.Usage()
 		return
 	}
 	session, sErr := s.getSession(*hSession)
@@ -693,7 +693,7 @@ func (s *server) shellcodeCommand(args ...string) {
 		return
 	}
 
-	if scErr := session.sendShellCode(hexExecFlags.Args()[0]); scErr != nil {
+	if scErr := session.sendShellCode(shellcodeFlags.Args()[0]); scErr != nil {
 		s.console.PrintlnErrorStep("%s", scErr)
 		return
 	} else {
