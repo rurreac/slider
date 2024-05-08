@@ -4,16 +4,16 @@ on:
     tags:
       - v*
 jobs:
-  win-lin-binary:
-    name: Linux / Windows Binaries
+  windows-linux-binary:
+    name: Linux & Windows x86/x64 Binaries
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Install Zig Compiler for CGO support
-        run: sudo apt install -y gcc-aarch64-linux-gnu gcc-i686-linux-gnu
+      - name: Install tools CGO support
+        run: sudo apt install -y gcc-multilib
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
@@ -26,6 +26,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: release --config .github/goreleaser.yml
+  linux-arm64-binary:
+    name: Linux arm64 Binary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install tools CGO support
+        run: sudo apt install -y gcc-aarch64-linux-gnu
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+      - name: Set GOVERSION env
+        run: echo "GOVERSION=$(go version | awk '{print $3}')" >> $GITHUB_ENV
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: release --config .github/goreleaser-linux-arm64.yml
   darwin-binary:
     name: Macos Binaries
     runs-on: macos-latest
