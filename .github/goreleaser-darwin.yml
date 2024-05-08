@@ -24,32 +24,17 @@ builds:
     env:
       - GOVERSION={{ .Env.GOVERSION }}
       - CGO_ENABLED=1
-    overrides:
-      - goos: linux
-        goarch: arm64
-        env:
-          - CC=aarch64-linux-gnu-gcc
-      - goos: linux
-        goarch: amd64
-        env:
-          - CC=gcc
-      - goos: linux
-        goarch: amd64
-        env:
-          - CC="gcc -m32"
-      - goos: windows
-        env:
-          - CGO_ENABLED=0
+
     # GOOS list to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
     #
     # Default: [ 'darwin', 'linux', 'windows' ]
-    goos: ['linux', 'windows']
+    goos: ['darwin']
     # GOARCH to build for.
     # For more info refer to: https://golang.org/doc/install/source#environment
     #
     # Default: [ '386', 'amd64', 'arm64' ]
-    goarch: [ '386', 'amd64', 'arm64' ]
+    goarch: ['amd64', 'arm64' ]
     # By default, GoReleaser will create your binaries inside
     # `dist/${BuildID}_${BuildTarget}`, which is a unique directory per build
     # target in the matrix.
@@ -60,6 +45,15 @@ builds:
     # If you do, you are responsible for keeping different builds from
     # overriding each other.
     no_unique_dist_dir: true
+    # Overrides allows to override some fields for specific targets.
+    # This can be specially useful when using CGO.
+    # Note: it'll only match if the full target matches.
+    #
+    # Since: v1.5
+    overrides:
+      - goos: darwin
+        goarch: arm64
+        goamd64: v1
 changelog:
   sort: asc
   filters:
@@ -69,24 +63,8 @@ changelog:
 
 upx:
   - enabled: true
-    goos: ['linux', 'windows']
-    goarch: ['386']
-    # Compress argument.
-    # Valid options are from '1' (faster) to '9' (better), and 'best'.
-    compress: best
-    # Whether to try LZMA (slower).
-    lzma: true
-    # Whether to try all methods and filters (slow).
-    brute: true
-  - enabled: true
-    goos: ['linux', 'windows']
+    goos: ['darwin']
     goarch: ['amd64']
-    compress: best
-    lzma: true
-    brute: true
-  - enabled: true
-    goos: ['linux']
-    goarch: ['arm64']
     compress: best
     lzma: true
     brute: true
@@ -100,11 +78,3 @@ archives:
     # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, and `binary`.
     # Default: 'tar.gz'
     format: tar.gz
-    format_overrides:
-      - # Which GOOS to override the format for.
-        goos: windows
-
-        # The format to use for the given GOOS.
-        #
-        # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, `binary`, and `none`.
-        format: zip
