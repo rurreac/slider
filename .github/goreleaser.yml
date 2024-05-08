@@ -35,8 +35,9 @@ builds:
           - CC=gcc
       - goos: 'linux'
         goarch: '386'
+        gcflags: ['-m32']
         env:
-          - CC="gcc -m32"
+          - CC=gcc
       - goos: 'windows'
         env:
           - CGO_ENABLED=0
