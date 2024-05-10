@@ -59,6 +59,7 @@ upx:
     lzma: true
     brute: true
 checksum:
+  name_template: "{{ .filename}}.sha256.txt"
   # If true, will create one checksum file for each artifact.
   # Since: v1.25
   split: true
@@ -70,4 +71,4 @@ archives:
     #
     # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, and `binary`.
     # Default: 'tar.gz'
-    format: tar.gz
+    format: binary
