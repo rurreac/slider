@@ -68,7 +68,7 @@ upx:
     lzma: true
     brute: true
 checksum:
-  name_template: {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_checksum.txt
+  name_template: "{{ .ProjectName }}_{{ .Version }}_{{.Runtime.Goos}}_{{.Runtime.Goarch}}_checksum.txt"
 archives:
   - # Archive format.
     #
