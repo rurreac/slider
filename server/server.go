@@ -49,6 +49,7 @@ type server struct {
 	authOn            bool
 	certSaveOn        bool
 	keepalive         time.Duration
+	experimentalOn    bool
 }
 
 func NewServer(args []string) {
@@ -62,6 +63,8 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
+	experimental := serverFlags.Bool("experimental", false, "Enable experimental features")
+
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -104,8 +107,9 @@ func NewServer(args []string) {
 		certTrack: &certTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
-		certJarFile: *certJarFile,
-		authOn:      *auth,
+		certJarFile:    *certJarFile,
+		authOn:         *auth,
+		experimentalOn: *experimental,
 	}
 
 	// Ensure a minimum keepalive

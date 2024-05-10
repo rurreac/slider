@@ -46,7 +46,20 @@ Currently Slider uses the following external dependencies:
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
+* [rurreac/go-shellcode](https://github.com/rurreac/go-shellcode) - executing shellcode on the target Client
 
+## Building Slider
+
+At the time of writing and due to the experimental Shellcode feature building Slider requires CGO.
+
+If cross compiling from macOS to Linux, a C/C++ compiler (such as [Zig](https://formulae.brew.sh/formula/zig)) will be
+required as well as the following environment variables.
+
+```
+CGO_ENABLED=1
+CC=zig cc -target x86_64-linux
+CXX=zig c++ -target x86_64-linux
+```
 
 ## Server
 
@@ -69,7 +82,9 @@ Flags:
   -certs string
     	Path of a valid slider-certs json file
   -colorless
-    	Disables logging colors
+        Disables logging colors
+  -experimental
+        Enable experimental features
   -keepalive duration
     	Sets keepalive interval vs Clients (default 1m0s)
   -keypath string
@@ -160,6 +175,10 @@ By default, Slider listens in port `8080`. Specify any other port using this fla
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
 fatal logs will be shown.
 
+##### `-experimental`
+Extends Slider functionality with features that are either unstable, being tested and/or susceptible to be removed at
+any time.
+
 ### Console
 
 ```
@@ -167,16 +186,16 @@ Slider > help
 
   Commands  Description  
 
-  bg        Puts Console into background and returns to logging output                                          
-  certs     Interacts with the Server Certificate Jar                                                           
-  connect   Receives the address of a Client to connect to                                                      
-  download  Downloads file passed as an argument from Client                                                    
-  execute   Runs a command remotely and returns the output                                                      
-  exit      Exits Console and terminates the Server                                                             
-  help      Shows this output                                                                                   
-  sessions  Interacts with Client Sessions                                                                      
-  socks     Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server  
-  upload    Uploads file passed as an argument to Client
+  bg         Puts Console into background and returns to logging output  
+  connect    Receives the address of a Client to connect to              
+  download   Downloads file passed as an argument from Client            
+  execute    Runs a command remotely and returns the output              
+  exit       Exits Console and terminates the Server                     
+  help       Shows this output                                           
+  sessions   Interacts with Client Sessions                              
+  shellcode  Runs a ShellCode on the target Client (Experimental)        
+  socks      Runs or Kills a Reverse Socks server                        
+  upload     Uploads file passed as an argument to Client
 ```
 
 #### Commands walk through
@@ -354,6 +373,73 @@ The Private Key contained within the Keypair can be passed to the client so that
 Server.
 
 ![Console Certs](./doc/console_certs.gif)
+
+##### Shellcode
+```
+Slider > shellcode  
+Runs a ShellCode on the target Client
+
+Receives a HEX ShellCode string or a file containing a RAW shellcode and executes it on the target Client.
+
+Usage: shellcode [flags] [arg]
+
+Flags:
+  -s int
+            	Execute on this Session
+```
+This is an Experimental feature and can be removed at any time. Due to its nature it is highly unstable. 
+
+> You are encouraged to generate your own encoded binary using a Payload of wish, upload it to the Client and execute it 
+from a reverse Shell instead of using this feature. 
+> Check [go-shellcode](https://github.com/rurreac/go-shellcode) for an example.
+
+The process of transferring a Shellcode to a Client can be considered generally safe since happens through an SSH 
+connection, and it's executed directly from memory, avoiding any AV static analysis.
+
+There are a few caveats though for you to consider before using this feature.
+
+###### Windows targets:
+
+1. Machine Code sent to the client can not be encoded.
+    
+
+    Encoding a Payload requires a memory allocation with READ, WRITE and EXECUTE protections since WRITE permissions
+    are required to decode the Payload in the allocated memory.
+    This combination produces a hit on EDR/AV so it's not used.
+
+2. If it's a Shellcode can not be Staged.
+
+    
+    The Machine Code will be "safely" executed once arrives the Client. If this Machine Code is staged and considered
+    malicious (ie. meterpreter), it will be detected by Windows Defender or any other AV when reaching out for the 
+    second stage.
+    The end result will be the AV blocking the execution and removing the Slider binary.
+
+3. Use Windows AMD64 Slider binaries if your target architecture is ARM64.
+
+    
+    If you intend to use msfvenom to generate Machine Code / Shellcode, note that at the time of writing there are no 
+    payloads for Windows ARM64. 
+    Since Windows ARM64 executes x64 binaries out of the box, better default to use Slider AMD64 binaries
+    and x64 Payloads.
+
+
+###### Unix like Targets
+
+1. Machine Code can be encoded.
+
+
+    Since Linux doesn't come with an EDR/AV out of the box the memory allocation is created with READ, WRITE and 
+    EXECUTE protections which allows for the Shellcode to be decoded.
+
+2. If it's a Shellcode, it might have to be Staged.
+
+    
+    If using msfvenom to generate a Shellcode, note that some non Staged Payloads only allow ELF as the output 
+    format, while you will find that the Staged Payload will allow you to choose the output in RAW format.
+
+    Following the same principle as in 1., on most circumstances it should be considered "safe".
+    
 
 ## Client
 
