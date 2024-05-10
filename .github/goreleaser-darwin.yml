@@ -68,7 +68,6 @@ upx:
     lzma: true
     brute: true
 checksum:
-  name_template: "{{ .ProjectName }}_{{ .Version }}_{{.Runtime.Goos}}_{{.Runtime.Goarch}}_checksum.txt"
   # If true, will create one checksum file for each artifact.
   # Since: v1.25
   split: true
