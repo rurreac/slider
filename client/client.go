@@ -46,6 +46,7 @@ type client struct {
 	sessionTrackMutex sync.Mutex
 	isListener        bool
 	firstRun          bool
+	webTemplate       string
 }
 
 const clientHelp = `
@@ -72,6 +73,7 @@ func NewClient(args []string) {
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
+	webTemplate := clientFlags.String("template", "", "Mimic default web server page [apache|nginx]")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
 		clientFlags.PrintDefaults()
@@ -142,6 +144,10 @@ func NewClient(args []string) {
 	if *listener {
 		c.isListener = *listener
 
+		if *webTemplate != "" {
+			c.webTemplate = *webTemplate
+		}
+
 		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 		if rErr != nil {
@@ -209,6 +215,9 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		}
 		if conf.FlagIsDefined(clientFlags, "port") {
 			flagExclusion = append(flagExclusion, "-port")
+		}
+		if conf.FlagIsDefined(clientFlags, "template") {
+			flagExclusion = append(flagExclusion, "-template")
 		}
 		if len(clientFlags.Args()) > 1 {
 			flagExclusion = append(flagExclusion, clientFlags.Args()...)

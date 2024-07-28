@@ -156,6 +156,9 @@ When the flag `-keystore` is provided, Slider will store a new KeyPair in disk, 
 ##### `-port`:
 By default, Slider listens in port `8080`. Specify any other port using this flag.
 
+##### `-template`:
+Mimic default web page and HTTP header of web server passed as parameter.
+
 ##### `-verbose`:
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
 fatal logs will be shown.
@@ -426,6 +429,9 @@ A Slider fingerprint represents a sha256sum string of a base64 encoded public ke
 This flag could either be a fingerprint string or a file containing a list fingerprints, each one of them representing
 a different Slider Server. This is useful when we want to be able to authorize several Servers by their public key.
 A connection from a Server with a fingerprint not successfully verified will be rejected.
+
+##### `-template`:
+Mimic default web page and HTTP header of web server passed as parameter.
 
 #### Reverse Client Flags
 
