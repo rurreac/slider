@@ -49,6 +49,7 @@ type server struct {
 	authOn            bool
 	certSaveOn        bool
 	keepalive         time.Duration
+	webTemplate       string
 }
 
 func NewServer(args []string) {
@@ -62,6 +63,7 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
+	webTemplate := serverFlags.String("template", "", "Mimic default web server page [apache|nginx]")
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -168,6 +170,10 @@ func NewServer(args []string) {
 		if s.certJarFile != "" {
 			s.Logger.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
 		}
+	}
+
+	if *webTemplate != "" {
+		s.webTemplate = *webTemplate
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
