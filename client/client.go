@@ -219,8 +219,9 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		if conf.FlagIsDefined(clientFlags, "template") {
 			flagExclusion = append(flagExclusion, "-template")
 		}
-		if len(clientFlags.Args()) > 1 {
-			flagExclusion = append(flagExclusion, clientFlags.Args()...)
+		argNumber := len(clientFlags.Args())
+		if argNumber != 1 {
+			return fmt.Errorf("%s client requires exactly one valid server address as an argument", clientType)
 		}
 	}
 	if len(flagExclusion) > 0 {
