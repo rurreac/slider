@@ -20,6 +20,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/ssocks"
+	"slider/pkg/web"
 	"sync"
 	"time"
 
@@ -46,7 +47,7 @@ type client struct {
 	sessionTrackMutex sync.Mutex
 	isListener        bool
 	firstRun          bool
-	webTemplate       string
+	webTemplate       web.Template
 }
 
 const clientHelp = `
@@ -73,7 +74,7 @@ func NewClient(args []string) {
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	webTemplate := clientFlags.String("template", "", "Mimic default web server page [apache|nginx]")
+	webTemplate := clientFlags.String("template", "", "Mimic web server page [apache|iis|nginx|tomcat]")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
 		clientFlags.PrintDefaults()
@@ -144,9 +145,11 @@ func NewClient(args []string) {
 	if *listener {
 		c.isListener = *listener
 
-		if *webTemplate != "" {
-			c.webTemplate = *webTemplate
+		t, tErr := web.GetTemplate(*webTemplate)
+		if tErr != nil {
+			c.Logger.Errorf("%v", tErr)
 		}
+		c.webTemplate = t
 
 		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
