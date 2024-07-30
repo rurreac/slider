@@ -13,6 +13,7 @@ import (
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
+	"slider/pkg/web"
 	"sync"
 	"syscall"
 	"time"
@@ -49,7 +50,7 @@ type server struct {
 	authOn            bool
 	certSaveOn        bool
 	keepalive         time.Duration
-	webTemplate       string
+	webTemplate       web.Template
 }
 
 func NewServer(args []string) {
@@ -63,7 +64,7 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
-	webTemplate := serverFlags.String("template", "", "Mimic default web server page [apache|nginx]")
+	webTemplate := serverFlags.String("template", "", "Mimic web server page [apache|iis|nginx|tomcat]")
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -172,9 +173,11 @@ func NewServer(args []string) {
 		}
 	}
 
-	if *webTemplate != "" {
-		s.webTemplate = *webTemplate
+	t, tErr := web.GetTemplate(*webTemplate)
+	if tErr != nil {
+		s.Logger.Errorf("%v", tErr)
 	}
+	s.webTemplate = t
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 	serverAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)

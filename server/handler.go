@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"slider/pkg/conf"
-	"slider/pkg/wtemplate"
 	"strings"
 )
 
@@ -17,28 +16,12 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var svrHeader string
-	status := http.StatusNotFound
-	tmpl := "Not Found"
-
-	if s.webTemplate != "" {
-		t, tErr := wtemplate.GetTemplate(s.webTemplate)
-		if tErr == nil {
-			svrHeader = s.webTemplate
-			status = http.StatusOK
-			tmpl = t
-		}
-	}
-
-	w.Header().Add("server", svrHeader)
-
 	var wErr error
 	switch r.URL.Path {
-	case "/health":
-		_, wErr = w.Write([]byte("OK"))
 	case "/":
-		w.WriteHeader(status)
-		_, wErr = w.Write([]byte(tmpl))
+		w.Header().Add("server", s.webTemplate.ServerHeader)
+		w.WriteHeader(s.webTemplate.StatusCode)
+		_, wErr = w.Write([]byte(s.webTemplate.HtmlTemplate))
 	default:
 		http.Redirect(w, r, "/", http.StatusMovedPermanently)
 	}
