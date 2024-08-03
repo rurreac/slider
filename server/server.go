@@ -51,6 +51,7 @@ type server struct {
 	certSaveOn        bool
 	keepalive         time.Duration
 	webTemplate       web.Template
+	webRedirect       string
 }
 
 func NewServer(args []string) {
@@ -64,7 +65,8 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
-	webTemplate := serverFlags.String("template", "", "Mimic web server page [apache|iis|nginx|tomcat]")
+	webTemplate := serverFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
+	webRedirect := serverFlags.String("redirect", "", "Redirect incoming HTTP connections to given URL")
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -178,6 +180,14 @@ func NewServer(args []string) {
 		s.Logger.Errorf("%v", tErr)
 	}
 	s.webTemplate = t
+
+	if *webRedirect != "" {
+		if wErr := web.CheckURL(*webRedirect); wErr != nil {
+			s.Logger.Fatalf("Redirect: %v", wErr)
+		}
+		s.webRedirect = *webRedirect
+		s.Logger.Debugf("Redirect incomming HTTP requests to \"%s\"", s.webRedirect)
+	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 	serverAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
