@@ -48,6 +48,7 @@ type client struct {
 	isListener        bool
 	firstRun          bool
 	webTemplate       web.Template
+	webRedirect       string
 }
 
 const clientHelp = `
@@ -74,7 +75,8 @@ func NewClient(args []string) {
 	port := clientFlags.Int("port", 8081, "Listener Port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	webTemplate := clientFlags.String("template", "", "Mimic web server page [apache|iis|nginx|tomcat]")
+	webTemplate := clientFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
+	webRedirect := clientFlags.String("redirect", "", "Redirect incoming HTTP connections to given URL")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
 		clientFlags.PrintDefaults()
@@ -145,11 +147,20 @@ func NewClient(args []string) {
 	if *listener {
 		c.isListener = *listener
 
+		c.Logger.Debugf("Using \"%s\" web server template", *webTemplate)
 		t, tErr := web.GetTemplate(*webTemplate)
 		if tErr != nil {
 			c.Logger.Errorf("%v", tErr)
 		}
 		c.webTemplate = t
+
+		if *webRedirect != "" {
+			if wErr := web.CheckURL(*webRedirect); wErr != nil {
+				c.Logger.Fatalf("Redirect: %v", wErr)
+			}
+			c.webRedirect = *webRedirect
+			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.webRedirect)
+		}
 
 		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
@@ -221,6 +232,9 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		}
 		if conf.FlagIsDefined(clientFlags, "template") {
 			flagExclusion = append(flagExclusion, "-template")
+		}
+		if conf.FlagIsDefined(clientFlags, "redirect") {
+			flagExclusion = append(flagExclusion, "-redirect")
 		}
 		argNumber := len(clientFlags.Args())
 		if argNumber != 1 {

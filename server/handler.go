@@ -16,10 +16,16 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Add("server", s.webTemplate.ServerHeader)
+
+	if s.webRedirect != "" {
+		http.Redirect(w, r, s.webRedirect, http.StatusFound)
+		return
+	}
+
 	var wErr error
 	switch r.URL.Path {
 	case "/":
-		w.Header().Add("server", s.webTemplate.ServerHeader)
 		w.WriteHeader(s.webTemplate.StatusCode)
 		_, wErr = w.Write([]byte(s.webTemplate.HtmlTemplate))
 	default:
