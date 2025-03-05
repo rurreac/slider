@@ -3,11 +3,20 @@
 # Set variables
 BUILD_DIR := build
 
+# UPX better compression by default
+UPX_BRUTE ?= no
+
 # Check if UPX is installed
 UPX_CHECK := $(shell which upx 2>/dev/null)
 ifdef UPX_CHECK
   UPX_AVAILABLE := yes
-  UPX_CMD := upx -9
+  # Strong compression if set
+  ifeq ($(UPX_BRUTE), yes)
+  	$(warning WARNING: Selected strong compression. This may take a while.)
+  	UPX_CMD := upx --best --lzma --brute
+  else
+  	UPX_CMD := upx -9
+  endif
 else
   UPX_AVAILABLE := no
   $(warning WARNING: UPX is not installed. Binaries will not be compressed. Install UPX for smaller binaries.)
@@ -22,7 +31,7 @@ $(BUILD_DIR):
 
 # Default target
 .PHONY: all
-all: clean $(BUILD_DIR) macos-arm64 macos-amd64 windows-x86 windows-amd64 windows-arm64 linux-x86 linux-amd64
+all: clean $(BUILD_DIR) macos-arm64 macos-amd64 windows-x86 windows-amd64 windows-arm64 linux-x86 linux-amd64 linux-arm64
 
 # Clean build directory
 .PHONY: clean
@@ -88,6 +97,16 @@ linux-amd64:
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-linux-amd64 || echo "UPX compression failed, using uncompressed binary"
+endif
+
+# Linux (arm64)
+.PHONY: linux-arm64
+linux-arm64:
+	@echo "Building for Linux (arm64)..."
+	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-linux-arm64 main.go
+ifeq ($(UPX_AVAILABLE),yes)
+	@echo "Compressing with UPX..."
+	$(UPX_CMD) $(BUILD_DIR)/slider-linux-arm64 || echo "UPX compression failed, using uncompressed binary"
 endif
 
 # List all builds with their sizes
