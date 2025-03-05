@@ -130,10 +130,15 @@ func (si *Instance) runComm(conn *net.TCPConn) {
 }
 
 func (si *Instance) IsEnabled() bool {
+	si.socksMutex.Lock()
+	defer si.socksMutex.Unlock()
 	return si.socksEnabled
 }
 
 func (si *Instance) GetEndpointPort() (int, error) {
+	si.socksMutex.Lock()
+	defer si.socksMutex.Unlock()
+
 	if !si.IsEndpoint {
 		return 0, fmt.Errorf("socks instance is not an endpoint")
 	}
