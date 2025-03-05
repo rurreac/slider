@@ -83,7 +83,7 @@ func TestHandleHTTPConn(t *testing.T) {
 
 			// Get result
 			resp := w.Result()
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Check status
 			if resp.StatusCode != tc.expectedStatus {
@@ -174,12 +174,12 @@ func TestVerifyFileCheckSum(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.Write(content); err != nil {
 		t.Fatalf("Failed to write to temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Create a logger for the session
 	logger := slog.NewLogger("TestSession")
@@ -258,20 +258,20 @@ func TestVerifyFileCheckSum(t *testing.T) {
 				}
 
 				if err := json.Unmarshal(request.Payload(), &fileInfo); err != nil {
-					request.Reply(false, []byte(fmt.Sprintf("could not unmarshal json: %v", err)))
+					_ = request.Reply(false, []byte(fmt.Sprintf("could not unmarshal json: %v", err)))
 					return
 				}
 
 				// Read the file and calculate checksum
 				_, checksum, err := readFileForTest(fileInfo.FileName)
 				if err != nil {
-					request.Reply(false, []byte(fmt.Sprintf("could not read file: %v", err)))
+					_ = request.Reply(false, []byte(fmt.Sprintf("could not read file: %v", err)))
 					return
 				}
 
 				// Verify checksum
 				if checksum != fileInfo.CheckSum {
-					request.Reply(false, []byte(fmt.Sprintf(
+					_ = request.Reply(false, []byte(fmt.Sprintf(
 						"checksum of src (%s) differs from dst (%s)",
 						fileInfo.CheckSum,
 						checksum)))
@@ -279,7 +279,7 @@ func TestVerifyFileCheckSum(t *testing.T) {
 				}
 
 				// Success
-				request.Reply(true, nil)
+				_ = request.Reply(true, nil)
 			}
 
 			// Call the verification function
@@ -477,7 +477,7 @@ func readFileForTest(filePath string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileBytes := make([]byte, fileInfo.Size())
 	_, err = io.ReadFull(file, fileBytes)

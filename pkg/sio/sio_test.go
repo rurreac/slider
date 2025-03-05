@@ -13,12 +13,12 @@ func TestReadFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.Write(content); err != nil {
 		t.Fatalf("Failed to write to temp file: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Test reading the file
 	fileContent, checksum, err := ReadFile(tmpFile.Name())
@@ -49,7 +49,7 @@ func TestGetSliderHome(t *testing.T) {
 	originalEnv := os.Getenv("SLIDER_HOME")
 
 	// Set test environment variable
-	os.Setenv("SLIDER_HOME", testDir)
+	_ = os.Setenv("SLIDER_HOME", testDir)
 
 	// Get home directory
 	homeDir := GetSliderHome()
@@ -60,10 +60,10 @@ func TestGetSliderHome(t *testing.T) {
 	}
 
 	// Reset environment variable
-	os.Setenv("SLIDER_HOME", originalEnv)
+	_ = os.Setenv("SLIDER_HOME", originalEnv)
 
 	// Test with SLIDER_HOME not set - should use user's home or current directory
-	os.Setenv("SLIDER_HOME", "")
+	_ = os.Setenv("SLIDER_HOME", "")
 
 	// Get home directory again
 	homeDir = GetSliderHome()

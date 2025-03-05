@@ -77,7 +77,7 @@ func TestClientFingerprintLoading(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer os.Remove(tmpFile.Name())
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 		fingerprints := []string{
 			"11:22:33:44:55:66:77:88:99:00:aa:bb:cc:dd:ee:ff",
@@ -89,7 +89,7 @@ func TestClientFingerprintLoading(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		tmpFile.Close()
+		_ = tmpFile.Close()
 
 		// Reset client fingerprints
 		c.serverFingerprint = nil

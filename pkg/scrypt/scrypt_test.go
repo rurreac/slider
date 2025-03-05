@@ -98,7 +98,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	}
 	tmpPath := tmpDir + "/testkey.json"
 	// Clean up after the test
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Test with a non-existent file (will create a new key pair)
 	signer1, err := NewSSHSignerFromFile(tmpPath)
