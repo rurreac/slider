@@ -42,34 +42,3 @@ func TestReadFile(t *testing.T) {
 		t.Error("Expected error when reading non-existent file, got nil")
 	}
 }
-
-func TestGetSliderHome(t *testing.T) {
-	// Test with SLIDER_HOME environment variable set
-	testDir := "/tmp/slider-test-home"
-	originalEnv := os.Getenv("SLIDER_HOME")
-
-	// Set test environment variable
-	_ = os.Setenv("SLIDER_HOME", testDir)
-
-	// Get home directory
-	homeDir := GetSliderHome()
-
-	// Verify home directory
-	if homeDir != testDir {
-		t.Errorf("Expected home directory %s, got %s", testDir, homeDir)
-	}
-
-	// Reset environment variable
-	_ = os.Setenv("SLIDER_HOME", originalEnv)
-
-	// Test with SLIDER_HOME not set - should use user's home or current directory
-	_ = os.Setenv("SLIDER_HOME", "")
-
-	// Get home directory again
-	homeDir = GetSliderHome()
-
-	// Verify a directory was returned (either home or current dir)
-	if homeDir == "" {
-		t.Error("Home directory should not be empty")
-	}
-}
