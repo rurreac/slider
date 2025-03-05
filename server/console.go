@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"slider/pkg/colors"
 	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"sort"
@@ -92,7 +91,7 @@ func (s *server) NewConsole() string {
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
 			// line, error = "", io.EOF
 			// We will background gracefully when this happens
-			fmt.Printf("\r\n%sLogging...%s\r\n", colors.Console.Warn, colors.Reset)
+			s.console.PrintlnWarn("\r\nLogging...\r\n")
 			return "bg"
 		}
 		args := make([]string, 0)
