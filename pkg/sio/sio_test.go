@@ -2,9 +2,7 @@ package sio
 
 import (
 	"bytes"
-	"io"
 	"os"
-	"sync"
 	"testing"
 )
 
@@ -45,81 +43,6 @@ func TestReadFile(t *testing.T) {
 	}
 }
 
-// readWriteCloser implements io.ReadWriteCloser
-type readWriteCloser struct {
-	w io.Writer
-	r io.Reader
-}
-
-func (rwc *readWriteCloser) Write(p []byte) (n int, err error) {
-	return rwc.w.Write(p)
-}
-
-func (rwc *readWriteCloser) Read(p []byte) (n int, err error) {
-	return rwc.r.Read(p)
-}
-
-func (rwc *readWriteCloser) Close() error {
-	if c, ok := rwc.w.(io.Closer); ok {
-		c.Close()
-	}
-	if c, ok := rwc.r.(io.Closer); ok {
-		c.Close()
-	}
-	return nil
-}
-
-func TestPipeWithCancel(t *testing.T) {
-	// Skip this test as it needs more complex setup
-	t.Skip("Skipping test that needs complex setup")
-
-	// Previous implementation wasn't working correctly. Will re-implement in the future
-}
-
-// testRWC is a ReadWriteCloser implementation designed specifically for testing PipeWithCancel
-type testRWC struct {
-	name     string
-	readFrom *bytes.Buffer
-	writeTo  *bytes.Buffer
-	closed   bool
-	mutex    sync.Mutex
-}
-
-func (t *testRWC) Read(p []byte) (n int, err error) {
-	if t.closed {
-		return 0, io.EOF
-	}
-
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	n, err = t.readFrom.Read(p)
-	if err == io.EOF {
-		// Simulate closing after EOF is reached
-		t.closed = true
-	}
-	return
-}
-
-func (t *testRWC) Write(p []byte) (n int, err error) {
-	if t.closed {
-		return 0, io.ErrClosedPipe
-	}
-
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	return t.writeTo.Write(p)
-}
-
-func (t *testRWC) Close() error {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
-	t.closed = true
-	return nil
-}
-
 func TestGetSliderHome(t *testing.T) {
 	// Test with SLIDER_HOME environment variable set
 	testDir := "/tmp/slider-test-home"
@@ -150,6 +73,3 @@ func TestGetSliderHome(t *testing.T) {
 		t.Error("Home directory should not be empty")
 	}
 }
-
-// TestCertSaveStatus is commented out as it depends on an undefined function
-// func TestCertSaveStatus(t *testing.T) {...}
