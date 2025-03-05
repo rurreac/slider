@@ -30,6 +30,9 @@ type Console struct {
 func (s *server) NewConsole() string {
 	var out string
 
+	// Set Console Colors
+	setConsoleColors()
+
 	// Get available Commands
 	commands := s.initCommands()
 
@@ -75,12 +78,8 @@ func (s *server) NewConsole() string {
 		"\r\nPress CTRL^C again or Type \"bg\" to background the console," +
 			"\r\nType \"exit\" to terminate the server.\r\n",
 	)
-	s.console.Term.SetPrompt(
-		"\rSlider" +
-			string(colors.Console.System) +
-			" > " +
-			string(colors.Reset),
-	)
+
+	s.console.Term.SetPrompt(getPrompt())
 
 	for consoleInput := true; consoleInput; {
 		var fCmd string
