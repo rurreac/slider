@@ -41,6 +41,14 @@ around 2mb.
 
 Slider Release Binaries are already compressed with [UPX](https://github.com/upx/upx) if supported.
 
+A Makefile is included for local building. When running `make` with no arguments (if [UPX](https://github.com/upx/upx) is installed), a faster 
+compression will be applied.
+For building binaries with the same compression level as the ones available for download use the `UPX_BRUTE` parameter:
+
+```
+make <TARGET> UPX_BRUTE=yes
+```
+
 Currently Slider uses the following external dependencies:
 * [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
