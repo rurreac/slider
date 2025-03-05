@@ -64,7 +64,7 @@ func (c *Console) Printf(m string, args ...interface{}) {
 }
 
 func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
-	c.Output.Printf(h)
+	c.Output.Printf("%s", h)
 	f.PrintDefaults()
 	c.Output.Printf("\n")
 }

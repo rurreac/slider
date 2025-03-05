@@ -1,6 +1,6 @@
 module slider
 
-go 1.22
+go 1.24
 
 require (
 	github.com/UserExistsError/conpty v0.1.4
