@@ -10,7 +10,7 @@ ifdef UPX_CHECK
   UPX_CMD := upx -9
 else
   UPX_AVAILABLE := no
-  UPX_CMD := echo "UPX not installed, skipping compression for"
+  $(warning WARNING: UPX is not installed. Binaries will not be compressed. Install UPX for smaller binaries.)
 endif
 
 # Get OS information for platform-specific settings
