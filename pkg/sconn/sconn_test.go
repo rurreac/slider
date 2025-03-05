@@ -81,7 +81,7 @@ func (m *mockSSHChannel) CloseWrite() error {
 	return nil
 }
 
-func (m *mockSSHChannel) SendRequest(name string, wantReply bool, payload []byte) (bool, error) {
+func (m *mockSSHChannel) SendRequest(_ string, _ bool, _ []byte) (bool, error) {
 	return true, nil
 }
 
@@ -96,6 +96,6 @@ func (d *discardReadWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (d *discardReadWriter) Read(p []byte) (n int, err error) {
+func (d *discardReadWriter) Read(_ []byte) (n int, err error) {
 	return 0, io.EOF
 }

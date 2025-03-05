@@ -152,13 +152,13 @@ type mockSSHConn struct {
 	replyHandler    func(bool, []byte) error // Custom handler for request replies
 }
 
-func (m *mockSSHConn) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
+func (m *mockSSHConn) SendRequest(name string, _ bool, payload []byte) (bool, []byte, error) {
 	m.requestType = name
 	m.requestPayload = payload
 	return m.requestSuccess, []byte("test-response"), nil
 }
 
-func (m *mockSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
+func (m *mockSSHConn) OpenChannel(_ string, _ []byte) (ssh.Channel, <-chan *ssh.Request, error) {
 	// If a specific channel is provided, return it
 	if m.channelToReturn != nil {
 		requests := make(chan *ssh.Request)
@@ -242,7 +242,7 @@ func (m *mockSSHChannel) CloseWrite() error {
 	return nil
 }
 
-func (m *mockSSHChannel) SendRequest(name string, wantReply bool, payload []byte) (bool, error) {
+func (m *mockSSHChannel) SendRequest(_ string, _ bool, _ []byte) (bool, error) {
 	return true, nil
 }
 

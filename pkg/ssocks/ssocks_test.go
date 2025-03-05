@@ -157,8 +157,8 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	}
 
 	// Cleanup
-	clientConn.Close()
-	serverConn.Close()
+	_ = clientConn.Close()
+	_ = serverConn.Close()
 }
 
 // Mock SSH connection for testing
@@ -166,11 +166,11 @@ type mockSSHConn struct {
 	netConn net.Conn
 }
 
-func (m *mockSSHConn) SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error) {
+func (m *mockSSHConn) SendRequest(_ string, _ bool, _ []byte) (bool, []byte, error) {
 	return true, nil, nil
 }
 
-func (m *mockSSHConn) OpenChannel(name string, data []byte) (ssh.Channel, <-chan *ssh.Request, error) {
+func (m *mockSSHConn) OpenChannel(_ string, _ []byte) (ssh.Channel, <-chan *ssh.Request, error) {
 	// Create a mock channel using the net.Pipe connection
 	channel := &mockChannel{
 		netConn: m.netConn,
@@ -234,7 +234,7 @@ func (m *mockChannel) CloseWrite() error {
 	return nil
 }
 
-func (m *mockChannel) SendRequest(name string, wantReply bool, payload []byte) (bool, error) {
+func (m *mockChannel) SendRequest(_ string, _ bool, _ []byte) (bool, error) {
 	return true, nil
 }
 
