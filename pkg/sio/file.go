@@ -291,7 +291,7 @@ func (c *ActionConf) remoteCheckSum(job FileJob, requests <-chan *ssh.Request) F
 	if req := <-requests; true {
 		if t := req.Type; t != "checksum" {
 			job.Success = false
-			job.Error = fmt.Errorf("wrong request type %s", req.Type) // Note: previously had a dynamic string which is now disallowed
+			job.Error = fmt.Errorf("wrong request type %s", req.Type)
 			return job
 		}
 		// If the Client wants no reply Payload is an Error
