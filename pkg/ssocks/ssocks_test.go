@@ -249,6 +249,6 @@ func (d *discardReadWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-func (d *discardReadWriter) Read(p []byte) (n int, err error) {
+func (d *discardReadWriter) Read(_ []byte) (n int, err error) {
 	return 0, io.EOF
 }
