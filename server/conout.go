@@ -84,8 +84,8 @@ func (c *Console) Println(m string) {
 	c.Output.Printf("\r%s\n", m)
 }
 
-func (c *Console) Printf(m string, args ...interface{}) {
-	c.Output.Printf("\r"+m+"\r\n", args...)
+func (c *Console) Printf(format string, args ...interface{}) {
+	fmt.Fprintf(c.Term, format, args...)
 }
 
 func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {

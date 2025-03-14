@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -363,6 +364,9 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 		case "file-download":
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleFileDownloadChannel(nc)
+		case "sftp":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleSFTPChannel(nc)
 		default:
 			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -563,4 +567,57 @@ func (s *Session) handleFileDownloadChannel(channel ssh.NewChannel) {
 	_, _ = downloadChan.SendRequest("checksum", true, []byte(checkSum))
 	// Copy file over channel
 	_, _ = downloadChan.Write(file)
+}
+
+func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
+	s.Logger.Debugf("%sAccepting SFTP channel request", s.logID)
+	sftpChan, requests, aErr := channel.Accept()
+	if aErr != nil {
+		s.Logger.Errorf(
+			"%sFailed to accept \"%s\" channel\n%v",
+			s.logID,
+			channel.ChannelType(),
+			aErr,
+		)
+		return
+	}
+
+	// Make sure the channel gets closed when we're done
+	defer func() {
+		s.Logger.Debugf("%sClosing SFTP channel", s.logID)
+		_ = sftpChan.Close()
+	}()
+
+	// Handle channel requests in the background
+	go ssh.DiscardRequests(requests)
+
+	// Create SFTP server options
+	var serverOptions []sftp.ServerOption
+	if s.Logger.IsDebug() {
+		serverOptions = append(serverOptions, sftp.WithDebug(os.Stderr))
+	}
+
+	// Create the SFTP server with the configured options
+	s.Logger.Debugf("%sInitializing SFTP server", s.logID)
+	server, err := sftp.NewServer(
+		sftpChan,
+		serverOptions...,
+	)
+	if err != nil {
+		s.Logger.Errorf("%sFailed to create SFTP server: %v", s.logID, err)
+		return
+	}
+
+	s.Logger.Infof("%sSFTP server started successfully", s.logID)
+
+	// Serve SFTP connections
+	if err := server.Serve(); err != nil {
+		if err == io.EOF {
+			s.Logger.Debugf("%sSFTP client disconnected", s.logID)
+		} else {
+			s.Logger.Errorf("%sSFTP server error: %v", s.logID, err)
+		}
+	}
+
+	s.Logger.Debugf("%sSFTP server stopped", s.logID)
 }

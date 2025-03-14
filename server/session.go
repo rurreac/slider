@@ -22,6 +22,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/sftp"
 )
 
 // Session represents a session from a client to the server
@@ -433,4 +434,41 @@ func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status
 	}()
 
 	return status
+}
+
+// openSFTPClient establishes an SFTP connection to a client session
+func (session *Session) openSFTPClient() (*sftp.Client, error) {
+	session.Logger.Debugf("%sOpening SFTP channel to client", session.logID)
+
+	// Open an SFTP channel to the client
+	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open SFTP channel: %v", err)
+	}
+
+	// Make sure to handle requests appropriately
+	go ssh.DiscardRequests(requests)
+
+	// Create cleanup function for use on error
+	cleanup := func() {
+		session.Logger.Debugf("%sClosing SFTP channel due to error", session.logID)
+		_ = sftpChan.Close()
+	}
+
+	// Create the SFTP client using the established channel
+	session.Logger.Debugf("%sInitializing SFTP client", session.logID)
+	client, err := sftp.NewClientPipe(sftpChan, sftpChan)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to create SFTP client: %v", err)
+	}
+
+	// Monitor client status in the background
+	go func() {
+		_ = client.Wait()
+		session.Logger.Debugf("%sSFTP client connection closed", session.logID)
+	}()
+
+	session.Logger.Infof("%sSFTP client connected successfully", session.logID)
+	return client, nil
 }

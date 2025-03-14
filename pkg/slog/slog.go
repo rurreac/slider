@@ -132,3 +132,8 @@ func (l *Logger) SetLevel(verbosity string) error {
 	}
 	return nil
 }
+
+// IsDebug returns true if the logger is set to debug level
+func (l *Logger) IsDebug() bool {
+	return l.logLevel == lvlDebug
+}

@@ -59,12 +59,23 @@ Usage: socks [flags]
 Flags:
 `
 
+// Console SFTP Command
+const sftpCmd = "sftp"
+const sftpDesc = "Opens an interactive SFTP session with a client"
+const sftpUsage = `
+
+Usage: sftp [flags]
+
+Flags:
+`
+
 // Console Upload Command
 const uploadCmd = "upload"
 const uploadDesc = "Uploads file passed as an argument to Client"
 const uploadUsage = `
 
 Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
+Use -sftp flag for more reliable transfer of large files with progress reporting.
 
 Usage: upload [flags] [src] [dst]
 
@@ -77,7 +88,8 @@ const downloadDesc = "Downloads file passed as an argument from Client"
 const downloadUsage = `
 
 * If no destination name is given, file will be downloaded with the same basename to the Server CWD.
-* Downloading from a file list does not allow specifying destination.  
+* Downloading from a file list does not allow specifying destination.
+* Use -sftp flag for more reliable transfer of large files with progress reporting.
 
 Usage: download [flags] [src] [dst]
 
@@ -142,6 +154,10 @@ func (s *server) initCommands() map[string]commandStruct {
 		downloadCmd: {
 			desc:    downloadDesc,
 			cmdFunc: s.downloadCommand,
+		},
+		sftpCmd: {
+			desc:    sftpDesc,
+			cmdFunc: s.sftpCommand,
 		},
 		connectCmd: {
 			desc:    connectDesc,
