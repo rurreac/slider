@@ -12,14 +12,14 @@ ifdef UPX_CHECK
 	UPX_AVAILABLE := yes
 	# Strong compression if set
 	ifeq ($(UPX_BRUTE), yes)
-		$(warning WARNING: Selected strong compression. This may take a while.)
+$(warning WARNING: Selected strong compression. This may take a while.)
 		UPX_CMD := upx --best --lzma --brute
 	else
 		UPX_CMD := upx -9
 	endif
 else
 	UPX_AVAILABLE := no
-	$(warning WARNING: UPX not found. Binaries will not be compressed. Install UPX for smaller binaries.)
+$(warning WARNING: UPX not found. Binaries will not be compressed. Install UPX for smaller binaries.)
 endif
 
 # Get OS information for platform-specific settings
