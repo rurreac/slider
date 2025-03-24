@@ -1,6 +1,7 @@
 package scrypt
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -15,8 +16,16 @@ import (
 )
 
 type KeyPair struct {
-	PrivateKey  string `json:"PrivateKey"`
-	FingerPrint string `json:"FingerPrint"`
+	PrivateKey    string `json:"PrivateKey"`
+	SSHPrivateKey string `json:"SSHPrivateKey"`
+	SSHPublicKey  string `json:"SSHPublicKey"`
+	FingerPrint   string `json:"FingerPrint"`
+}
+
+type CertTrack struct {
+	CertCount  int64
+	CertActive int64
+	Certs      map[int64]*KeyPair
 }
 
 func NewSSHSigner() (ssh.Signer, error) {
@@ -27,7 +36,7 @@ func NewSSHSigner() (ssh.Signer, error) {
 
 	privateKeySigner, prErr := SignerFromKey(keypair.PrivateKey)
 	if prErr != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %v", err)
+		return nil, fmt.Errorf("failed to create signer: %v", prErr)
 	}
 
 	return privateKeySigner, nil
@@ -79,7 +88,7 @@ func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
 func SignerFromKey(key string) (ssh.Signer, error) {
 	keyBytes, dErr := base64.RawStdEncoding.DecodeString(key)
 	if dErr != nil {
-		return nil, dErr
+		return nil, fmt.Errorf("failed to decode key - %v", dErr)
 	}
 
 	pemBytes := pem.EncodeToMemory(&pem.Block{
@@ -90,7 +99,7 @@ func SignerFromKey(key string) (ssh.Signer, error) {
 
 	privateKeySigner, prErr := ssh.ParsePrivateKey(pemBytes)
 	if prErr != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %v", prErr)
+		return nil, fmt.Errorf("failed to parse private key: %v", prErr)
 	}
 
 	return privateKeySigner, prErr
@@ -117,6 +126,11 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 		return nil, mErr
 	}
 
+	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(privateKey), "")
+	if mErr != nil {
+		return nil, mErr
+	}
+
 	pbKey, pbErr := ssh.NewPublicKey(publicKey)
 	if pbErr != nil {
 		return nil, pbErr
@@ -128,7 +142,19 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	}
 
 	return &KeyPair{
-		PrivateKey:  base64.RawStdEncoding.EncodeToString(pvBytes),
-		FingerPrint: fingerprint,
+		PrivateKey:    base64.RawStdEncoding.EncodeToString(pvBytes),
+		SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
+		SSHPublicKey:  string(ssh.MarshalAuthorizedKey(pbKey)),
+		FingerPrint:   fingerprint,
 	}, nil
+}
+
+func IsAllowedFingerprint(fp string, ct map[int64]*KeyPair) (int64, bool) {
+	for i, k := range ct {
+		if k.FingerPrint == fp {
+			return i, true
+		}
+	}
+
+	return 0, false
 }

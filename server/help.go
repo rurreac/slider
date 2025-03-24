@@ -61,7 +61,7 @@ Flags:
 
 // Console SFTP Command
 const sftpCmd = "sftp"
-const sftpDesc = "Opens an interactive SFTP session with a client"
+const sftpDesc = "Opens an SFTP session to a client"
 const sftpUsage = `
 
 Usage: sftp [flags]
@@ -115,8 +115,9 @@ const connectUsage = `
 
 Connects to a Client configured as Listener and creates a new Session
 
-Usage: connect <[client_address]:port>
+Usage: connect [flags] <[client_address]:port>
 
+Flags:
 `
 
 type commandStruct struct {

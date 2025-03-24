@@ -85,7 +85,7 @@ func (c *Console) Println(m string) {
 }
 
 func (c *Console) Printf(format string, args ...interface{}) {
-	fmt.Fprintf(c.Term, format, args...)
+	_, _ = fmt.Fprintf(c.Term, format, args...)
 }
 
 func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {

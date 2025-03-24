@@ -10,6 +10,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
+	"slider/pkg/ssftp"
 	"slider/pkg/ssocks"
 	"strings"
 	"sync"
@@ -22,8 +23,12 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/gorilla/websocket"
-	"github.com/pkg/sftp"
 )
+
+type certInfo struct {
+	fingerprint string
+	id          int64
+}
 
 // Session represents a session from a client to the server
 type Session struct {
@@ -43,7 +48,9 @@ type Session struct {
 	ClientInterpreter *interpreter.Interpreter
 	isListener        bool
 	sessionMutex      sync.Mutex
-	fingerprint       string
+	certInfo          certInfo
+	SFTPInstance      *ssftp.Instance
+	sshConf           *ssh.ServerConfig
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -59,16 +66,34 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		host = "localhost"
 	}
 
+	logID := fmt.Sprintf("Session ID %d - ", sc)
+
+	socksInstance := ssocks.New(
+		&ssocks.InstanceConfig{
+			Logger: s.Logger,
+			LogID:  logID,
+		},
+	)
+
+	sftpInstance := ssftp.New(
+		&ssftp.InstanceConfig{
+			Logger:    s.Logger,
+			LogID:     logID,
+			ServerKey: s.serverKey,
+			AuthOn:    s.authOn,
+		},
+	)
+
 	session := &Session{
 		sessionID:     sc,
 		hostIP:        host,
 		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
-		logID:         fmt.Sprintf("Session ID %d - ", sc),
-		SocksInstance: &ssocks.Instance{
-			InstanceConfig: &ssocks.InstanceConfig{},
-		},
+		logID:         logID,
+		SocksInstance: socksInstance,
+		SFTPInstance:  sftpInstance,
+		sshConf:       s.sshConf,
 	}
 
 	s.sessionTrack.Sessions[sc] = session
@@ -92,6 +117,10 @@ func (s *server) dropWebSocketSession(session *Session) {
 
 	if session.SocksInstance.IsEnabled() {
 		_ = session.SocksInstance.Stop()
+	}
+
+	if session.SFTPInstance.IsEnabled() {
+		_ = session.SFTPInstance.Stop()
 	}
 
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
@@ -130,9 +159,10 @@ func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Unlock()
 }
 
-func (session *Session) addSessionFingerprint(fingerprint string) {
+func (session *Session) addCertInfo(certID int64, fingerprint string) {
 	session.sessionMutex.Lock()
-	session.fingerprint = fingerprint
+	session.certInfo.id = certID
+	session.certInfo.fingerprint = fingerprint
 	session.sessionMutex.Unlock()
 }
 
@@ -145,6 +175,12 @@ func (session *Session) setKeepAliveOn(aliveCheck bool) {
 func (session *Session) setListenerOn(listener bool) {
 	session.sessionMutex.Lock()
 	session.isListener = listener
+	session.sessionMutex.Unlock()
+}
+
+func (session *Session) setSSHConf(sshConf *ssh.ServerConfig) {
+	session.sessionMutex.Lock()
+	session.sshConf = sshConf
 	session.sessionMutex.Unlock()
 }
 
@@ -372,18 +408,9 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 }
 
 func (session *Session) socksEnable(port int) {
-	sConfig := &ssocks.InstanceConfig{
-		Logger:     session.Logger,
-		LogID:      session.logID,
-		IsEndpoint: true,
-		Port:       port,
-		SSHConn:    session.sshConn,
-	}
-	session.sessionMutex.Lock()
-	session.SocksInstance = ssocks.New(sConfig)
-	session.sessionMutex.Unlock()
+	session.SocksInstance.SetSSHConn(session.sshConn)
 
-	if sErr := session.SocksInstance.StartEndpoint(); sErr != nil {
+	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
 		session.Logger.Errorf("%sSocks - %v", session.logID, sErr)
 	}
 }
@@ -436,39 +463,14 @@ func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status
 	return status
 }
 
-// openSFTPClient establishes an SFTP connection to a client session
-func (session *Session) openSFTPClient() (*sftp.Client, error) {
-	session.Logger.Debugf("%sOpening SFTP channel to client", session.logID)
-
-	// Open an SFTP channel to the client
-	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open SFTP channel: %v", err)
+func (session *Session) sftpEnable(port int) {
+	session.SFTPInstance.SetSSHConn(session.sshConn)
+	if session.SFTPInstance.AuthOn {
+		session.SFTPInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
 	}
 
-	// Make sure to handle requests appropriately
-	go ssh.DiscardRequests(requests)
-
-	// Create cleanup function for use on error
-	cleanup := func() {
-		session.Logger.Debugf("%sClosing SFTP channel due to error", session.logID)
-		_ = sftpChan.Close()
+	if sErr := session.SFTPInstance.StartEndpoint(port); sErr != nil {
+		session.Logger.Errorf("%sSFTP - %v", session.logID, sErr)
+		return
 	}
-
-	// Create the SFTP client using the established channel
-	session.Logger.Debugf("%sInitializing SFTP client", session.logID)
-	client, err := sftp.NewClientPipe(sftpChan, sftpChan)
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("failed to create SFTP client: %v", err)
-	}
-
-	// Monitor client status in the background
-	go func() {
-		_ = client.Wait()
-		session.Logger.Debugf("%sSFTP client connection closed", session.logID)
-	}()
-
-	session.Logger.Infof("%sSFTP client connected successfully", session.logID)
-	return client, nil
 }

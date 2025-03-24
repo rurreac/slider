@@ -238,12 +238,16 @@ runs its next keepalive check will shut down.
 
 ##### Connect
 ```
+Slider> connect
 Receives the address of a Client to connect to
 
 Connects to a Client configured as Listener and creates a new Session
 
-Usage: connect <client_address:port>
+Usage: connect [flags] <[client_address]:port>
 
+Flags:
+  -c int
+    	Specify certID for key authentication
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
 then we'll need to use the `connect` command.
@@ -256,6 +260,8 @@ started with `-auth`.
 
 Since the Server is the one that initiates the connection to the Listener and the Listener is facing the network,
 authentication of Servers will happen on the Client side with `-fingerprint`. 
+Servers will be rejected if their fingerprint is not successfully verified. in order to authenticate to a Listener, use
+the `-c` flag to specify the certificate ID that you want to use.
 
 ![Console Connect](./doc/console_connect.gif)
 
@@ -353,9 +359,35 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 
 ![Console Download](./doc/console_download.gif)
 
+##### SFTP
+```
+Slider> sftp -h
+Opens an SFTP session to a client
+
+Usage: sftp [flags]
+
+Flags:
+  -k int
+    	Kill SFTP port forwarding to a Session ID
+  -p int
+    	Local Port to forward SFTP connection to
+  -s int
+    	Session ID to establish SFTP connection to
+```
+Slider will create an SFTP server on the Client side and forward the connection to the Server side to the specified port.
+
+Connect to the SFTP server using an SFTP client, such as [FileZilla](https://filezilla-project.org/) by configuring an 
+SFTP anonymous connection to the specified port.
+
+If server authentication is enabled you must authenticate to the SFTP using the SSH key that matches the key used by the
+client to connect to the server.
+
+Note that the key used is not a valid SSH key itself, but you can obtain it by running `certs -s <certID>` command 
+on the console.
+
 ##### Certs
 ```
-Slider > certs -h
+Slider> certs -h
 Interacts with the Server Certificate Jar
 
 When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
@@ -366,6 +398,8 @@ Flags:
   -n	Generate a new Key Pair
   -r int
     	Remove matching index from the Certificate Jar
+  -s int
+    	Print CertID SSH keys
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be listed or available.
 
