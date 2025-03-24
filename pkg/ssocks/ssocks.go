@@ -11,12 +11,11 @@ import (
 )
 
 type InstanceConfig struct {
-	Logger       *slog.Logger
-	LogID        string
-	port         int
-	sshConn      ssh.Conn
-	SocksChannel ssh.Channel
-	IsServer     bool
+	Logger     *slog.Logger
+	LogID      string
+	port       int
+	sshConn    ssh.Conn
+	exposePort bool
 }
 
 type Instance struct {
@@ -33,7 +32,13 @@ func New(config *InstanceConfig) *Instance {
 	}
 }
 
-func (si *Instance) SetControls() {
+func (si *Instance) SetExpose(expose bool) {
+	si.socksMutex.Lock()
+	si.exposePort = expose
+	si.socksMutex.Unlock()
+}
+
+func (si *Instance) setControls() {
 	si.socksMutex.Lock()
 	si.stopSignal = make(chan bool, 1)
 	si.done = make(chan bool, 1)
@@ -46,7 +51,7 @@ func (si *Instance) SetSSHConn(conn ssh.Conn) {
 	si.socksMutex.Unlock()
 }
 
-func (si *Instance) SetPort(port int) {
+func (si *Instance) setPort(port int) {
 	si.socksMutex.Lock()
 	si.port = port
 	si.socksEnabled = true
@@ -54,13 +59,24 @@ func (si *Instance) SetPort(port int) {
 }
 
 func (si *Instance) StartEndpoint(port int) error {
-	// TODO: Endpoints listen only localhost due to security, but can be configured in the future + authentication?
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
+	// net.Listen does not error when something is listening on a port on 0.0.0.0,
+	// and we attempt to listen on 127.0.0.1 on the same port.
+	// To overcome this issue we will try 0.0.0.0 first.
+	var listener net.Listener
+	var lErr error
+	listener, lErr = net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if lErr != nil {
+		return lErr
 	}
-	si.SetControls()
-	si.SetPort(listener.Addr().(*net.TCPAddr).Port)
+	if !si.isExposed() {
+		_ = listener.Close()
+		listener, lErr = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if lErr != nil {
+			return lErr
+		}
+	}
+	si.setControls()
+	si.setPort(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
 		if <-si.stopSignal; true {
@@ -99,6 +115,13 @@ func (si *Instance) IsEnabled() bool {
 	enabled := si.socksEnabled
 	si.socksMutex.Unlock()
 	return enabled
+}
+
+func (si *Instance) isExposed() bool {
+	si.socksMutex.Lock()
+	exposed := si.exposePort
+	si.socksMutex.Unlock()
+	return exposed
 }
 
 func (si *Instance) GetEndpointPort() (int, error) {

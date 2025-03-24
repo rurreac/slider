@@ -212,7 +212,7 @@ Usage: sessions [flags]
 
 Flags:
   -d int
-    	Disconnect Session ID
+    	Disconnects Session ID
   -i int
     	Starts Interactive Shell on a Session ID
   -k int
@@ -247,7 +247,7 @@ Usage: connect [flags] <[client_address]:port>
 
 Flags:
   -c int
-    	Specify certID for key authentication
+    	Specifies certID for key authentication
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
 then we'll need to use the `connect` command.
@@ -289,12 +289,13 @@ unnecessary overhead.
 
 ##### Socks
 ```
-Slider > socks -h
+Slider> socks -h
 Runs or Kills a Reverse Socks server
 
 Usage: socks [flags]
 
 Flags:
+  -e	Exposes socks port to all interfaces
   -k int
     	Kills Socks5 Listener and Server on a Session ID
   -p int
@@ -302,13 +303,12 @@ Flags:
   -s int
     	Runs a Socks5 server over an SSH Channel on a Session ID
 ```
-If we would like to create a reverse Socks v5 server (or kill an existing one), we could do it using the `socks`
-command.
-Under the hood a specific SSH Channel is created for this purpose. The Client creates a Socks server and sends it
-to the Channel while the Server opens a local port and send the incoming connections to the other end of that same
-Channel.  
-By default `socks` only requires specifying a Client Session and the Server local port will be automatically assigned
-by the OS, but we can also specify a port using the `-p`.
+Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side to the specified port,
+or a port randomly selected if not specified.
+
+If a port is not specified using the `-p` flag, one  will be automatically assigned.
+
+By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
 
 ![Console Socks](./doc/console_socks.gif)
 
@@ -367,23 +367,26 @@ Opens an SFTP session to a client
 Usage: sftp [flags]
 
 Flags:
+  -e	Exposes SFTP port to all interfaces
   -k int
-    	Kill SFTP port forwarding to a Session ID
+    	Kills SFTP port forwarding to a Session ID
   -p int
-    	Local Port to forward SFTP connection to
+    	Local port to forward SFTP connection to
   -s int
-    	Session ID to establish SFTP connection to
+    	Session ID to establish SFTP connection with
 ```
-Slider will create an SFTP server on the Client side and forward the connection to the Server side to the specified port.
+Slider will create an SFTP server on the Client side and forward the connection to the Server side to the specified port,
+or a port randomly selected if not specified.
 
 Connect to the SFTP server using an SFTP client, such as [FileZilla](https://filezilla-project.org/) by configuring an 
-SFTP anonymous connection to the specified port.
+SFTP anonymous connection to the specified port, if authentication is disabled.
 
 If server authentication is enabled you must authenticate to the SFTP using the SSH key that matches the key used by the
 client to connect to the server.
-
 Note that the key used is not a valid SSH key itself, but you can obtain it by running `certs -s <certID>` command 
 on the console.
+
+By default, the SFTP server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
 
 ##### Certs
 ```
@@ -397,9 +400,9 @@ Usage: certs [flags]
 Flags:
   -n	Generate a new Key Pair
   -r int
-    	Remove matching index from the Certificate Jar
+    	Removes matching index from the Certificate Jar
   -s int
-    	Print CertID SSH keys
+    	Prints CertID SSH keys
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be listed or available.
 

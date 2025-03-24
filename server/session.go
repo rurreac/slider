@@ -407,8 +407,9 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 	return request.Reply(ok, payload)
 }
 
-func (session *Session) socksEnable(port int) {
+func (session *Session) socksEnable(port int, exposePort bool) {
 	session.SocksInstance.SetSSHConn(session.sshConn)
+	session.SocksInstance.SetExpose(exposePort)
 
 	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
 		session.Logger.Errorf("%sSocks - %v", session.logID, sErr)
@@ -463,11 +464,12 @@ func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status
 	return status
 }
 
-func (session *Session) sftpEnable(port int) {
+func (session *Session) sftpEnable(port int, exposePort bool) {
 	session.SFTPInstance.SetSSHConn(session.sshConn)
 	if session.SFTPInstance.AuthOn {
 		session.SFTPInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
 	}
+	session.SFTPInstance.SetExpose(exposePort)
 
 	if sErr := session.SFTPInstance.StartEndpoint(port); sErr != nil {
 		session.Logger.Errorf("%sSFTP - %v", session.logID, sErr)

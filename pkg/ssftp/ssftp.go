@@ -19,6 +19,7 @@ type InstanceConfig struct {
 	ServerKey          ssh.Signer
 	AuthOn             bool
 	allowedFingerprint string
+	exposePort         bool
 }
 
 type Instance struct {
@@ -35,7 +36,13 @@ func New(config *InstanceConfig) *Instance {
 	}
 }
 
-func (si *Instance) SetControls() {
+func (si *Instance) SetExpose(expose bool) {
+	si.sftpMutex.Lock()
+	si.exposePort = expose
+	si.sftpMutex.Unlock()
+}
+
+func (si *Instance) setControls() {
 	si.sftpMutex.Lock()
 	si.stopSignal = make(chan bool, 1)
 	si.done = make(chan bool, 1)
@@ -48,7 +55,7 @@ func (si *Instance) SetSSHConn(conn ssh.Conn) {
 	si.sftpMutex.Unlock()
 }
 
-func (si *Instance) SetPort(port int) {
+func (si *Instance) setPort(port int) {
 	si.sftpMutex.Lock()
 	si.port = port
 	si.sftpEnabled = true
@@ -62,12 +69,24 @@ func (si *Instance) SetAllowedFingerprint(fp string) {
 }
 
 func (si *Instance) StartEndpoint(port int) error {
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-	if err != nil {
-		return err
+	// net.Listen does not error when something is listening on a port on 0.0.0.0,
+	// and we attempt to listen on 127.0.0.1 on the same port.
+	// To overcome this issue we will try 0.0.0.0 first.
+	var listener net.Listener
+	var lErr error
+	listener, lErr = net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if lErr != nil {
+		return lErr
 	}
-	si.SetControls()
-	si.SetPort(listener.Addr().(*net.TCPAddr).Port)
+	if !si.isExposed() {
+		_ = listener.Close()
+		listener, lErr = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if lErr != nil {
+			return lErr
+		}
+	}
+	si.setControls()
+	si.setPort(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
 		if <-si.stopSignal; true {
@@ -155,6 +174,13 @@ func (si *Instance) IsEnabled() bool {
 	enabled := si.sftpEnabled
 	si.sftpMutex.Unlock()
 	return enabled
+}
+
+func (si *Instance) isExposed() bool {
+	si.sftpMutex.Lock()
+	exposed := si.exposePort
+	si.sftpMutex.Unlock()
+	return exposed
 }
 
 func (si *Instance) GetEndpointPort() (int, error) {

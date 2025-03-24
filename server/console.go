@@ -386,6 +386,7 @@ func (s *server) socksCommand(args ...string) {
 	sSession := socksFlags.Int("s", 0, "Runs a Socks5 server over an SSH Channel on a Session ID")
 	sPort := socksFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
 	sKill := socksFlags.Int("k", 0, "Kills Socks5 Listener and Server on a Session ID")
+	sExpose := socksFlags.Bool("e", false, "Expose socks port to all interfaces")
 	socksFlags.Usage = func() {
 		s.console.PrintCommandUsage(socksFlags, socksDesc+socksUsage)
 	}
@@ -406,6 +407,12 @@ func (s *server) socksCommand(args ...string) {
 			s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
 			return
 		}
+	}
+
+	if *sExpose && *sKill != 0 {
+		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
+		socksFlags.Usage()
+		return
 	}
 
 	if *sKill > 0 {
@@ -430,7 +437,7 @@ func (s *server) socksCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling Socks Endpoint in the background")
 
-		go session.socksEnable(*sPort)
+		go session.socksEnable(*sPort, *sExpose)
 
 		// Give some time to check
 		socksTicker := time.NewTicker(250 * time.Millisecond)
@@ -595,6 +602,7 @@ func (s *server) sftpCommand(args ...string) {
 	sSession := sftpFlags.Int("s", 0, "Session ID to establish SFTP connection with")
 	sPort := sftpFlags.Int("p", 0, "Local port to forward SFTP connection to")
 	sKill := sftpFlags.Int("k", 0, "Kill SFTP port forwarding to a Session ID")
+	sExpose := sftpFlags.Bool("e", false, "Expose SFTP port to all interfaces")
 	sftpFlags.Usage = func() {
 		s.console.PrintCommandUsage(sftpFlags, sftpDesc+sftpUsage)
 	}
@@ -616,6 +624,12 @@ func (s *server) sftpCommand(args ...string) {
 			s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
 			return
 		}
+	}
+
+	if *sExpose && *sKill != 0 {
+		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
+		sftpFlags.Usage()
+		return
 	}
 
 	if *sKill > 0 {
@@ -640,7 +654,7 @@ func (s *server) sftpCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling SFTP Endpoint in the background")
 
-		go session.sftpEnable(*sPort)
+		go session.sftpEnable(*sPort, *sExpose)
 
 		// Give some time to check
 		sftpTicker := time.NewTicker(250 * time.Millisecond)
