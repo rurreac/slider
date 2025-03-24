@@ -57,7 +57,7 @@ func TestSocksInstance(t *testing.T) {
 			t.Errorf("Expected port 12345, got %d", port)
 		}
 
-		// Test non-endpoint instance
+		// Test non-enabled instance
 		instance = New(config)
 
 		_, err = instance.GetEndpointPort()
@@ -100,7 +100,6 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	config := &InstanceConfig{
 		Logger:  logger,
 		LogID:   "[Test]",
-		port:    0, // Use system-assigned port
 		sshConn: mockSSHConn,
 	}
 
