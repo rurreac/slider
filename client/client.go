@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"github.com/armon/go-socks5"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -495,7 +494,7 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	// socks5 logger logs by default and it's very chatty
 	socksServer, snErr := socks5.New(
 		&socks5.Config{
-			Logger: log.New(io.Discard, "", 0),
+			Logger: slog.NewDummyLog(),
 		})
 	if snErr != nil {
 		s.Logger.Errorf("failed to create new socks server - %v", snErr)

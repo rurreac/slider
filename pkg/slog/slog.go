@@ -60,6 +60,10 @@ func NewLogger(prefix string) *Logger {
 	return l
 }
 
+func NewDummyLog() *log.Logger {
+	return log.New(io.Discard, "", 0)
+}
+
 func (l *Logger) WithColors() {
 	l.colorOn = true
 	// Log Level
