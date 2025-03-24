@@ -15,10 +15,9 @@ func TestSocksInstance(t *testing.T) {
 
 	t.Run("New instance creation", func(t *testing.T) {
 		config := &InstanceConfig{
-			Logger:     logger,
-			LogID:      "[Test]",
-			Port:       12345,
-			IsEndpoint: true,
+			Logger: logger,
+			LogID:  "[Test]",
+			port:   12345,
 		}
 
 		instance := New(config)
@@ -27,8 +26,8 @@ func TestSocksInstance(t *testing.T) {
 			t.Fatal("Failed to create socks instance")
 		}
 
-		if instance.Port != 12345 {
-			t.Errorf("Expected port 12345, got %d", instance.Port)
+		if instance.port != 12345 {
+			t.Errorf("Expected port 12345, got %d", instance.port)
 		}
 
 		if instance.LogID != "[Test]" {
@@ -42,12 +41,12 @@ func TestSocksInstance(t *testing.T) {
 
 	t.Run("Get endpoint port", func(t *testing.T) {
 		config := &InstanceConfig{
-			Logger:     logger,
-			Port:       12345,
-			IsEndpoint: true,
+			Logger: logger,
+			port:   12345,
 		}
 
 		instance := New(config)
+		instance.socksEnabled = true
 
 		port, err := instance.GetEndpointPort()
 		if err != nil {
@@ -59,7 +58,6 @@ func TestSocksInstance(t *testing.T) {
 		}
 
 		// Test non-endpoint instance
-		config.IsEndpoint = false
 		instance = New(config)
 
 		_, err = instance.GetEndpointPort()
@@ -70,8 +68,7 @@ func TestSocksInstance(t *testing.T) {
 
 	t.Run("Stop without running", func(t *testing.T) {
 		config := &InstanceConfig{
-			Logger:     logger,
-			IsEndpoint: true,
+			Logger: logger,
 		}
 
 		instance := New(config)
@@ -101,11 +98,10 @@ func TestSocksEndpointIntegration(t *testing.T) {
 
 	// Create a socks instance
 	config := &InstanceConfig{
-		Logger:     logger,
-		LogID:      "[Test]",
-		Port:       0, // Use system-assigned port
-		SSHConn:    mockSSHConn,
-		IsEndpoint: true,
+		Logger:  logger,
+		LogID:   "[Test]",
+		port:    0, // Use system-assigned port
+		sshConn: mockSSHConn,
 	}
 
 	instance := New(config)
@@ -113,7 +109,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	// Start the endpoint in a goroutine
 	errChan := make(chan error, 1)
 	go func() {
-		err := instance.StartEndpoint()
+		err := instance.StartEndpoint(0)
 		errChan <- err
 	}()
 
@@ -127,7 +123,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	}
 
 	if port == 0 {
-		t.Fatal("Port should be assigned by system")
+		t.Fatal("port should be assigned by system")
 	}
 
 	// Verify instance is enabled

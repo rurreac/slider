@@ -6,7 +6,6 @@ import (
 	"golang.org/x/crypto/ssh"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
-	"slider/pkg/ssocks"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +23,6 @@ type Session struct {
 	keepAliveOn   bool
 	disconnect    chan bool
 	interpreter   *interpreter.Interpreter
-	socksInstance *ssocks.Instance
 }
 
 func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/armon/go-socks5"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +21,6 @@ import (
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
-	"slider/pkg/ssocks"
 	"slider/pkg/web"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ func NewClient(args []string) {
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
 	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
-	port := clientFlags.Int("port", 8081, "Listener Port")
+	port := clientFlags.Int("port", 8081, "Listener port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
 	webTemplate := clientFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
@@ -485,19 +486,26 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 		)
 		return
 	}
-	defer func() { _ = socksChan.Close() }()
+	defer func() {
+		s.Logger.Debugf("%sClosing Socks Channel", s.logID)
+		_ = socksChan.Close()
+	}()
 	go ssh.DiscardRequests(req)
 
-	config := &ssocks.InstanceConfig{
-		Logger:       s.Logger,
-		IsServer:     true,
-		SocksChannel: socksChan,
+	// socks5 logger logs by default and it's very chatty
+	socksServer, snErr := socks5.New(
+		&socks5.Config{
+			Logger: log.New(io.Discard, "", 0),
+		})
+	if snErr != nil {
+		s.Logger.Errorf("failed to create new socks server - %v", snErr)
+		return
 	}
-	s.socksInstance = ssocks.New(config)
 
-	if err := s.socksInstance.StartServer(); err != nil {
-		s.Logger.Debugf("%s(Socks) - %s", s.logID, err)
-	}
+	socksConn := sconn.SSHChannelToNetConn(socksChan)
+	defer func() { _ = socksConn.Close() }()
+	_ = socksServer.ServeConn(socksConn)
+	s.Logger.Debugf("%sSFTP server stopped", s.logID)
 }
 
 func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
