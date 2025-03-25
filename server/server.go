@@ -31,12 +31,6 @@ type sessionTrack struct {
 	Sessions      map[int64]*Session // Map of Sessions
 }
 
-type certTrack struct {
-	CertCount  int64
-	CertActive int64
-	Certs      map[int64]*scrypt.KeyPair
-}
-
 type server struct {
 	*slog.Logger
 	sshConf           *ssh.ServerConfig
@@ -44,7 +38,7 @@ type server struct {
 	sessionTrackMutex sync.Mutex
 	console           Console
 	serverInterpreter *interpreter.Interpreter
-	certTrack         *certTrack
+	certTrack         *scrypt.CertTrack
 	certTrackMutex    sync.Mutex
 	certJarFile       string
 	authOn            bool
@@ -52,13 +46,14 @@ type server struct {
 	keepalive         time.Duration
 	webTemplate       web.Template
 	webRedirect       string
+	serverKey         ssh.Signer
 }
 
 func NewServer(args []string) {
 	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
 	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
 	address := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
-	port := serverFlags.Int("port", 8080, "Port where Server will listen")
+	port := serverFlags.Int("port", 8080, "port where Server will listen")
 	keepalive := serverFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
 	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
@@ -106,7 +101,7 @@ func NewServer(args []string) {
 		},
 		sshConf: sshConf,
 		console: Console{},
-		certTrack: &certTrack{
+		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
 		certJarFile: *certJarFile,
@@ -126,7 +121,7 @@ func NewServer(args []string) {
 	}
 	s.serverInterpreter = i
 
-	var signer ssh.Signer
+	//var signer ssh.Signer
 	var keyErr error
 	if *keyStore || *keyPath != "" {
 		kp := sio.GetSliderHome() + serverCertFile
@@ -143,15 +138,15 @@ func NewServer(args []string) {
 			s.Logger.Debugf("Importing existing Server Certificate from %s", kp)
 		}
 
-		signer, keyErr = scrypt.NewSSHSignerFromFile(kp)
+		s.serverKey, keyErr = scrypt.NewSSHSignerFromFile(kp)
 	} else {
-		signer, keyErr = scrypt.NewSSHSigner()
+		s.serverKey, keyErr = scrypt.NewSSHSigner()
 	}
 	if keyErr != nil {
 		s.Logger.Fatalf("%v", keyErr)
 	}
-	s.sshConf.AddHostKey(signer)
-	serverFp, fErr := scrypt.GenerateFingerprint(signer.PublicKey())
+	s.sshConf.AddHostKey(s.serverKey)
+	serverFp, fErr := scrypt.GenerateFingerprint(s.serverKey.PublicKey())
 	if fErr != nil {
 		s.Logger.Fatalf("Failed to generate server fingerprint")
 	}
@@ -238,9 +233,14 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 		return nil, fmt.Errorf("failed to generate fingerprint from public key - %s", fErr)
 	}
 
-	if s.isAllowedFingerprint(fp) {
+	if id, ok := scrypt.IsAllowedFingerprint(fp, s.certTrack.Certs); ok {
 		s.Logger.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
-		return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
+		return &ssh.Permissions{
+			Extensions: map[string]string{
+				"fingerprint": fp,
+				"cert_id":     fmt.Sprintf("%d", id),
+			},
+		}, nil
 	}
 	s.Logger.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
 

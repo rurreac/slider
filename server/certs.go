@@ -115,7 +115,7 @@ func (s *server) saveCertJar() {
 	}
 
 	// Create or truncate, it's ok to trash existing content
-	file, oErr := os.Create(s.certJarFile)
+	file, oErr := os.OpenFile(s.certJarFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if oErr != nil {
 		s.Logger.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
 		return
@@ -135,23 +135,13 @@ func (s *server) getCert(certID int64) (*scrypt.KeyPair, error) {
 	return &scrypt.KeyPair{}, fmt.Errorf("certID %d not found in cert jar", certID)
 }
 
-func (s *server) getSessionByCert(fingerprint string) []int64 {
+func (s *server) getSessionsByCertID(id int64) []int64 {
 	var sessionList []int64
 
 	for _, session := range s.sessionTrack.Sessions {
-		if session.fingerprint == fingerprint {
+		if session.certInfo.id == id {
 			sessionList = append(sessionList, session.sessionID)
 		}
 	}
 	return sessionList
-}
-
-func (s *server) isAllowedFingerprint(fp string) bool {
-	for _, k := range s.certTrack.Certs {
-		if k.FingerPrint == fp {
-			return true
-		}
-	}
-
-	return false
 }

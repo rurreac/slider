@@ -60,6 +60,10 @@ func NewLogger(prefix string) *Logger {
 	return l
 }
 
+func NewDummyLog() *log.Logger {
+	return log.New(io.Discard, "", 0)
+}
+
 func (l *Logger) WithColors() {
 	l.colorOn = true
 	// Log Level
@@ -131,4 +135,9 @@ func (l *Logger) SetLevel(verbosity string) error {
 		return fmt.Errorf("expected one of [debug|info|warn|error|off]")
 	}
 	return nil
+}
+
+// IsDebug returns true if the logger is set to debug level
+func (l *Logger) IsDebug() bool {
+	return l.logLevel == lvlDebug
 }

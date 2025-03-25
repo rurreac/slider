@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"slider/pkg/conf"
+	"slider/pkg/scrypt"
 	"strings"
 )
 
@@ -54,7 +55,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool) {
+func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool, certID int64) {
 	wsConfig := conf.DefaultWebSocketDialer
 
 	wsConn, _, err := wsConfig.DialContext(
@@ -71,10 +72,29 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool)
 	defer func() { _ = wsConn.Close() }()
 
 	session := s.newWebSocketSession(wsConn)
+	defer s.dropWebSocketSession(session)
+
 	session.setListenerOn(true)
 	session.addSessionNotifier(notifier)
 
-	defer s.dropWebSocketSession(session)
+	// Create new ssh server configuration
+	sshConf := *s.sshConf
+	if certID != 0 {
+		keyPair, kErr := s.getCert(certID)
+		if kErr != nil {
+			s.Logger.Errorf("Can't find certificate with id %d", certID)
+			return
+		}
+		session.addCertInfo(certID, keyPair.FingerPrint)
+
+		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
+		if sErr != nil {
+			s.Logger.Errorf("Failed to create client ssh signer with certID %d key", certID)
+			return
+		}
+		sshConf.AddHostKey(signerKey)
+	}
+	session.setSSHConf(&sshConf)
 
 	s.NewSSHServer(session)
 }

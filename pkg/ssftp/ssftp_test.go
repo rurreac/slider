@@ -1,4 +1,4 @@
-package ssocks
+package ssftp
 
 import (
 	"io"
@@ -23,7 +23,7 @@ func TestSocksInstance(t *testing.T) {
 		instance := New(config)
 
 		if instance == nil {
-			t.Fatal("Failed to create socks instance")
+			t.Fatal("Failed to create sftp instance")
 		}
 
 		if instance.port != 12345 {
@@ -46,7 +46,7 @@ func TestSocksInstance(t *testing.T) {
 		}
 
 		instance := New(config)
-		instance.socksEnabled = true
+		instance.sftpEnabled = true
 
 		port, err := instance.GetEndpointPort()
 		if err != nil {
@@ -96,7 +96,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 		netConn: clientConn,
 	}
 
-	// Create a socks instance
+	// Create a sftp instance
 	config := &InstanceConfig{
 		Logger:  logger,
 		LogID:   "[Test]",
@@ -133,7 +133,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	// Stop the endpoint
 	err = instance.Stop()
 	if err != nil {
-		t.Fatalf("Failed to stop socks instance: %v", err)
+		t.Fatalf("Failed to stop sftp instance: %v", err)
 	}
 
 	// Wait for endpoint to fully stop
