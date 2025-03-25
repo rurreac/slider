@@ -183,7 +183,7 @@ fatal logs will be shown.
 ### Console
 
 ```
-Slider > help
+Slider> help
 
   Commands  Description  
 
@@ -203,7 +203,7 @@ Slider > help
 
 ##### Sessions
 ```
-Slider > sessions -h
+Slider> sessions -h
 Interacts with Client Sessions
 
 When run without parameters, all available Sessions will be listed.
@@ -267,7 +267,7 @@ the `-c` flag to specify the certificate ID that you want to use.
 
 ##### Execute
 ```
-Slider > execute -h
+Slider> execute -h
 Runs a command remotely and returns the output
 
 Usage: execute [flags] [command]
@@ -314,7 +314,7 @@ By default, the Socks server will be exposed only to localhost, but you can use 
 
 ##### Upload
 ```
-Slider > upload -h
+Slider> upload -h
 Uploads file passed as an argument to Client
 
 Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
@@ -335,7 +335,7 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 
 ##### Download
 ```
-Slider > download -h
+Slider> download -h
 Downloads file passed as an argument from Client
 
 * If no destination name is given, file will be downloaded with the same basename to the Server CWD.
