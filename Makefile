@@ -9,17 +9,17 @@ UPX_BRUTE ?= no
 # Check if UPX is installed
 UPX_CHECK := $(shell which upx 2>/dev/null)
 ifdef UPX_CHECK
-  UPX_AVAILABLE := yes
-  # Strong compression if set
-  ifeq ($(UPX_BRUTE), yes)
-  	$(warning WARNING: Selected strong compression. This may take a while.)
-  	UPX_CMD := upx --best --lzma --brute
-  else
-  	UPX_CMD := upx -9
-  endif
+	UPX_AVAILABLE := yes
+	# Strong compression if set
+	ifeq ($(UPX_BRUTE), yes)
+$(warning WARNING: Selected strong compression. This may take a while.)
+		UPX_CMD := upx --best --lzma --brute
+	else
+		UPX_CMD := upx -9
+	endif
 else
-  UPX_AVAILABLE := no
-  $(warning WARNING: UPX is not installed. Binaries will not be compressed. Install UPX for smaller binaries.)
+	UPX_AVAILABLE := no
+$(warning WARNING: UPX not found. Binaries will not be compressed. Install UPX for smaller binaries.)
 endif
 
 # Get OS information for platform-specific settings
@@ -43,14 +43,14 @@ clean:
 macos-arm64:
 	@echo "Building for macOS (arm64)..."
 	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-darwin-arm64 main.go
-	@echo "Note: UPX compression is not supported for macOS binaries"
+	$(warning WARNING: UPX compression is not supported for macOS binaries.)
 
 # macOS (amd64)
 .PHONY: macos-amd64
 macos-amd64:
 	@echo "Building for macOS (amd64)..."
 	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-darwin-amd64 main.go
-	@echo "Note: UPX compression is not supported for macOS binaries"
+	$(warning WARNING: UPX compression is not supported for macOS binaries.)
 
 # Windows (x86)
 .PHONY: windows-x86

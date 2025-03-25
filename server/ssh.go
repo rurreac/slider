@@ -6,6 +6,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
+	"strconv"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -19,19 +20,19 @@ func (s *server) NewSSHServer(session *Session) {
 		netConn.RemoteAddr().String(),
 	)
 
-	var shellConn *ssh.ServerConn
+	var sshServerConn *ssh.ServerConn
 	var newChan <-chan ssh.NewChannel
 	var reqChan <-chan *ssh.Request
 	var err error
 
-	sshConf := s.sshConf
+	sshConf := session.sshConf
 	// Use a new SSH Configuration with authentication disabled
 	// when the Server connects to a Listener Client
-	if s.authOn && session.isListener {
+	if session.isListener {
 		sshConf.NoClientAuth = true
 	}
 
-	shellConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
+	sshServerConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
 		s.Logger.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
@@ -39,11 +40,17 @@ func (s *server) NewSSHServer(session *Session) {
 		}
 		return
 	}
-	session.addSessionSSHConnection(shellConn)
+	session.addSessionSSHConnection(sshServerConn)
 
-	// If authentication was enabled for this ssh config save the client fingerprint
-	if !sshConf.NoClientAuth {
-		session.addSessionFingerprint(shellConn.Permissions.Extensions["fingerprint"])
+	// If authentication was enabled and not connecting to a listener save the client certificate info
+	if s.authOn && !session.isListener {
+		if certID, cErr := strconv.Atoi(sshServerConn.Permissions.Extensions["cert_id"]); cErr == nil {
+			session.addCertInfo(
+				int64(certID),
+				sshServerConn.Permissions.Extensions["fingerprint"],
+			)
+		}
+
 	}
 
 	s.Logger.Debugf(
