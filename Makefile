@@ -33,6 +33,10 @@ $(BUILD_DIR):
 .PHONY: all
 all: clean $(BUILD_DIR) macos-arm64 macos-amd64 windows-x86 windows-amd64 windows-arm64 linux-x86 linux-amd64 linux-arm64
 
+# Build for common platforms for quick testing
+.PHONY: basic
+basic: clean $(BUILD_DIR) macos-amd64 linux-amd64 windows-x86
+
 # Clean build directory
 .PHONY: clean
 clean:
