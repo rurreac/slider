@@ -25,11 +25,6 @@ type Interpreter struct {
 	Pty           *os.File
 }
 
-type TermSize struct {
-	Rows int `json:"rows"`
-	Cols int `json:"cols"`
-}
-
 var (
 	// *nix systems that supports pty
 	nixPty = []string{
