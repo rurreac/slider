@@ -34,7 +34,7 @@ func getPrompt() string {
 
 func (c *Console) PrintlnWarn(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
-	c.Output.Printf(
+	fmt.Printf(
 		"\r%s%s%s\r\n",
 		string(warnColor),
 		msg,
