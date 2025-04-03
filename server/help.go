@@ -59,12 +59,22 @@ Usage: socks [flags]
 Flags:
 `
 
-// Console SFTP Command
-const sftpCmd = "sftp"
-const sftpDesc = "Opens an SFTP session to a client"
-const sftpUsage = `
+// Console SSH Command
+const sshCmd = "ssh"
+const sshDesc = "Opens an SSH session to a client"
+const sshUsage = `
 
-Usage: sftp [flags]
+Usage: ssh [flags]
+
+Flags:
+`
+
+// Console Shell Command
+const shellCmd = "shell"
+const shellDesc = "Binds to a client Shell"
+const shellUsage = `
+
+Usage: shell [flags]
 
 Flags:
 `
@@ -156,13 +166,17 @@ func (s *server) initCommands() map[string]commandStruct {
 			desc:    downloadDesc,
 			cmdFunc: s.downloadCommand,
 		},
-		sftpCmd: {
-			desc:    sftpDesc,
-			cmdFunc: s.sftpCommand,
+		sshCmd: {
+			desc:    sshDesc,
+			cmdFunc: s.sshCommand,
 		},
 		connectCmd: {
 			desc:    connectDesc,
 			cmdFunc: s.connectCommand,
+		},
+		shellCmd: {
+			desc:    shellDesc,
+			cmdFunc: s.shellCommand,
 		},
 	}
 

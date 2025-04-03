@@ -198,32 +198,30 @@ func NewServer(args []string) {
 	}()
 	s.Logger.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
 
-	// Hold the execution until exit from the console
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	// Capture Interrupt Signal to toggle log output and activate C2 Console
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
+	// Capture Interrupt Signal to toggle log output and activate Console
+	s.Logger.Infof("Press CTR^C to access the Slider Console")
+	var cmdOutput string
+	for consoleToggle := true; consoleToggle; {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 		for range sig {
+			// Stop capturing so we can capture as well on the console
+			signal.Stop(sig)
+			close(sig)
 			// Send logs to a buffer
 			s.Logger.LogToBuffer()
 			// Run a Slider Console (NewConsole locks until termination),
-			// 'out' will always be equal to "bg" or "exit"
-			out := s.NewConsole()
+			// 'cmdOutput' will always be equal to "bg" or "exit"
+			cmdOutput = s.NewConsole()
 			// Restore logs from buffer and resume output to stdout
 			s.Logger.BufferOut()
 			s.Logger.LogToStdout()
-			if out == "exit" {
-				break
-			}
 		}
-		wg.Done()
-	}()
-	s.Logger.Infof("Press CTR^C to access the Slider Console")
-	wg.Wait()
+		if cmdOutput == "exit" {
+			consoleToggle = false
+		}
+	}
+
 	s.Logger.Printf("Server down...")
 }
 

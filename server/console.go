@@ -8,12 +8,14 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"sort"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -36,7 +38,12 @@ func (s *server) NewConsole() string {
 	commands := s.initCommands()
 
 	// Initialize Term
-	s.console.InitState, _ = term.MakeRaw(int(os.Stdin.Fd()))
+	var rErr error
+	s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
+	if rErr != nil {
+		s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
+		return exitCmd
+	}
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
@@ -47,23 +54,25 @@ func (s *server) NewConsole() string {
 	}{os.Stdin, os.Stdout}
 
 	// Set Console
-	s.console.Term = term.NewTerminal(screen, "")
+	s.console.Term = term.NewTerminal(screen, getPrompt())
 
-	// List of the Ordered the commands for autocompletion
-	var cmdList []string
-	for k := range commands {
-		cmdList = append(cmdList, k)
-	}
-	slices.Sort(cmdList)
-
-	// Simple autocompletion
-	s.console.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
-		// If TAB key is pressed and text was written
-		if key == 9 && len(line) > 0 {
-			newLine, newPos := s.autocompleteCommand(line, cmdList)
-			return newLine, newPos, true
+	// Disabling autocompletion if not PTY as tabs won't the handled properly
+	if s.serverInterpreter.PtyOn {
+		// List of the Ordered the commands for autocompletion
+		var cmdList []string
+		for k := range commands {
+			cmdList = append(cmdList, k)
 		}
-		return line, pos, false
+		slices.Sort(cmdList)
+		// Simple autocompletion
+		s.console.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+			// If TAB key is pressed and text was written
+			if key == 9 && len(line) > 0 {
+				newLine, newPos := s.autocompleteCommand(line, cmdList)
+				return newLine, newPos, true
+			}
+			return line, pos, false
+		}
 	}
 
 	s.console.Output = log.New(s.console.Term, "", 0)
@@ -78,21 +87,18 @@ func (s *server) NewConsole() string {
 			"\r\nType \"exit\" to terminate the server.\r\n",
 	)
 
-	s.console.Term.SetPrompt(getPrompt())
-
 	for consoleInput := true; consoleInput; {
 		var fCmd string
 		input, err := s.console.Term.ReadLine()
 		if err != nil {
 			if err != io.EOF {
 				s.console.Printf("\rFailed to read input: %s\r\n", err)
-				break
 			}
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
 			// line, error = "", io.EOF
 			// We will background gracefully when this happens
-			s.console.PrintlnWarn("\r\nLogging...\r\n")
-			return "bg"
+			s.console.PrintlnWarn("\n\rLogging...")
+			return bgCmd
 		}
 		args := make([]string, 0)
 		args = append(args, strings.Fields(input)...)
@@ -273,7 +279,7 @@ func (s *server) sessionsCommand(args ...string) {
 
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSFTP\tCertID\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tCertID\t\n")
 
 			for _, i := range keys {
 				session := s.sessionTrack.Sessions[int64(i)]
@@ -285,14 +291,14 @@ func (s *server) sessionsCommand(args ...string) {
 					}
 				}
 
-				sftpPort := "--"
-				if session.SFTPInstance.IsEnabled() {
-					if port, pErr := session.SFTPInstance.GetEndpointPort(); pErr == nil {
-						sftpPort = fmt.Sprintf("%d", port)
+				sshPort := "--"
+				if session.SSHInstance.IsEnabled() {
+					if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
+						sshPort = fmt.Sprintf("%d", port)
 					}
 				}
 
-				if session.ClientInterpreter != nil {
+				if session.clientInterpreter != nil {
 					certID := "--"
 					if s.authOn && session.certInfo.id != 0 {
 						certID = fmt.Sprintf("%d", session.certInfo.id)
@@ -302,21 +308,21 @@ func (s *server) sessionsCommand(args ...string) {
 						inOut = "->"
 					}
 
-					hostname := session.ClientInterpreter.Hostname
+					hostname := session.clientInterpreter.Hostname
 					if len(hostname) > 15 {
 						hostname = hostname[:15] + "..."
 					}
 
 					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 						session.sessionID,
-						session.ClientInterpreter.Arch,
-						session.ClientInterpreter.System,
-						session.ClientInterpreter.User,
+						session.clientInterpreter.Arch,
+						session.clientInterpreter.System,
+						session.clientInterpreter.User,
 						hostname,
 						inOut,
 						session.wsConn.RemoteAddr().String(),
 						socksPort,
-						sftpPort,
+						sshPort,
 						certID,
 					)
 				}
@@ -386,7 +392,7 @@ func (s *server) socksCommand(args ...string) {
 	sSession := socksFlags.Int("s", 0, "Runs a Socks5 server over an SSH Channel on a Session ID")
 	sPort := socksFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
 	sKill := socksFlags.Int("k", 0, "Kills Socks5 Listener and Server on a Session ID")
-	sExpose := socksFlags.Bool("e", false, "Expose socks port to all interfaces")
+	sExpose := socksFlags.Bool("e", false, "Expose port to all interfaces")
 	socksFlags.Usage = func() {
 		s.console.PrintCommandUsage(socksFlags, socksDesc+socksUsage)
 	}
@@ -595,19 +601,19 @@ func (s *server) connectCommand(args ...string) {
 	}
 }
 
-func (s *server) sftpCommand(args ...string) {
+func (s *server) sshCommand(args ...string) {
 	// Set up command flags
-	sftpFlags := flag.NewFlagSet(sftpCmd, flag.ContinueOnError)
-	sftpFlags.SetOutput(s.console.Term)
-	sSession := sftpFlags.Int("s", 0, "Session ID to establish SFTP connection with")
-	sPort := sftpFlags.Int("p", 0, "Local port to forward SFTP connection to")
-	sKill := sftpFlags.Int("k", 0, "Kill SFTP port forwarding to a Session ID")
-	sExpose := sftpFlags.Bool("e", false, "Expose SFTP port to all interfaces")
-	sftpFlags.Usage = func() {
-		s.console.PrintCommandUsage(sftpFlags, sftpDesc+sftpUsage)
+	sshFlags := flag.NewFlagSet(sshCmd, flag.ContinueOnError)
+	sshFlags.SetOutput(s.console.Term)
+	sSession := sshFlags.Int("s", 0, "Session ID to establish SSH connection with")
+	sPort := sshFlags.Int("p", 0, "Local port to forward SSH connection to")
+	sKill := sshFlags.Int("k", 0, "Kill SSH port forwarding to a Session ID")
+	sExpose := sshFlags.Bool("e", false, "Expose port to all interfaces")
+	sshFlags.Usage = func() {
+		s.console.PrintCommandUsage(sshFlags, sshDesc+sshUsage)
 	}
 
-	if pErr := sftpFlags.Parse(args); pErr != nil {
+	if pErr := sshFlags.Parse(args); pErr != nil {
 		return
 	}
 
@@ -615,7 +621,7 @@ func (s *server) sftpCommand(args ...string) {
 	var sessErr error
 	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
 		s.console.PrintlnDebugStep("Session ID is required")
-		sftpFlags.Usage()
+		sshFlags.Usage()
 		return
 	} else {
 		sessionID := *sSession + *sKill
@@ -628,53 +634,53 @@ func (s *server) sftpCommand(args ...string) {
 
 	if *sExpose && *sKill != 0 {
 		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
-		sftpFlags.Usage()
+		sshFlags.Usage()
 		return
 	}
 
 	if *sKill > 0 {
-		if session.SFTPInstance.IsEnabled() {
-			if err := session.SFTPInstance.Stop(); err != nil {
+		if session.SSHInstance.IsEnabled() {
+			if err := session.SSHInstance.Stop(); err != nil {
 				s.console.PrintlnErrorStep("%v", err)
 				return
 			}
-			s.console.PrintlnOkStep("SFTP Endpoint gracefully stopped")
+			s.console.PrintlnOkStep("SSH Endpoint gracefully stopped")
 			return
 		}
-		s.console.PrintlnDebugStep("No SFTP Endpoint on Session ID %d", *sKill)
+		s.console.PrintlnDebugStep("No SSH Endpoint on Session ID %d", *sKill)
 		return
 	}
 
 	if *sSession > 0 {
-		if session.SFTPInstance.IsEnabled() {
-			if port, pErr := session.SFTPInstance.GetEndpointPort(); pErr == nil {
-				s.console.PrintlnErrorStep("SFTP Endpoint already running on port: %d", port)
+		if session.SSHInstance.IsEnabled() {
+			if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
+				s.console.PrintlnErrorStep("SSH Endpoint already running on port: %d", port)
 			}
 			return
 		}
-		s.console.PrintlnDebugStep("Enabling SFTP Endpoint in the background")
+		s.console.PrintlnDebugStep("Enabling SSH Endpoint in the background")
 
-		go session.sftpEnable(*sPort, *sExpose)
+		go session.sshEnable(*sPort, *sExpose)
 
 		// Give some time to check
-		sftpTicker := time.NewTicker(250 * time.Millisecond)
+		sshTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range sftpTicker.C {
+		for range sshTicker.C {
 			if time.Now().Before(timeout) {
-				port, sErr := session.SFTPInstance.GetEndpointPort()
+				port, sErr := session.SSHInstance.GetEndpointPort()
 				if port == 0 || sErr != nil {
 					fmt.Printf(".")
 					continue
 				}
-				s.console.PrintlnOkStep("SFTP Endpoint running on port: %d", port)
+				s.console.PrintlnOkStep("SSH Endpoint running on port: %d", port)
 				return
 			}
-			s.console.PrintlnErrorStep("SFTP Endpoint timeout, port likely in use")
+			s.console.PrintlnErrorStep("SSH Endpoint timeout, port likely in use")
 			return
 		}
 	}
 
-	sftpFlags.Usage()
+	sshFlags.Usage()
 }
 
 func (s *server) uploadCommand(args ...string) {
@@ -787,4 +793,152 @@ func (s *server) downloadCommand(args ...string) {
 			}
 		}
 	}
+}
+
+func (s *server) shellCommand(args ...string) {
+	shellFlags := flag.NewFlagSet(shellCmd, flag.ContinueOnError)
+	shellFlags.SetOutput(s.console.Term)
+	sSession := shellFlags.Int("s", 0, "Runs a Shell server over an SSH Channel on a Session ID")
+	sPort := shellFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
+	sKill := shellFlags.Int("k", 0, "Kills Shell Listener and Server on a Session ID")
+	sInteractive := shellFlags.Bool("i", false, "Interactive mode, enters shell directly")
+	sExpose := shellFlags.Bool("e", false, "Expose port to all interfaces")
+	shellFlags.Usage = func() {
+		s.console.PrintCommandUsage(shellFlags, shellDesc+shellUsage)
+	}
+
+	if pErr := shellFlags.Parse(args); pErr != nil {
+		return
+	}
+
+	var session *Session
+	var sessErr error
+	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
+		shellFlags.Usage()
+		return
+	} else {
+		sessionID := *sSession + *sKill
+		session, sessErr = s.getSession(sessionID)
+		if sessErr != nil {
+			s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
+			return
+		}
+	}
+
+	if *sExpose && *sKill != 0 {
+		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
+		shellFlags.Usage()
+		return
+	}
+
+	if *sKill > 0 {
+		if session.ShellInstance.IsEnabled() {
+			if err := session.ShellInstance.Stop(); err != nil {
+				s.console.PrintlnErrorStep("%v", err)
+				return
+			}
+			s.console.PrintlnOkStep("Shell Endpoint gracefully stopped")
+			return
+		}
+		s.console.PrintlnDebugStep("No Shell Server on Session ID %d", *sKill)
+		return
+	}
+
+	if *sSession > 0 {
+		if session.ShellInstance.IsEnabled() {
+			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
+				s.console.PrintlnErrorStep("Shell Endpoint already running on port: %d", port)
+			}
+			return
+		}
+		s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
+
+		go session.shellEnable(*sPort, *sExpose)
+
+		// Give some time to check
+		var port int
+		var sErr error
+		shellTicker := time.NewTicker(250 * time.Millisecond)
+		timeout := time.Now().Add(conf.Timeout)
+		for range shellTicker.C {
+			if !time.Now().Before(timeout) {
+				s.console.PrintlnErrorStep("Shell Endpoint timeout, port likely in use")
+				return
+			}
+			port, sErr = session.ShellInstance.GetEndpointPort()
+			if port == 0 || sErr != nil {
+				fmt.Printf(".")
+				continue
+			} else {
+				break
+			}
+		}
+		s.console.PrintlnOkStep("Shell Endpoint running on port: %d", port)
+
+		var conn net.Conn
+		var dErr error
+		if *sInteractive {
+			// If Shell is interactive we want it to stop once we are done
+			defer func() {
+				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
+					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
+				}
+			}()
+			if session.IsPtyOn() {
+				s.console.PrintlnDebugStep("Shell has PTY, switching to raw terminal")
+				tState, tErr := term.MakeRaw(int(os.Stdin.Fd()))
+				if tErr != nil {
+					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
+					return
+				}
+				defer func() {
+					if rErr := term.Restore(int(os.Stdin.Fd()), tState); rErr != nil {
+						session.Logger.Errorf("Failed to restore terminal state - %v", rErr)
+					}
+				}()
+			} else {
+				s.console.PrintlnDebugStep("Client does not support PTY, terminal not raw, echo is enabled")
+
+				conState, _ := term.GetState(int(os.Stdin.Fd()))
+				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
+					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
+					return
+				}
+				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
+
+				go func() {
+					sig := make(chan os.Signal, 1)
+					signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+					for range sig {
+						// Stop capture
+						signal.Stop(sig)
+						close(sig)
+						if cErr := conn.Close(); cErr != nil {
+							session.Logger.Errorf("Failed to close Shell connection - %v", cErr)
+						}
+					}
+					s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
+				}()
+
+			}
+			conn, dErr = net.Dial("tcp", fmt.Sprintf(":%d", port))
+			if dErr != nil {
+				s.console.PrintlnErrorStep("Failed to bind to port %d", port)
+				return
+			}
+
+			go func() {
+				_, _ = io.Copy(os.Stdout, conn)
+				s.console.PrintlnWarn("Press ENTER twice to get back to console")
+			}()
+			_, _ = io.Copy(conn, os.Stdin)
+
+			return
+		} else {
+			return
+
+		}
+	}
+
+	shellFlags.Usage()
 }

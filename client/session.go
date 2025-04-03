@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"strings"
@@ -23,6 +24,7 @@ type Session struct {
 	keepAliveOn   bool
 	disconnect    chan bool
 	interpreter   *interpreter.Interpreter
+	initTermSize  *conf.TermDimensions
 }
 
 func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
@@ -89,4 +91,45 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	delete(c.sessionTrack.Sessions, session.sessionID)
 	c.sessionTrackMutex.Unlock()
+}
+
+func (s *Session) setInitTermSize(initSize conf.TermDimensions) {
+	s.sessionMutex.Lock()
+	s.initTermSize = &conf.TermDimensions{
+		Width:  initSize.Width,
+		Height: initSize.Height,
+		X:      initSize.X,
+		Y:      initSize.Y,
+	}
+	s.sessionMutex.Unlock()
+}
+
+func (s *Session) handleSSHRequests(requests <-chan *ssh.Request, winChange chan<- []byte, envChange chan<- []byte) {
+	for req := range requests {
+		ok := false
+		if req.Type != "env" {
+			s.Logger.Debugf("SSH Request \"%s\" - Request Type \"%s\" - payload: %v", "shell", req.Type, req.Payload)
+		}
+
+		switch req.Type {
+		case "env":
+			if req.WantReply {
+				go func() { _ = req.Reply(ok, nil) }()
+			}
+			envChange <- req.Payload
+		case "window-change":
+			if s.interpreter.PtyOn {
+				ok = true
+			}
+			if req.WantReply {
+				go func() { _ = req.Reply(ok, nil) }()
+			}
+			winChange <- req.Payload
+		default:
+			s.Logger.Warnf("SSH Rejected request type %s", req.Type)
+			if req.WantReply {
+				go func() { _ = req.Reply(ok, nil) }()
+			}
+		}
+	}
 }

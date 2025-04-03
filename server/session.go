@@ -7,11 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"slider/pkg/colors"
+	"slider/pkg/conf"
+	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
-	"slider/pkg/ssftp"
-	"slider/pkg/ssocks"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,7 +33,7 @@ type certInfo struct {
 // Session represents a session from a client to the server
 type Session struct {
 	Logger            *slog.Logger
-	logID             string
+	LogPrefix         string
 	notifier          chan bool
 	hostIP            string
 	sessionID         int64
@@ -44,13 +44,14 @@ type Session struct {
 	rawTerm           bool
 	KeepAliveChan     chan bool
 	keepAliveOn       bool
-	SocksInstance     *ssocks.Instance
-	ClientInterpreter *interpreter.Interpreter
+	SocksInstance     *instance.Config
+	clientInterpreter *interpreter.Interpreter
 	isListener        bool
 	sessionMutex      sync.Mutex
 	certInfo          certInfo
-	SFTPInstance      *ssftp.Instance
 	sshConf           *ssh.ServerConfig
+	SSHInstance       *instance.Config
+	ShellInstance     *instance.Config
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -66,19 +67,26 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		host = "localhost"
 	}
 
-	logID := fmt.Sprintf("Session ID %d - ", sc)
-
-	socksInstance := ssocks.New(
-		&ssocks.InstanceConfig{
-			Logger: s.Logger,
-			LogID:  logID,
+	shellInstance := instance.New(
+		&instance.Config{
+			Logger:       s.Logger,
+			LogPrefix:    fmt.Sprintf("SessionID %d - SHELL ", sc),
+			EndpointType: instance.ShellOnly,
 		},
 	)
 
-	sftpInstance := ssftp.New(
-		&ssftp.InstanceConfig{
+	socksInstance := instance.New(
+		&instance.Config{
+			Logger:       s.Logger,
+			LogPrefix:    fmt.Sprintf("SessionID %d - SOCKS ", sc),
+			EndpointType: instance.SocksOnly,
+		},
+	)
+
+	sshInstance := instance.New(
+		&instance.Config{
 			Logger:    s.Logger,
-			LogID:     logID,
+			LogPrefix: fmt.Sprintf("SessionID %d - SSH ", sc),
 			ServerKey: s.serverKey,
 			AuthOn:    s.authOn,
 		},
@@ -90,10 +98,11 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
-		logID:         logID,
-		SocksInstance: socksInstance,
-		SFTPInstance:  sftpInstance,
+		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
 		sshConf:       s.sshConf,
+		SocksInstance: socksInstance,
+		SSHInstance:   sshInstance,
+		ShellInstance: shellInstance,
 	}
 
 	s.sessionTrack.Sessions[sc] = session
@@ -119,8 +128,12 @@ func (s *server) dropWebSocketSession(session *Session) {
 		_ = session.SocksInstance.Stop()
 	}
 
-	if session.SFTPInstance.IsEnabled() {
-		_ = session.SFTPInstance.Stop()
+	if session.SSHInstance.IsEnabled() {
+		_ = session.SSHInstance.Stop()
+	}
+
+	if session.ShellInstance.IsEnabled() {
+		_ = session.ShellInstance.Stop()
 	}
 
 	sa := atomic.AddInt64(&s.sessionTrack.SessionActive, -1)
@@ -182,6 +195,18 @@ func (session *Session) setSSHConf(sshConf *ssh.ServerConfig) {
 	session.sessionMutex.Lock()
 	session.sshConf = sshConf
 	session.sessionMutex.Unlock()
+}
+
+func (session *Session) setInterpreter(interpreter *interpreter.Interpreter) {
+	session.sessionMutex.Lock()
+	session.clientInterpreter = interpreter
+	session.sessionMutex.Unlock()
+}
+
+func (session *Session) IsPtyOn() bool {
+	session.sessionMutex.Lock()
+	defer session.sessionMutex.Unlock()
+	return session.clientInterpreter.PtyOn
 }
 
 func (session *Session) addSessionNotifier(notifier chan bool) {
@@ -302,8 +327,7 @@ func (session *Session) sessionInteractive(initTermState *term.State, winChangeC
 	_, _ = io.Copy(session.sshChannel, os.Stdin)
 
 	session.Logger.Debugf(
-		"%sClosed Reverse Shell (%s)",
-		session.logID,
+		session.LogPrefix+"Closed Reverse Shell (%s)",
 		session.wsConn.RemoteAddr().String(),
 	)
 }
@@ -314,16 +338,16 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 	// is sent drastically reduces the number of messages sent from Server to Client.
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	sizeEvent := make([]*interpreter.TermSize, 0)
+	sizeEvent := make([]*conf.TermDimensions, 0)
 	for session.shellOpened {
 		select {
 		case <-winChange:
 			// Could be checking size from os.Stdin Fd
 			//  but os.Stdout Fd is the one that works with Windows as well
-			if cols, rows, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
-				newTermSize := &interpreter.TermSize{
-					Rows: rows,
-					Cols: cols,
+			if height, width, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
+				newTermSize := &conf.TermDimensions{
+					Width:  uint32(width),
+					Height: uint32(height),
 				}
 				sizeEvent = append(sizeEvent, newTermSize)
 			}
@@ -332,10 +356,9 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 			if eventSize > 0 {
 				lastEvent := sizeEvent[eventSize-1]
 				session.Logger.Debugf(
-					"%sTerminal size changed: rows %d cols %d.\n",
-					session.logID,
-					lastEvent.Rows,
-					lastEvent.Cols,
+					session.LogPrefix+"Terminal size changed: rows %d cols %d.\n",
+					lastEvent.Height,
+					lastEvent.Width,
 				)
 				if newTermSizeBytes, mErr := json.Marshal(lastEvent); mErr == nil {
 					// Send window-change event without expecting confirmation or answer
@@ -347,7 +370,7 @@ func (session *Session) captureWindowChange(winChange chan os.Signal) {
 						session.Logger.Errorf("%v", err)
 					}
 				}
-				sizeEvent = make([]*interpreter.TermSize, 0)
+				sizeEvent = make([]*conf.TermDimensions, 0)
 			}
 		}
 	}
@@ -361,14 +384,13 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Logger.Debugf("%sKeepAlive Check Stopped", session.logID)
+			session.Logger.Debugf(session.LogPrefix + "KeepAlive Check Stopped")
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
 				session.Logger.Errorf(
-					"%sKeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
-					session.logID,
+					session.LogPrefix+"KeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
 					ok,
 					p,
 					sendErr,
@@ -398,22 +420,12 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
 	}
 	session.Logger.Debugf(
-		"%sReplying Connection Request Type \"%s\", will send \"%v\" %s",
-		session.logID,
+		session.LogPrefix+"Replying Connection Request Type \"%s\", will send \"%v\" %s",
 		request.Type,
 		ok,
 		pMsg,
 	)
 	return request.Reply(ok, payload)
-}
-
-func (session *Session) socksEnable(port int, exposePort bool) {
-	session.SocksInstance.SetSSHConn(session.sshConn)
-	session.SocksInstance.SetExpose(exposePort)
-
-	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
-		session.Logger.Errorf("%sSocks - %v", session.logID, sErr)
-	}
 }
 
 func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
@@ -464,15 +476,35 @@ func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status
 	return status
 }
 
-func (session *Session) sftpEnable(port int, exposePort bool) {
-	session.SFTPInstance.SetSSHConn(session.sshConn)
-	if session.SFTPInstance.AuthOn {
-		session.SFTPInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
-	}
-	session.SFTPInstance.SetExpose(exposePort)
+func (session *Session) socksEnable(port int, exposePort bool) {
+	session.SocksInstance.SetSSHConn(session.sshConn)
+	session.SocksInstance.SetExpose(exposePort)
 
-	if sErr := session.SFTPInstance.StartEndpoint(port); sErr != nil {
-		session.Logger.Errorf("%sSFTP - %v", session.logID, sErr)
+	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
+		session.Logger.Errorf(session.LogPrefix+"Socks - %v", sErr)
+	}
+}
+
+func (session *Session) shellEnable(port int, exposePort bool) {
+	session.ShellInstance.SetSSHConn(session.sshConn)
+	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
+	session.ShellInstance.SetExpose(exposePort)
+
+	if sErr := session.ShellInstance.StartEndpoint(port); sErr != nil {
+		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
+	}
+}
+
+func (session *Session) sshEnable(port int, exposePort bool) {
+	session.SSHInstance.SetSSHConn(session.sshConn)
+	if session.SSHInstance.AuthOn {
+		session.SSHInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
+	}
+	session.SSHInstance.SetPtyOn(session.clientInterpreter.PtyOn)
+	session.SSHInstance.SetExpose(exposePort)
+
+	if sErr := session.SSHInstance.StartEndpoint(port); sErr != nil {
+		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
 		return
 	}
 }

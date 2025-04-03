@@ -10,7 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"slider/pkg/interpreter"
+	"slider/pkg/conf"
 )
 
 func (s *Session) sendReverseShell(request *ssh.Request) {
@@ -28,7 +28,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 	if reqErr != nil {
 		s.Logger.Errorf("%v", reqErr)
 	}
-	var termSize interpreter.TermSize
+	var termSize conf.TermDimensions
 	if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 		// If error term initializes with size 0 0
 		s.Logger.Errorf("%v", unMarshalErr)
@@ -48,8 +48,10 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		}
 
 		ptyF, _ := pty.StartWithSize(cmd, &pty.Winsize{
-			Rows: uint16(termSize.Rows),
-			Cols: uint16(termSize.Cols),
+			Rows: uint16(termSize.Height),
+			Cols: uint16(termSize.Width),
+			X:    uint16(termSize.X),
+			Y:    uint16(termSize.Y),
 		})
 		s.setPtyFile(ptyF)
 
@@ -82,8 +84,8 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		go func() { _, _ = io.Copy(channel, pr) }()
 
 		environment := []string{
-			fmt.Sprintf("LINES=%d", termSize.Rows),
-			fmt.Sprintf("COLUMNS=%d", termSize.Cols),
+			fmt.Sprintf("LINES=%d", termSize.Height),
+			fmt.Sprintf("COLUMNS=%d", termSize.Width),
 		}
 		for _, envVar := range environment {
 			cmd.Env = append(cmd.Environ(), envVar)
