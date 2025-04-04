@@ -359,34 +359,75 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 
 ![Console Download](./doc/console_download.gif)
 
-##### SFTP
+##### SSH
 ```
-Slider> sftp -h
-Opens an SFTP session to a client
+Slider> ssh -h
+Opens an SSH session to a client
 
-Usage: sftp [flags]
+Usage: ssh [flags]
 
 Flags:
-  -e	Exposes SFTP port to all interfaces
+  -e	Expose port to all interfaces
   -k int
-    	Kills SFTP port forwarding to a Session ID
+    	Kill SSH port forwarding to a Session ID
   -p int
-    	Local port to forward SFTP connection to
+    	Local port to forward SSH connection to
   -s int
-    	Session ID to establish SFTP connection with
+    	Session ID to establish SSH connection with
 ```
-Slider will create an SFTP server on the Client side and forward the connection to the Server side to the specified port,
-or a port randomly selected if not specified.
+Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
+and forward the connection to the Client side.
 
-Connect to the SFTP server using an SFTP client, such as [FileZilla](https://filezilla-project.org/) by configuring an 
-SFTP anonymous connection to the specified port, if authentication is disabled.
+By default, the SSH server will be exposed only to the localhost interface, but you can use the `-e` flag to expose it
+to all interfaces.
 
-If server authentication is enabled you must authenticate to the SFTP using the SSH key that matches the key used by the
+Only supported authentication methods are anonymous and Public/Private key.
+
+While it is not a full implementation, this SSH connection opens the following possibilities:
+* Connect to the Client using any SSH client.
+* Connect to the Client using any SFTP client.
+* Connect to the Client using any SSH client and run commands on it.
+* Connect to the Client using any SSH client and run a reverse socks server on it.
+
+If server authentication is enabled you must authenticate using the SSH key that matches the key used by the
 client to connect to the server.
-Note that the key used is not a valid SSH key itself, but you can obtain it by running `certs -s <certID>` command 
+Note that the key passed used is not a valid SSH key itself, but you can obtain it by running `certs -d <certID>` command 
 on the console.
 
-By default, the SFTP server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
+A few considerations:
+* When using SFTP, if authentication is off, some clients such as [FileZilla](https://filezilla-project.org/) will require you to set up an 
+anonymous connection to the server.
+* If the Client supports PTYs, the SSH connection will be fully interactive as well. 
+* If the Client does not support PTYs, like, for instance, some Windows versions, the SSH connection will be non-interactive, 
+ergo, pressing CTRL^C will kill the SSH connection.
+
+##### Shell
+```
+Slider> shell -h
+Binds to a client Shell
+
+Usage: shell [flags]
+
+Flags:
+  -e	Expose port to all interfaces
+  -i	Interactive mode, enters shell directly
+  -k int
+    	Kills Shell Listener and Server on a Session ID
+  -p int
+    	Uses this port number as local Listener, otherwise randomly selected
+  -s int
+    	Runs a Shell server over an SSH Channel on a Session ID
+```
+Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
+which may be useful is `ssh` is not at hand. 
+
+By default, the Shell will be exposed only to the localhost interface, but you can use the `-e` flag to expose it to 
+all interfaces.
+
+A few considerations:
+* If the client supports PTYs the connection will be fully interactive as well.
+* If the client is Windows and supports PTYs you will need to use `stty raw -echo && nc <host> <port>` to bind to the 
+shell, or you will end up with a dummy shell.
 
 ##### Certs
 ```
@@ -401,14 +442,18 @@ Flags:
   -n	Generate a new Key Pair
   -r int
     	Removes matching index from the Certificate Jar
-  -s int
-    	Prints CertID SSH keys
+  -d int
+    	Dump CertID SSH keys
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be listed or available.
 
 Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
+
+Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
+by default, it will be stored locally, and you'll get the path.
+If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
 
 ![Console Certs](./doc/console_certs.gif)
 
