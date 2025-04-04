@@ -471,7 +471,7 @@ func (s *server) certsCommand(args ...string) {
 	certsFlags.SetOutput(s.console.Term)
 	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
 	cRemove := certsFlags.Int("r", 0, "Remove matching index from the Certificate Jar")
-	cSSH := certsFlags.Int("s", 0, "Print CertID SSH keys")
+	cSSH := certsFlags.Int("d", 0, "Dump CertID SSH keys")
 	certsFlags.Usage = func() {
 		s.console.PrintCommandUsage(certsFlags, certsDesc+certsUsage)
 	}
@@ -514,9 +514,22 @@ func (s *server) certsCommand(args ...string) {
 	}
 
 	if *cSSH != 0 {
-		if keypair, err := s.getCert(int64(*cSSH)); err == nil {
-			s.console.PrintlnOkStep("SSH Private Key\n%s", keypair.SSHPrivateKey)
-			s.console.PrintlnOkStep("SSH Public Key\n%s", keypair.SSHPublicKey)
+		if keyPair, err := s.getCert(int64(*cSSH)); err == nil {
+			if s.certSaveOn {
+				if keyPath, pErr := s.savePrivateKey(int64(*cSSH)); pErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
+				} else {
+					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				}
+				if keyPath, pErr := s.savePublicKey(int64(*cSSH)); pErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
+				} else {
+					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				}
+				return
+			}
+			s.console.PrintlnOkStep("SSH Private Key\n%s", keyPair.SSHPrivateKey)
+			s.console.PrintlnOkStep("SSH Public Key\n%s", keyPair.SSHPublicKey)
 			return
 		}
 		s.console.PrintlnErrorStep("Certificate ID %d not found", *cSSH)
