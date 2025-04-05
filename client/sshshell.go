@@ -7,6 +7,7 @@ import (
 	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
 	"io"
+	"os"
 	"os/exec"
 	"slider/pkg/instance"
 	"slider/pkg/sio"
@@ -49,6 +50,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			s.Logger.Debugf("Adding Environment variable: %s=\"%s\"\n", kv.Key, kv.Value)
 		}
 	}
+	cmd.Env = append(os.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
 		s.Logger.Debugf("Running SHELL on PTY")
@@ -156,6 +158,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			s.Logger.Debugf("Adding Environment variable: %s=\"%s\"\n", kv.Key, kv.Value)
 		}
 	}
+	cmd.Env = append(cmd.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
 		s.Logger.Debugf("Running EXEC on PTY")
