@@ -40,11 +40,7 @@ type Config struct {
 	sshSessionConn     ssh.Conn
 	sshClientChannel   <-chan ssh.NewChannel
 	EndpointType       string
-}
-
-type Comm struct {
-	sessionClientChannel ssh.Channel
-	conn                 net.Conn
+	tlsOn              bool
 }
 
 // PTYRequest is the structure of a message for
@@ -100,6 +96,12 @@ func (si *Config) setPort(port int) {
 	si.sshMutex.Lock()
 	si.port = port
 	si.enabled = true
+	si.sshMutex.Unlock()
+}
+
+func (si *Config) SetTLSOn(tlsOn bool) {
+	si.sshMutex.Lock()
+	si.tlsOn = tlsOn
 	si.sshMutex.Unlock()
 }
 
@@ -501,6 +503,13 @@ func (si *Config) isExposed() bool {
 	exposed := si.exposePort
 	si.sshMutex.Unlock()
 	return exposed
+}
+
+func (si *Config) IsTLSOn() bool {
+	si.sshMutex.Lock()
+	tlsOn := si.tlsOn
+	si.sshMutex.Unlock()
+	return tlsOn
 }
 
 func (si *Config) GetEndpointPort() (int, error) {

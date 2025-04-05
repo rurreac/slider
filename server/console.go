@@ -280,7 +280,7 @@ func (s *server) sessionsCommand(args ...string) {
 
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tCertID\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t\n")
 
 			for _, i := range keys {
 				session := s.sessionTrack.Sessions[int64(i)]
@@ -299,6 +299,18 @@ func (s *server) sessionsCommand(args ...string) {
 					}
 				}
 
+				shellPort := "--"
+				shellTLS := "--"
+				if session.ShellInstance.IsEnabled() {
+					if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
+						shellPort = fmt.Sprintf("%d", port)
+					}
+					shellTLS = "off"
+					if session.ShellInstance.IsTLSOn() {
+						shellTLS = "on"
+					}
+				}
+
 				if session.clientInterpreter != nil {
 					certID := "--"
 					if s.authOn && session.certInfo.id != 0 {
@@ -314,7 +326,7 @@ func (s *server) sessionsCommand(args ...string) {
 						hostname = hostname[:15] + "..."
 					}
 
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s/%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 						session.sessionID,
 						session.clientInterpreter.Arch,
 						session.clientInterpreter.System,
@@ -324,6 +336,7 @@ func (s *server) sessionsCommand(args ...string) {
 						session.wsConn.RemoteAddr().String(),
 						socksPort,
 						sshPort,
+						fmt.Sprintf("%s/%s", shellPort, shellTLS),
 						certID,
 					)
 				}
@@ -846,15 +859,13 @@ func (s *server) shellCommand(args ...string) {
 		return
 	}
 
-	instance := session.ShellInstance
 	if *sInteractive {
 		*sTls = true
-		instance = session.TLSShellInstance
 	}
 
 	if *sKill > 0 {
-		if instance.IsEnabled() {
-			if err := instance.Stop(); err != nil {
+		if session.ShellInstance.IsEnabled() {
+			if err := session.ShellInstance.Stop(); err != nil {
 				s.console.PrintlnErrorStep("%v", err)
 				return
 			}
@@ -866,19 +877,15 @@ func (s *server) shellCommand(args ...string) {
 	}
 
 	if *sSession > 0 {
-		if instance.IsEnabled() {
-			if port, pErr := instance.GetEndpointPort(); pErr == nil {
+		if session.ShellInstance.IsEnabled() {
+			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
 				s.console.PrintlnErrorStep("Shell Endpoint already running on port: %d", port)
 			}
 			return
 		}
 		s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
 
-		if *sTls {
-			go session.tlsShellEnable(*sPort, *sExpose)
-		} else {
-			go session.shellEnable(*sPort, *sExpose)
-		}
+		go session.shellEnable(*sPort, *sExpose, *sTls)
 
 		// Give some time to check
 		var port int
@@ -890,7 +897,7 @@ func (s *server) shellCommand(args ...string) {
 				s.console.PrintlnErrorStep("Shell Endpoint timeout, port likely in use")
 				return
 			}
-			port, sErr = instance.GetEndpointPort()
+			port, sErr = session.ShellInstance.GetEndpointPort()
 			if port == 0 || sErr != nil {
 				fmt.Printf(".")
 				continue
@@ -905,9 +912,10 @@ func (s *server) shellCommand(args ...string) {
 			var dErr error
 			// If Shell is interactive we want it to stop once we are done
 			defer func() {
-				if ssErr := instance.Stop(); ssErr != nil {
+				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
 					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
 				}
+				s.console.PrintlnOkStep("Shell Endpoint gracefully stopped")
 			}()
 			if session.IsPtyOn() {
 				s.console.PrintlnDebugStep("Shell has PTY, switching to raw terminal")

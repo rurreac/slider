@@ -494,24 +494,22 @@ func (session *Session) socksEnable(port int, exposePort bool) {
 	}
 }
 
-func (session *Session) shellEnable(port int, exposePort bool) {
+func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool) {
 	session.ShellInstance.SetSSHConn(session.sshConn)
 	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
 	session.ShellInstance.SetExpose(exposePort)
 
-	if sErr := session.ShellInstance.StartEndpoint(port); sErr != nil {
-		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
+	if tlsOn {
+		session.ShellInstance.SetTLSOn(tlsOn)
+		if sErr := session.ShellInstance.StartTLSEndpoint(port); sErr != nil {
+			session.Logger.Errorf(session.LogPrefix+"SHELL(TLS) - %v", sErr)
+		}
+	} else {
+		if sErr := session.ShellInstance.StartEndpoint(port); sErr != nil {
+			session.Logger.Errorf(session.LogPrefix+"SHELL - %v", sErr)
+		}
 	}
-}
 
-func (session *Session) tlsShellEnable(port int, exposePort bool) {
-	session.TLSShellInstance.SetSSHConn(session.sshConn)
-	session.TLSShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
-	session.TLSShellInstance.SetExpose(exposePort)
-
-	if sErr := session.TLSShellInstance.StartTLSEndpoint(port); sErr != nil {
-		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
-	}
 }
 
 func (session *Session) sshEnable(port int, exposePort bool) {
