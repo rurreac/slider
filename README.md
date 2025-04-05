@@ -1,11 +1,10 @@
 # SLIDER
 
-**Slider** is a server / client in a binary that can act as basic a Command & Control (C2) or an Agent. 
+**Slider** is a server / client in a binary that can act as remote administration tool or basic C2. 
 
-The main purpose of Slider was having a small tool, easy to transfer and go much unnoticed, that would help maintaining 
-persistence, specially on those cases where the use of some frameworks would be limited for whatever 
-reason. 
-Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
+The main purpose of Slider was having a lightweight tool, easy to transfer, that would help with remote administration, 
+and penetration testing, specially on those cases where the use of some frameworks would be limited due to for instance, 
+licenses or other requirements.
 
 Slider can be used to: 
 * Send a fully interactive Reverse Shell from Client to Server, 
@@ -583,6 +582,7 @@ As stated in the [dependencies](#external-dependencies) section:
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
+* []() - 
 
 Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs). Tape samples in 
 the [doc](./doc) folder.
