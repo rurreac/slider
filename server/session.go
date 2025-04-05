@@ -52,6 +52,7 @@ type Session struct {
 	sshConf           *ssh.ServerConfig
 	SSHInstance       *instance.Config
 	ShellInstance     *instance.Config
+	TLSShellInstance  *instance.Config
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -75,6 +76,13 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		},
 	)
 
+	tlsShellInstance := instance.New(
+		&instance.Config{
+			Logger:    s.Logger,
+			LogPrefix: fmt.Sprintf("SessionID %d - TLS SHELL ", sc),
+		},
+	)
+
 	socksInstance := instance.New(
 		&instance.Config{
 			Logger:       s.Logger,
@@ -93,16 +101,17 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	)
 
 	session := &Session{
-		sessionID:     sc,
-		hostIP:        host,
-		wsConn:        wsConn,
-		KeepAliveChan: make(chan bool, 1),
-		Logger:        s.Logger,
-		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
-		sshConf:       s.sshConf,
-		SocksInstance: socksInstance,
-		SSHInstance:   sshInstance,
-		ShellInstance: shellInstance,
+		sessionID:        sc,
+		hostIP:           host,
+		wsConn:           wsConn,
+		KeepAliveChan:    make(chan bool, 1),
+		Logger:           s.Logger,
+		LogPrefix:        fmt.Sprintf("SessionID %d - ", sc),
+		sshConf:          s.sshConf,
+		SocksInstance:    socksInstance,
+		SSHInstance:      sshInstance,
+		ShellInstance:    shellInstance,
+		TLSShellInstance: tlsShellInstance,
 	}
 
 	s.sessionTrack.Sessions[sc] = session
@@ -491,6 +500,16 @@ func (session *Session) shellEnable(port int, exposePort bool) {
 	session.ShellInstance.SetExpose(exposePort)
 
 	if sErr := session.ShellInstance.StartEndpoint(port); sErr != nil {
+		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
+	}
+}
+
+func (session *Session) tlsShellEnable(port int, exposePort bool) {
+	session.TLSShellInstance.SetSSHConn(session.sshConn)
+	session.TLSShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
+	session.TLSShellInstance.SetExpose(exposePort)
+
+	if sErr := session.TLSShellInstance.StartTLSEndpoint(port); sErr != nil {
 		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
 	}
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -814,7 +815,8 @@ func (s *server) shellCommand(args ...string) {
 	sSession := shellFlags.Int("s", 0, "Runs a Shell server over an SSH Channel on a Session ID")
 	sPort := shellFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
 	sKill := shellFlags.Int("k", 0, "Kills Shell Listener and Server on a Session ID")
-	sInteractive := shellFlags.Bool("i", false, "Interactive mode, enters shell directly")
+	sInteractive := shellFlags.Bool("i", false, "Interactive mode, enters shell directly (always TLS)")
+	sTls := shellFlags.Bool("t", false, "Enable TLS for the Shell")
 	sExpose := shellFlags.Bool("e", false, "Expose port to all interfaces")
 	shellFlags.Usage = func() {
 		s.console.PrintCommandUsage(shellFlags, shellDesc+shellUsage)
@@ -844,9 +846,15 @@ func (s *server) shellCommand(args ...string) {
 		return
 	}
 
+	instance := session.ShellInstance
+	if *sInteractive {
+		*sTls = true
+		instance = session.TLSShellInstance
+	}
+
 	if *sKill > 0 {
-		if session.ShellInstance.IsEnabled() {
-			if err := session.ShellInstance.Stop(); err != nil {
+		if instance.IsEnabled() {
+			if err := instance.Stop(); err != nil {
 				s.console.PrintlnErrorStep("%v", err)
 				return
 			}
@@ -858,15 +866,19 @@ func (s *server) shellCommand(args ...string) {
 	}
 
 	if *sSession > 0 {
-		if session.ShellInstance.IsEnabled() {
-			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
+		if instance.IsEnabled() {
+			if port, pErr := instance.GetEndpointPort(); pErr == nil {
 				s.console.PrintlnErrorStep("Shell Endpoint already running on port: %d", port)
 			}
 			return
 		}
 		s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
 
-		go session.shellEnable(*sPort, *sExpose)
+		if *sTls {
+			go session.tlsShellEnable(*sPort, *sExpose)
+		} else {
+			go session.shellEnable(*sPort, *sExpose)
+		}
 
 		// Give some time to check
 		var port int
@@ -878,7 +890,7 @@ func (s *server) shellCommand(args ...string) {
 				s.console.PrintlnErrorStep("Shell Endpoint timeout, port likely in use")
 				return
 			}
-			port, sErr = session.ShellInstance.GetEndpointPort()
+			port, sErr = instance.GetEndpointPort()
 			if port == 0 || sErr != nil {
 				fmt.Printf(".")
 				continue
@@ -888,12 +900,12 @@ func (s *server) shellCommand(args ...string) {
 		}
 		s.console.PrintlnOkStep("Shell Endpoint running on port: %d", port)
 
-		var conn net.Conn
-		var dErr error
 		if *sInteractive {
+			var conn net.Conn
+			var dErr error
 			// If Shell is interactive we want it to stop once we are done
 			defer func() {
-				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
+				if ssErr := instance.Stop(); ssErr != nil {
 					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
 				}
 			}()
@@ -934,9 +946,16 @@ func (s *server) shellCommand(args ...string) {
 				}()
 
 			}
-			conn, dErr = net.Dial("tcp", fmt.Sprintf(":%d", port))
+			conn, dErr = tls.Dial(
+				"tcp",
+				fmt.Sprintf(":%d", port),
+				&tls.Config{
+					InsecureSkipVerify: true,
+					MinVersion:         tls.VersionTLS13,
+				},
+			)
 			if dErr != nil {
-				s.console.PrintlnErrorStep("Failed to bind to port %d", port)
+				s.console.PrintlnErrorStep("Failed to bind to port %d - %v", port, dErr)
 				return
 			}
 

@@ -397,7 +397,8 @@ on the console.
 A few considerations:
 * When using SFTP, if authentication is off, some clients such as [FileZilla](https://filezilla-project.org/) will require you to set up an 
 anonymous connection to the server.
-* If the Client supports PTYs, the SSH connection will be fully interactive as well. 
+* If the Client supports PTYs, the SSH connection will be fully interactive as well, also, window size changes events will
+be sent to the Client.
 * If the Client does not support PTYs, like, for instance, some Windows versions, the SSH connection will be non-interactive, 
 ergo, pressing CTRL^C will kill the SSH connection.
 
@@ -410,24 +411,26 @@ Usage: shell [flags]
 
 Flags:
   -e	Expose port to all interfaces
-  -i	Interactive mode, enters shell directly
+  -i	Interactive mode, enters shell directly (always TLS)
   -k int
     	Kills Shell Listener and Server on a Session ID
   -p int
     	Uses this port number as local Listener, otherwise randomly selected
   -s int
     	Runs a Shell server over an SSH Channel on a Session ID
+  -t	Enable TLS for the Shell
 ```
 Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
-which may be useful is `ssh` is not at hand. 
+or `openssl` for cyphered connections with the tls flag `-t`, which may be useful is `ssh` is not at hand. 
 
 By default, the Shell will be exposed only to the localhost interface, but you can use the `-e` flag to expose it to 
 all interfaces.
 
 A few considerations:
-* If the client supports PTYs the connection will be fully interactive as well.
-* If the client is Windows and supports PTYs you will need to use `stty raw -echo && nc <host> <port>` to bind to the 
-shell, or you will end up with a dummy shell.
+* If the client supports PTYs the Shell can be upgraded to fully interactive as well.
+* If the client is Windows and supports PTYs you will need to connect through `stty raw -echo && nc <host> <port>` or 
+`stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell, or you will end up 
+with a dummy shell.
 
 ##### Certs
 ```
