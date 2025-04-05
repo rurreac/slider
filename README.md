@@ -375,7 +375,7 @@ Flags:
     	Session ID to establish SSH connection with
 ```
 Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
-and forward the connection to the Client side.
+and forward the connection to the Client side through another SSH channel.
 
 By default, the SSH server will be exposed only to the localhost interface, but you can use the `-e` flag to expose it
 to all interfaces.
@@ -383,10 +383,10 @@ to all interfaces.
 Only supported authentication methods are anonymous and Public/Private key.
 
 While it is not a full implementation, this SSH connection opens the following possibilities:
-* Connect to the Client using any SSH client.
-* Connect to the Client using any SFTP client.
+* Connect to a Client Shell using any SSH client.
+* Transfer files using any SFTP client or `scp`.
 * Connect to the Client using any SSH client and run commands on it.
-* Connect to the Client using any SSH client and run a reverse socks server on it.
+* Connect to the Client through SSH and run a reverse Socks v5 server.
 
 If server authentication is enabled you must authenticate using the SSH key that matches the key used by the
 client to connect to the server.
