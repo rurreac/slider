@@ -154,48 +154,6 @@ func (s *server) getSessionsByCertID(id int64) []int64 {
 	return sessionList
 }
 
-func (s *server) certExist(certID int64) bool {
-	ok := false
-	if _, ok = s.certTrack.Certs[certID]; ok {
-		return ok
-	}
-	return ok
-}
-
-func (s *server) dumpCert(certID int64, storeCert bool) (*scrypt.KeyPair, error) {
-	keyPair, kErr := s.getCert(certID)
-	if kErr != nil {
-		return &scrypt.KeyPair{}, fmt.Errorf("certID %d not found in cert jar", certID)
-	}
-
-	if storeCert {
-		sliderHome := sio.GetSliderHome()
-
-		privateKey, pvOErr := os.OpenFile(fmt.Sprintf("%scert%d", sliderHome, certID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
-		if pvOErr != nil {
-			return keyPair, fmt.Errorf("failed to open private key file")
-		}
-		defer func() { _ = privateKey.Close() }()
-		_, pvWErr := privateKey.Write([]byte(keyPair.PrivateKey))
-		if pvWErr != nil {
-			return keyPair, fmt.Errorf("failed to save private key file")
-		}
-
-		publicKey, pbOErr := os.OpenFile(fmt.Sprintf("%scert%d", sliderHome, certID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
-		if pbOErr != nil {
-			return keyPair, fmt.Errorf("failed to open public key file")
-		}
-		defer func() { _ = publicKey.Close() }()
-		_, pbWErr := publicKey.Write([]byte(keyPair.PrivateKey))
-		if pbWErr != nil {
-			return keyPair, fmt.Errorf("failed to save public key file")
-		}
-	}
-
-	return keyPair, nil
-
-}
-
 func (s *server) savePrivateKey(certID int64) (string, error) {
 	keyPair, err := s.getCert(certID)
 	if err != nil {
