@@ -6,11 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/UserExistsError/conpty"
+	"golang.org/x/crypto/ssh"
 	"io"
 	"os/exec"
-	"slider/pkg/interpreter"
-
-	"golang.org/x/crypto/ssh"
+	"slider/pkg/conf"
 )
 
 func (s *Session) sendReverseShell(request *ssh.Request) {
@@ -29,7 +28,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 		if reqErr != nil {
 			s.Logger.Errorf("%v", reqErr)
 		}
-		var termSize interpreter.TermSize
+		var termSize conf.TermDimensions
 		if unMarshalErr := json.Unmarshal(payload, &termSize); unMarshalErr != nil {
 			// If error term initializes with size 0 0
 			s.Logger.Errorf("--%v", unMarshalErr)
@@ -41,7 +40,7 @@ func (s *Session) sendReverseShell(request *ssh.Request) {
 			s.Logger.Errorf("pty-req %v", errSSHReq)
 		}
 
-		conPty, _ := conpty.Start(s.interpreter.Shell, conpty.ConPtyDimensions(termSize.Cols, termSize.Rows))
+		conPty, _ := conpty.Start(s.interpreter.Shell, conpty.ConPtyDimensions(int(termSize.Width), int(termSize.Height)))
 		s.setConPty(conPty)
 		defer func() { _ = s.interpreter.Pty.Close() }()
 

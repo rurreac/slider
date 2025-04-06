@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"slider/pkg/conf"
-	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"strconv"
 
@@ -123,9 +122,9 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			if err != nil {
 				session.Logger.Errorf("Failed to obtain terminal size")
 			}
-			tSize := interpreter.TermSize{
-				Rows: height,
-				Cols: width,
+			tSize := conf.TermDimensions{
+				Height: uint32(height),
+				Width:  uint32(width),
 			}
 			payload, _ = json.Marshal(tSize)
 			_ = session.replyConnRequest(r, true, payload)
@@ -140,7 +139,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
 				s.Logger.Errorf("Failed to parse Client Info - %v", jErr)
 			}
-			session.ClientInterpreter = ci.Interpreter
+			session.setInterpreter(ci.Interpreter)
 
 			_ = session.replyConnRequest(r, true, nil)
 		default:

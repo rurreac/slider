@@ -2,15 +2,20 @@
 
 package client
 
-import "github.com/creack/pty"
+import (
+	"github.com/creack/pty"
+	"slider/pkg/conf"
+)
 
-func (s *Session) updatePtySize(rows int, cols int) {
-	if sizeErr := pty.Setsize(s.interpreter.Pty, &pty.Winsize{
-		Rows: uint16(rows),
-		Cols: uint16(cols),
-		X:    uint16(cols),
-		Y:    uint16(rows),
-	}); sizeErr != nil {
+func (s *Session) updatePtySize(termSize conf.TermDimensions) {
+	if sizeErr := pty.Setsize(
+		s.interpreter.Pty, &pty.Winsize{
+			Rows: uint16(termSize.Height),
+			Cols: uint16(termSize.Width),
+			X:    uint16(termSize.X),
+			Y:    uint16(termSize.Y),
+		},
+	); sizeErr != nil {
 		s.Logger.Errorf("%s%v", s.logID, sizeErr)
 	}
 }

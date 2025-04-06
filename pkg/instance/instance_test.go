@@ -1,4 +1,4 @@
-package ssftp
+package instance
 
 import (
 	"io"
@@ -10,13 +10,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func TestSocksInstance(t *testing.T) {
+func TestInstance(t *testing.T) {
 	logger := slog.NewLogger("TestSSocks")
 
 	t.Run("New instance creation", func(t *testing.T) {
-		config := &InstanceConfig{
+		config := &Config{
 			Logger: logger,
-			LogID:  "[Test]",
 			port:   12345,
 		}
 
@@ -30,23 +29,19 @@ func TestSocksInstance(t *testing.T) {
 			t.Errorf("Expected port 12345, got %d", instance.port)
 		}
 
-		if instance.LogID != "[Test]" {
-			t.Errorf("Expected LogID '[Test]', got '%s'", instance.LogID)
-		}
-
 		if instance.IsEnabled() {
 			t.Error("New instance should not be enabled")
 		}
 	})
 
 	t.Run("Get endpoint port", func(t *testing.T) {
-		config := &InstanceConfig{
+		config := &Config{
 			Logger: logger,
 			port:   12345,
 		}
 
 		instance := New(config)
-		instance.sftpEnabled = true
+		instance.enabled = true
 
 		port, err := instance.GetEndpointPort()
 		if err != nil {
@@ -59,6 +54,7 @@ func TestSocksInstance(t *testing.T) {
 
 		// Test non-enabled instance
 		instance = New(config)
+		instance.enabled = false
 
 		_, err = instance.GetEndpointPort()
 		if err == nil {
@@ -67,7 +63,7 @@ func TestSocksInstance(t *testing.T) {
 	})
 
 	t.Run("Stop without running", func(t *testing.T) {
-		config := &InstanceConfig{
+		config := &Config{
 			Logger: logger,
 		}
 
@@ -80,7 +76,7 @@ func TestSocksInstance(t *testing.T) {
 	})
 }
 
-func TestSocksEndpointIntegration(t *testing.T) {
+func TestEndpointIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -97,10 +93,9 @@ func TestSocksEndpointIntegration(t *testing.T) {
 	}
 
 	// Create a sftp instance
-	config := &InstanceConfig{
-		Logger:  logger,
-		LogID:   "[Test]",
-		sshConn: mockSSHConn,
+	config := &Config{
+		Logger:         logger,
+		sshSessionConn: mockSSHConn,
 	}
 
 	instance := New(config)
@@ -127,7 +122,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 
 	// Verify instance is enabled
 	if !instance.IsEnabled() {
-		t.Error("Instance should be enabled after starting")
+		t.Error("Config should be enabled after starting")
 	}
 
 	// Stop the endpoint
@@ -148,7 +143,7 @@ func TestSocksEndpointIntegration(t *testing.T) {
 
 	// Verify instance is disabled
 	if instance.IsEnabled() {
-		t.Error("Instance should be disabled after stopping")
+		t.Error("Config should be disabled after stopping")
 	}
 
 	// Cleanup
