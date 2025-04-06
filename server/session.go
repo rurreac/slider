@@ -52,7 +52,6 @@ type Session struct {
 	sshConf           *ssh.ServerConfig
 	SSHInstance       *instance.Config
 	ShellInstance     *instance.Config
-	TLSShellInstance  *instance.Config
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -70,16 +69,10 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 
 	shellInstance := instance.New(
 		&instance.Config{
-			Logger:       s.Logger,
-			LogPrefix:    fmt.Sprintf("SessionID %d - SHELL ", sc),
-			EndpointType: instance.ShellOnly,
-		},
-	)
-
-	tlsShellInstance := instance.New(
-		&instance.Config{
-			Logger:    s.Logger,
-			LogPrefix: fmt.Sprintf("SessionID %d - TLS SHELL ", sc),
+			Logger:               s.Logger,
+			LogPrefix:            fmt.Sprintf("SessionID %d - SHELL ", sc),
+			EndpointType:         instance.ShellOnly,
+			CertificateAuthority: s.CertificateAuthority,
 		},
 	)
 
@@ -101,17 +94,16 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	)
 
 	session := &Session{
-		sessionID:        sc,
-		hostIP:           host,
-		wsConn:           wsConn,
-		KeepAliveChan:    make(chan bool, 1),
-		Logger:           s.Logger,
-		LogPrefix:        fmt.Sprintf("SessionID %d - ", sc),
-		sshConf:          s.sshConf,
-		SocksInstance:    socksInstance,
-		SSHInstance:      sshInstance,
-		ShellInstance:    shellInstance,
-		TLSShellInstance: tlsShellInstance,
+		sessionID:     sc,
+		hostIP:        host,
+		wsConn:        wsConn,
+		KeepAliveChan: make(chan bool, 1),
+		Logger:        s.Logger,
+		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
+		sshConf:       s.sshConf,
+		SocksInstance: socksInstance,
+		SSHInstance:   sshInstance,
+		ShellInstance: shellInstance,
 	}
 
 	s.sessionTrack.Sessions[sc] = session
@@ -494,13 +486,16 @@ func (session *Session) socksEnable(port int, exposePort bool) {
 	}
 }
 
-func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool) {
+func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, interactiveOn bool) {
 	session.ShellInstance.SetSSHConn(session.sshConn)
 	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
 	session.ShellInstance.SetExpose(exposePort)
 
 	if tlsOn {
 		session.ShellInstance.SetTLSOn(tlsOn)
+		if interactiveOn {
+			session.ShellInstance.SetInteractiveOn(interactiveOn)
+		}
 		if sErr := session.ShellInstance.StartTLSEndpoint(port); sErr != nil {
 			session.Logger.Errorf(session.LogPrefix+"SHELL(TLS) - %v", sErr)
 		}

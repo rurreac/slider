@@ -516,7 +516,7 @@ func (s *server) certsCommand(args ...string) {
 					k,
 					strings.Repeat("-", 11),
 				)
-				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].PrivateKey)
+				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].EncPrivateKey)
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
 				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%d\t\n", s.getSessionsByCertID(int64(k)))
 			}
@@ -558,7 +558,7 @@ func (s *server) certsCommand(args ...string) {
 		twn := new(tabwriter.Writer)
 		twn.Init(s.console.Term, 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(twn)
-		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
+		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.EncPrivateKey)
 		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
 		_, _ = fmt.Fprintln(twn)
 		_ = twn.Flush()
@@ -859,6 +859,10 @@ func (s *server) shellCommand(args ...string) {
 		return
 	}
 
+	if *sExpose && *sInteractive {
+		s.console.PrintlnDebugStep("Flag '-e' ineffective with '-i', Shell won't be exposed")
+	}
+
 	if *sInteractive {
 		*sTls = true
 	}
@@ -885,7 +889,7 @@ func (s *server) shellCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
 
-		go session.shellEnable(*sPort, *sExpose, *sTls)
+		go session.shellEnable(*sPort, *sExpose, *sTls, *sInteractive)
 
 		// Give some time to check
 		var port int
@@ -910,15 +914,37 @@ func (s *server) shellCommand(args ...string) {
 		if *sInteractive {
 			var conn net.Conn
 			var dErr error
-			// If Shell is interactive we want it to stop once we are done
+
+			// When Shell is interactive we want it to stop once we are done
 			defer func() {
 				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
 					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
 				}
 				s.console.PrintlnOkStep("Shell Endpoint gracefully stopped")
 			}()
+
+			// Generate certificate and establish connection
+			cert, ccErr := s.CertificateAuthority.CreateCertificate(false)
+			if ccErr != nil {
+				s.console.PrintlnErrorStep("Failed to create client TLS certificate - %v", ccErr)
+				return
+			}
+			tlsConfig := s.CertificateAuthority.GetTLSClientConfig(cert)
+
+			conn, dErr = tls.Dial(
+				"tcp",
+				fmt.Sprintf("127.0.0.1:%d", port),
+				tlsConfig,
+			)
+			if dErr != nil {
+				s.console.PrintlnErrorStep("Failed to bind to port %d - %v", port, dErr)
+				return
+			}
+			s.console.PrintlnOkStep("Authenticated with mTLS")
+
+			// Set up the terminal according to the client
 			if session.IsPtyOn() {
-				s.console.PrintlnDebugStep("Shell has PTY, switching to raw terminal")
+				s.console.PrintlnOkStep("Shell has PTY, switching to raw terminal")
 				tState, tErr := term.MakeRaw(int(os.Stdin.Fd()))
 				if tErr != nil {
 					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
@@ -939,6 +965,7 @@ func (s *server) shellCommand(args ...string) {
 				}
 				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 
+				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
 					sig := make(chan os.Signal, 1)
 					signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -952,19 +979,6 @@ func (s *server) shellCommand(args ...string) {
 					}
 					s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
 				}()
-
-			}
-			conn, dErr = tls.Dial(
-				"tcp",
-				fmt.Sprintf(":%d", port),
-				&tls.Config{
-					InsecureSkipVerify: true,
-					MinVersion:         tls.VersionTLS13,
-				},
-			)
-			if dErr != nil {
-				s.console.PrintlnErrorStep("Failed to bind to port %d - %v", port, dErr)
-				return
 			}
 
 			go func() {

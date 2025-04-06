@@ -1,73 +1,41 @@
 package instance
 
 import (
-	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"golang.org/x/crypto/ed25519"
-	"log"
-	"math/big"
 	"net"
-	"time"
+	"slider/pkg/scrypt"
 )
 
 func (si *Config) StartTLSEndpoint(port int) error {
-	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-	if err != nil {
-		log.Fatalf("Failed to generate serial number: %v", err)
+	var cert *scrypt.GeneratedCertificate
+	if !si.certExists {
+		var ccErr error
+		cert, ccErr = si.CertificateAuthority.CreateCertificate(true)
+		if ccErr != nil {
+			return fmt.Errorf("failed to create client TLS certificate - %v", ccErr)
+		}
+		si.setServerCertificate(cert)
+		si.Logger.Debugf(si.LogPrefix + "Created new TLS server certificate")
+	} else {
+		si.Logger.Debugf(si.LogPrefix + "Using existing TLS server certificate")
+		cert = si.serverCertificate
 	}
+	tlsConfig := si.CertificateAuthority.GetTLSServerConfig(cert, si.interactiveOn)
 
-	now := time.Now()
-	template := &x509.Certificate{
-		SerialNumber: serialNumber,
-		NotBefore:    now,
-		NotAfter:     now.AddDate(1, 0, 0), // Valid for 1 year
-		KeyUsage: x509.KeyUsageKeyEncipherment |
-			x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-
-	host := net.ParseIP("127.0.0.1")
-	template.IPAddresses = append(template.IPAddresses, host)
-	template.DNSNames = append(template.DNSNames, "localhost")
-
-	//priv, err := rsa.GenerateKey(rand.Reader, 2048)
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		log.Fatalf("Failed to generate private key: %v", err)
-	}
-
-	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, priv.Public(), priv)
-	if err != nil {
-		log.Fatalf("Failed to create certificate: %v", err)
-	}
-
-	tlsCert := tls.Certificate{
-		Certificate: [][]byte{derBytes},
-		PrivateKey:  priv,
-	}
-
-	tlsConfig := tls.Config{
-		Certificates: []tls.Certificate{tlsCert},
-		MinVersion:   tls.VersionTLS13,
-	}
-
-	tlsListener, err := tls.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port), &tlsConfig)
-	if err != nil {
-		return err
+	tlsListener, lErr := tls.Listen("tcp", fmt.Sprintf(":%d", port), tlsConfig)
+	if lErr != nil {
+		return fmt.Errorf("can not listen for connections - %v", lErr)
 	}
 
 	if !si.isExposed() {
 		_ = tlsListener.Close()
-		tlsListener, err = tls.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port), &tlsConfig)
-		if err != nil {
-			return err
+		tlsListener, lErr = tls.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port), tlsConfig)
+		if lErr != nil {
+			return fmt.Errorf("can not listen for localhost connections - %v", lErr)
 		}
 	}
+	defer func() { _ = tlsListener.Close() }()
 
 	si.setControls()
 	port = tlsListener.Addr().(*net.TCPAddr).Port
@@ -81,12 +49,11 @@ func (si *Config) StartTLSEndpoint(port int) error {
 	}()
 
 	for {
-		conn, err := tlsListener.Accept()
-		if err != nil {
-			si.Logger.Errorf("Failed to accept connection: %v", err)
+		conn, aErr := tlsListener.Accept()
+		if aErr != nil {
 			break
 		}
-		//conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 		go si.runShellComm(conn)
 	}
 

@@ -87,7 +87,7 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool,
 		}
 		session.addCertInfo(certID, keyPair.FingerPrint)
 
-		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
+		signerKey, sErr := scrypt.SignerFromKey(keyPair.EncPrivateKey)
 		if sErr != nil {
 			s.Logger.Errorf("Failed to create client ssh signer with certID %d key", certID)
 			return

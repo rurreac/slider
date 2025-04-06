@@ -101,7 +101,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	// Test with a non-existent file (will create a new key pair)
-	signer1, err := NewSSHSignerFromFile(tmpPath)
+	signer1, err := ServerKeyPairFromFile(tmpPath)
 	if err != nil {
 		t.Fatalf("Failed to create signer from file: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	}
 
 	// Read the same file to get a signer
-	signer2, err := NewSSHSignerFromFile(tmpPath)
+	signer2, err := ServerKeyPairFromFile(tmpPath)
 	if err != nil {
 		t.Fatalf("Failed to read signer from file: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	}
 
 	// Test with invalid file path
-	_, err = NewSSHSignerFromFile("/non-existent-directory/non-existent-file")
+	_, err = ServerKeyPairFromFile("/non-existent-directory/non-existent-file")
 	if err == nil {
 		t.Error("Expected error with invalid file path, got nil")
 	}

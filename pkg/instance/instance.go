@@ -24,23 +24,27 @@ const (
 )
 
 type Config struct {
-	Logger             *slog.Logger
-	LogPrefix          string
-	port               int
-	ServerKey          ssh.Signer
-	AuthOn             bool
-	allowedFingerprint string
-	exposePort         bool
-	ptyOn              bool
-	enabled            bool
-	stopSignal         chan bool
-	done               chan bool
-	sshMutex           sync.Mutex
-	sshServerConn      *ssh.ServerConn
-	sshSessionConn     ssh.Conn
-	sshClientChannel   <-chan ssh.NewChannel
-	EndpointType       string
-	tlsOn              bool
+	Logger               *slog.Logger
+	LogPrefix            string
+	port                 int
+	ServerKey            ssh.Signer
+	AuthOn               bool
+	allowedFingerprint   string
+	exposePort           bool
+	ptyOn                bool
+	enabled              bool
+	stopSignal           chan bool
+	done                 chan bool
+	sshMutex             sync.Mutex
+	sshServerConn        *ssh.ServerConn
+	sshSessionConn       ssh.Conn
+	sshClientChannel     <-chan ssh.NewChannel
+	EndpointType         string
+	tlsOn                bool
+	interactiveOn        bool
+	CertificateAuthority *scrypt.CertificateAuthority
+	certExists           bool
+	serverCertificate    *scrypt.GeneratedCertificate
 }
 
 // PTYRequest is the structure of a message for
@@ -99,9 +103,22 @@ func (si *Config) setPort(port int) {
 	si.sshMutex.Unlock()
 }
 
+func (si *Config) setServerCertificate(cert *scrypt.GeneratedCertificate) {
+	si.sshMutex.Lock()
+	si.certExists = true
+	si.serverCertificate = cert
+	si.sshMutex.Unlock()
+}
+
 func (si *Config) SetTLSOn(tlsOn bool) {
 	si.sshMutex.Lock()
 	si.tlsOn = tlsOn
+	si.sshMutex.Unlock()
+}
+
+func (si *Config) SetInteractiveOn(interactiveOn bool) {
+	si.sshMutex.Lock()
+	si.interactiveOn = interactiveOn
 	si.sshMutex.Unlock()
 }
 
@@ -119,13 +136,13 @@ func (si *Config) StartEndpoint(port int) error {
 	var lErr error
 	listener, lErr = net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if lErr != nil {
-		return lErr
+		return fmt.Errorf("can not listen for connections - %v", lErr)
 	}
 	if !si.isExposed() {
 		_ = listener.Close()
 		listener, lErr = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 		if lErr != nil {
-			return lErr
+			return fmt.Errorf("can not listen for localhost connections - %v", lErr)
 		}
 	}
 	si.setControls()
@@ -533,6 +550,9 @@ func (si *Config) Stop() error {
 	si.sshMutex.Lock()
 	si.port = 0
 	si.enabled = false
+	if si.interactiveOn {
+		si.interactiveOn = false
+	}
 	si.sshMutex.Unlock()
 
 	si.Logger.Debugf(si.LogPrefix + "Endpoint down")

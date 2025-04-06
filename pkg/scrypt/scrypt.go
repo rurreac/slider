@@ -15,8 +15,12 @@ import (
 	"path"
 )
 
+type ServerKeyPair struct {
+	*CertificateAuthority
+	*KeyPair
+}
 type KeyPair struct {
-	PrivateKey    string `json:"PrivateKey"`
+	EncPrivateKey string `json:"PrivateKey"`
 	SSHPrivateKey string `json:"SSHPrivateKey"`
 	SSHPublicKey  string `json:"SSHPublicKey"`
 	FingerPrint   string `json:"FingerPrint"`
@@ -28,38 +32,63 @@ type CertTrack struct {
 	Certs      map[int64]*KeyPair
 }
 
-func NewSSHSigner() (ssh.Signer, error) {
-	keypair, err := NewEd25519KeyPair()
-	if err != nil {
-		return nil, err
+func NewSSHSigner() (*ServerKeyPair, error) {
+	caAuth, cErr := CreateCA()
+	if cErr != nil {
+		return nil, fmt.Errorf("failed to create CA: %v", cErr)
 	}
 
-	privateKeySigner, prErr := SignerFromKey(keypair.PrivateKey)
-	if prErr != nil {
-		return nil, fmt.Errorf("failed to create signer: %v", prErr)
+	// MarshalPKCS8PrivateKey supports ed25519
+	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(caAuth.PrivateKey)
+	if xErr != nil {
+		return nil, xErr
 	}
 
-	return privateKeySigner, nil
+	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(caAuth.PrivateKey), "")
+	if mErr != nil {
+		return nil, mErr
+	}
+
+	pbKey, pbErr := ssh.NewPublicKey(caAuth.PublicKey)
+	if pbErr != nil {
+		return nil, pbErr
+	}
+
+	fingerprint, fErr := GenerateFingerprint(pbKey)
+	if fErr != nil {
+		return nil, fErr
+	}
+
+	return &ServerKeyPair{
+		CertificateAuthority: caAuth,
+		KeyPair: &KeyPair{
+			EncPrivateKey: base64.RawStdEncoding.EncodeToString(pvBytes),
+			SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
+			SSHPublicKey:  string(ssh.MarshalAuthorizedKey(pbKey)),
+			FingerPrint:   fingerprint,
+		},
+	}, nil
 }
 
-func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
-	var keyPair *KeyPair
+func ServerKeyPairFromFile(keyPath string) (*ServerKeyPair, error) {
+	var serverKeyPair *ServerKeyPair
 	var err error
 
 	if _, sErr := os.Stat(keyPath); os.IsNotExist(sErr) {
-		keyPair, err = NewEd25519KeyPair()
+		serverKeyPair, err = NewSSHSigner()
 		if err != nil {
 			return nil, err
 		}
-		if mkErr := os.MkdirAll(path.Dir(keyPath), os.ModePerm); mkErr != nil {
+
+		if mkErr := os.MkdirAll(path.Dir(keyPath), 0700); mkErr != nil {
 			return nil, fmt.Errorf("failed to create directory - %v", mkErr)
 		}
-		file, oErr := os.Create(keyPath)
+		file, oErr := os.OpenFile(keyPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 		if oErr != nil {
 			return nil, fmt.Errorf("failed to open file %s", keyPath)
 		}
 		defer func() { _ = file.Close() }()
-		keyPairBytes, jErr := json.Marshal(keyPair)
+		keyPairBytes, jErr := json.Marshal(serverKeyPair)
 		if jErr != nil {
 			return nil, fmt.Errorf("failed to marshal keypair - %v", jErr)
 		}
@@ -72,17 +101,12 @@ func NewSSHSignerFromFile(keyPath string) (ssh.Signer, error) {
 			return nil, fmt.Errorf("failed to open file %s", keyPath)
 		}
 
-		if jErr := json.Unmarshal(file, &keyPair); jErr != nil {
+		if jErr := json.Unmarshal(file, &serverKeyPair); jErr != nil {
 			return nil, fmt.Errorf("failed to unmarshal file - %v", jErr)
 		}
 	}
 
-	privateKeySigner, prErr := SignerFromKey(keyPair.PrivateKey)
-	if prErr != nil {
-		return nil, fmt.Errorf("ParsePrivateKey: %v", prErr)
-	}
-
-	return privateKeySigner, nil
+	return serverKeyPair, nil
 }
 
 func SignerFromKey(key string) (ssh.Signer, error) {
@@ -121,9 +145,9 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	}
 
 	// MarshalPKCS8PrivateKey supports ed25519
-	pvBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
-	if mErr != nil {
-		return nil, mErr
+	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(privateKey)
+	if xErr != nil {
+		return nil, xErr
 	}
 
 	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(privateKey), "")
@@ -142,7 +166,7 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	}
 
 	return &KeyPair{
-		PrivateKey:    base64.RawStdEncoding.EncodeToString(pvBytes),
+		EncPrivateKey: base64.RawStdEncoding.EncodeToString(pvBytes),
 		SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
 		SSHPublicKey:  string(ssh.MarshalAuthorizedKey(pbKey)),
 		FingerPrint:   fingerprint,
