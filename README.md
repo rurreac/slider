@@ -1,11 +1,10 @@
 # SLIDER
 
-**Slider** is a server / client in a binary that can act as basic a Command & Control (C2) or an Agent. 
+**Slider** is a server / client in a binary that can act as remote administration tool or basic C2. 
 
-The main purpose of Slider was having a small tool, easy to transfer and go much unnoticed, that would help maintaining 
-persistence, specially on those cases where the use of some frameworks would be limited for whatever 
-reason. 
-Then the functionality has been extended a little bit, so it allows for using it in other scenarios.
+The main purpose of Slider was having a lightweight tool, easy to transfer, that would help with remote administration, 
+and penetration testing, specially on those cases where the use of some frameworks would be limited due to for instance, 
+licenses or other requirements.
 
 Slider can be used to: 
 * Send a fully interactive Reverse Shell from Client to Server, 
@@ -359,34 +358,78 @@ Checksum of the file is checked, if there is a mismatch you'll be warned.
 
 ![Console Download](./doc/console_download.gif)
 
-##### SFTP
+##### SSH
 ```
-Slider> sftp -h
-Opens an SFTP session to a client
+Slider> ssh -h
+Opens an SSH session to a client
 
-Usage: sftp [flags]
+Usage: ssh [flags]
 
 Flags:
-  -e	Exposes SFTP port to all interfaces
+  -e	Expose port to all interfaces
   -k int
-    	Kills SFTP port forwarding to a Session ID
+    	Kill SSH port forwarding to a Session ID
   -p int
-    	Local port to forward SFTP connection to
+    	Local port to forward SSH connection to
   -s int
-    	Session ID to establish SFTP connection with
+    	Session ID to establish SSH connection with
 ```
-Slider will create an SFTP server on the Client side and forward the connection to the Server side to the specified port,
-or a port randomly selected if not specified.
+Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
+and forward the connection to the Client side through another SSH channel.
 
-Connect to the SFTP server using an SFTP client, such as [FileZilla](https://filezilla-project.org/) by configuring an 
-SFTP anonymous connection to the specified port, if authentication is disabled.
+By default, the SSH server will be exposed only to the localhost interface, but you can use the `-e` flag to expose it
+to all interfaces.
 
-If server authentication is enabled you must authenticate to the SFTP using the SSH key that matches the key used by the
+Only supported authentication methods are anonymous and Public/Private key.
+
+While it is not a full implementation, this SSH connection opens the following possibilities:
+* Connect to a Client Shell using any SSH client.
+* Transfer files using any SFTP client or `scp`.
+* Connect to the Client using any SSH client and run commands on it.
+* Connect to the Client through SSH and run a reverse Socks v5 server.
+
+If server authentication is enabled you must authenticate using the SSH key that matches the key used by the
 client to connect to the server.
-Note that the key used is not a valid SSH key itself, but you can obtain it by running `certs -s <certID>` command 
+Note that the key passed used is not a valid SSH key itself, but you can obtain it by running `certs -d <certID>` command 
 on the console.
 
-By default, the SFTP server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
+A few considerations:
+* When using SFTP, if authentication is off, some clients such as [FileZilla](https://filezilla-project.org/) will require you to set up an 
+anonymous connection to the server.
+* If the Client supports PTYs, the SSH connection will be fully interactive as well, also, window size changes events will
+be sent to the Client.
+* If the Client does not support PTYs, like, for instance, some Windows versions, the SSH connection will be non-interactive, 
+ergo, pressing CTRL^C will kill the SSH connection.
+
+##### Shell
+```
+Slider> shell -h
+Binds to a client Shell
+
+Usage: shell [flags]
+
+Flags:
+  -e	Expose port to all interfaces
+  -i	Interactive mode, enters shell directly (always TLS)
+  -k int
+    	Kills Shell Listener and Server on a Session ID
+  -p int
+    	Uses this port number as local Listener, otherwise randomly selected
+  -s int
+    	Runs a Shell server over an SSH Channel on a Session ID
+  -t	Enable TLS for the Shell
+```
+Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
+or `openssl` for cyphered connections with the tls flag `-t`, which may be useful is `ssh` is not at hand. 
+
+By default, the Shell will be exposed only to the localhost interface, but you can use the `-e` flag to expose it to 
+all interfaces.
+
+A few considerations:
+* If the client supports PTYs the Shell can be upgraded to fully interactive as well.
+* If the client is Windows and supports PTYs you will need to connect through `stty raw -echo && nc <host> <port>` or 
+`stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell, or you will end up 
+with a dummy shell.
 
 ##### Certs
 ```
@@ -401,14 +444,18 @@ Flags:
   -n	Generate a new Key Pair
   -r int
     	Removes matching index from the Certificate Jar
-  -s int
-    	Prints CertID SSH keys
+  -d int
+    	Dump CertID SSH keys
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be listed or available.
 
 Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
+
+Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
+by default, it will be stored locally, and you'll get the path.
+If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
 
 ![Console Certs](./doc/console_certs.gif)
 
@@ -535,6 +582,7 @@ As stated in the [dependencies](#external-dependencies) section:
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
+* []() - 
 
 Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs). Tape samples in 
 the [doc](./doc) folder.

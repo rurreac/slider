@@ -7,6 +7,7 @@ import (
 	"os"
 	"slider/pkg/colors"
 	"strings"
+	"sync"
 )
 
 type LogBuff struct {
@@ -20,6 +21,7 @@ type Logger struct {
 	logger   *log.Logger
 	logBuff  *LogBuff
 	colorOn  bool
+	sync.Mutex
 }
 
 const (
@@ -48,7 +50,7 @@ func (lb *LogBuff) Read(p []byte) (int, error) {
 }
 
 func NewLogger(prefix string) *Logger {
-	// TODO: LogBuff buff could be buffered and writes to buffer controlled according to its size
+	// TODO: logBuff buff could be buffered and writes to buffer controlled according to its size
 	lb := &LogBuff{
 		buff: make([]byte, 0),
 	}
@@ -75,16 +77,22 @@ func (l *Logger) WithColors() {
 }
 
 func (l *Logger) LogToBuffer() {
+	l.Mutex.Lock()
 	l.logger.SetOutput(l.logBuff)
+	l.Mutex.Unlock()
 }
 
 func (l *Logger) LogToStdout() {
+	l.Mutex.Lock()
 	l.logger.SetOutput(os.Stdout)
+	l.Mutex.Unlock()
 }
 
 func (l *Logger) BufferOut() {
 	fmt.Printf("%s", l.logBuff.buff)
+	l.Mutex.Lock()
 	l.logBuff.buff = make([]byte, 0)
+	l.Mutex.Unlock()
 }
 
 func (l *Logger) Printf(t string, args ...interface{}) {

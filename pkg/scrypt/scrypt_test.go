@@ -14,7 +14,7 @@ func TestNewEd25519KeyPair(t *testing.T) {
 	}
 
 	// Verify key pair components
-	if keyPair.PrivateKey == "" {
+	if keyPair.EncPrivateKey == "" {
 		t.Error("Private key is empty")
 	}
 
@@ -31,7 +31,7 @@ func TestSignerFromKey(t *testing.T) {
 	}
 
 	// Test creating a signer from the key
-	signer, err := SignerFromKey(keyPair.PrivateKey)
+	signer, err := SignerFromKey(keyPair.EncPrivateKey)
 	if err != nil {
 		t.Fatalf("Failed to create signer from key: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestFingerprintGeneration(t *testing.T) {
 	}
 
 	// Create signer to get the public key
-	signer, err := SignerFromKey(keyPair.PrivateKey)
+	signer, err := SignerFromKey(keyPair.EncPrivateKey)
 	if err != nil {
 		t.Fatalf("Failed to create signer from key: %v", err)
 	}
@@ -100,22 +100,22 @@ func TestSSHSignerFromFile(t *testing.T) {
 	// Clean up after the test
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	// Test with a non-existent file (will create a new key pair)
-	signer1, err := NewSSHSignerFromFile(tmpPath)
-	if err != nil {
-		t.Fatalf("Failed to create signer from file: %v", err)
+	serverKeyPair, kErr := ServerKeyPairFromFile(tmpPath)
+	if kErr != nil {
+		t.Fatalf("Failed to load Server Key: %v", kErr)
 	}
-	if signer1 == nil {
-		t.Fatal("Signer is nil")
+	signer1, prErr := SignerFromKey(serverKeyPair.EncPrivateKey)
+	if prErr != nil {
+		t.Fatalf("Failed generate SSH signer: %v", prErr)
 	}
 
-	// Read the same file to get a signer
-	signer2, err := NewSSHSignerFromFile(tmpPath)
-	if err != nil {
-		t.Fatalf("Failed to read signer from file: %v", err)
+	serverKeyPair2, k2Err := ServerKeyPairFromFile(tmpPath)
+	if k2Err != nil {
+		t.Fatalf("Failed to load Server Key: %v", k2Err)
 	}
-	if signer2 == nil {
-		t.Fatal("Second signer is nil")
+	signer2, pr2Err := SignerFromKey(serverKeyPair2.EncPrivateKey)
+	if pr2Err != nil {
+		t.Fatalf("Failed generate SSH signer: %v", pr2Err)
 	}
 
 	// Verify both signers have the same public key
@@ -127,7 +127,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	}
 
 	// Test with invalid file path
-	_, err = NewSSHSignerFromFile("/non-existent-directory/non-existent-file")
+	_, err = ServerKeyPairFromFile("/non-existent-directory/non-existent-file")
 	if err == nil {
 		t.Error("Expected error with invalid file path, got nil")
 	}

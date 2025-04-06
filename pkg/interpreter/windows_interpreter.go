@@ -28,11 +28,6 @@ type Interpreter struct {
 	PathListSeparator string
 }
 
-type TermSize struct {
-	Rows int `json:"rows"`
-	Cols int `json:"cols"`
-}
-
 func IsPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
 	if available {

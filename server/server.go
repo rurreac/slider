@@ -33,20 +33,21 @@ type sessionTrack struct {
 
 type server struct {
 	*slog.Logger
-	sshConf           *ssh.ServerConfig
-	sessionTrack      *sessionTrack
-	sessionTrackMutex sync.Mutex
-	console           Console
-	serverInterpreter *interpreter.Interpreter
-	certTrack         *scrypt.CertTrack
-	certTrackMutex    sync.Mutex
-	certJarFile       string
-	authOn            bool
-	certSaveOn        bool
-	keepalive         time.Duration
-	webTemplate       web.Template
-	webRedirect       string
-	serverKey         ssh.Signer
+	sshConf              *ssh.ServerConfig
+	sessionTrack         *sessionTrack
+	sessionTrackMutex    sync.Mutex
+	console              Console
+	serverInterpreter    *interpreter.Interpreter
+	certTrack            *scrypt.CertTrack
+	certTrackMutex       sync.Mutex
+	certJarFile          string
+	authOn               bool
+	certSaveOn           bool
+	keepalive            time.Duration
+	webTemplate          web.Template
+	webRedirect          string
+	serverKey            ssh.Signer
+	CertificateAuthority *scrypt.CertificateAuthority
 }
 
 func NewServer(args []string) {
@@ -122,7 +123,10 @@ func NewServer(args []string) {
 	s.serverInterpreter = i
 
 	//var signer ssh.Signer
-	var keyErr error
+	var prErr error
+	var kErr error
+	var serverKeyPair *scrypt.ServerKeyPair
+	var privateKeySigner ssh.Signer
 	if *keyStore || *keyPath != "" {
 		kp := sio.GetSliderHome() + serverCertFile
 
@@ -138,14 +142,29 @@ func NewServer(args []string) {
 			s.Logger.Debugf("Importing existing Server Certificate from %s", kp)
 		}
 
-		s.serverKey, keyErr = scrypt.NewSSHSignerFromFile(kp)
+		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
+		if kErr != nil {
+			s.Logger.Fatalf("Failed to load Server Key: %v", kErr)
+		}
+		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.EncPrivateKey)
+		if prErr != nil {
+			s.Logger.Fatalf("Failed generate SSH signer: %v", prErr)
+		}
 	} else {
-		s.serverKey, keyErr = scrypt.NewSSHSigner()
+		serverKeyPair, kErr = scrypt.NewSSHSigner()
+		if kErr != nil {
+			s.Logger.Fatalf("Failed to generate Server Key: %v", kErr)
+		}
+		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.EncPrivateKey)
+		if prErr != nil {
+			s.Logger.Fatalf("failed to create signer: %v", prErr)
+		}
+
 	}
-	if keyErr != nil {
-		s.Logger.Fatalf("%v", keyErr)
-	}
+	s.serverKey = privateKeySigner
+	s.CertificateAuthority = serverKeyPair.CertificateAuthority
 	s.sshConf.AddHostKey(s.serverKey)
+
 	serverFp, fErr := scrypt.GenerateFingerprint(s.serverKey.PublicKey())
 	if fErr != nil {
 		s.Logger.Fatalf("Failed to generate server fingerprint")
@@ -198,32 +217,30 @@ func NewServer(args []string) {
 	}()
 	s.Logger.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
 
-	// Hold the execution until exit from the console
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	// Capture Interrupt Signal to toggle log output and activate C2 Console
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	go func() {
+	// Capture Interrupt Signal to toggle log output and activate Console
+	s.Logger.Infof("Press CTR^C to access the Slider Console")
+	var cmdOutput string
+	for consoleToggle := true; consoleToggle; {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 		for range sig {
+			// Stop capturing so we can capture as well on the console
+			signal.Stop(sig)
+			close(sig)
 			// Send logs to a buffer
 			s.Logger.LogToBuffer()
 			// Run a Slider Console (NewConsole locks until termination),
-			// 'out' will always be equal to "bg" or "exit"
-			out := s.NewConsole()
+			// 'cmdOutput' will always be equal to "bg" or "exit"
+			cmdOutput = s.NewConsole()
 			// Restore logs from buffer and resume output to stdout
 			s.Logger.BufferOut()
 			s.Logger.LogToStdout()
-			if out == "exit" {
-				break
-			}
 		}
-		wg.Done()
-	}()
-	s.Logger.Infof("Press CTR^C to access the Slider Console")
-	wg.Wait()
+		if cmdOutput == "exit" {
+			consoleToggle = false
+		}
+	}
+
 	s.Logger.Printf("Server down...")
 }
 

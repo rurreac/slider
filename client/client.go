@@ -367,6 +367,16 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 		case "sftp":
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSFTPChannel(nc)
+		case "shell":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleShellChannel(nc)
+		case "exec":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleExecChannel(nc)
+		case "init-size":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			// Blocking here to ensure is serviced before another channel is opened
+			s.handleInitSizeChannel(nc)
 		default:
 			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -397,11 +407,11 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			// Server only sends this Request if Interpreter is PTY
 			// after Reverse Shell is sent, ergo PTY File has been created
 			s.Logger.Debugf("%sServer Requested window change: %s\n", s.logID, req.Payload)
-			var termSize interpreter.TermSize
+			var termSize conf.TermDimensions
 			if err := json.Unmarshal(req.Payload, &termSize); err != nil {
 				s.Logger.Fatalf("%s", err)
 			}
-			s.updatePtySize(termSize.Rows, termSize.Cols)
+			s.updatePtySize(termSize)
 		case "checksum-verify":
 			go s.verifyFileCheckSum(req)
 		case "shutdown":
@@ -491,20 +501,33 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	}()
 	go ssh.DiscardRequests(req)
 
-	// socks5 logger logs by default and it's very chatty
-	socksServer, snErr := socks5.New(
-		&socks5.Config{
-			Logger: slog.NewDummyLog(),
-		})
-	if snErr != nil {
-		s.Logger.Errorf("failed to create new socks server - %v", snErr)
+	// Create a net.Conn from the SSH channel
+	socksConn := sconn.SSHChannelToNetConn(socksChan)
+	defer func() { _ = socksConn.Close() }()
+
+	// Set up configuration for the SOCKS5 server
+	socksConf := &socks5.Config{
+		// Disable logging
+		Logger: slog.NewDummyLog(),
+	}
+
+	// Create a new SOCKS5 server
+	server, err := socks5.New(socksConf)
+	if err != nil {
+		s.Logger.Errorf("%sFailed to create SOCKS5 server: %v", s.logID, err)
 		return
 	}
 
-	socksConn := sconn.SSHChannelToNetConn(socksChan)
-	defer func() { _ = socksConn.Close() }()
-	_ = socksServer.ServeConn(socksConn)
-	s.Logger.Debugf("%sSFTP server stopped", s.logID)
+	// Serve the connection
+	s.Logger.Debugf("%sStarting SOCKS5 server on connection", s.logID)
+	if sErr := server.ServeConn(socksConn); sErr != nil {
+		// Logging Errors as Debug as most of them are:
+		// - Failed to handle request: EOF
+		// - read: connection reset by peer
+		s.Logger.Debugf("%sError in SOCKS5 server: %v", s.logID, sErr)
+	}
+
+	s.Logger.Debugf("%sSOCKS5 server connection closed", s.logID)
 }
 
 func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
@@ -627,4 +650,26 @@ func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
 	}
 
 	s.Logger.Debugf("%sSFTP server stopped", s.logID)
+}
+
+func (s *Session) handleInitSizeChannel(nc ssh.NewChannel) {
+	channel, requests, err := nc.Accept()
+	if err != nil {
+		s.Logger.Errorf("Failed to accept channel - %v", err)
+		return
+	}
+	defer func() {
+		_ = channel.Close()
+		s.Logger.Debugf("%sClosing INIT-SIZE channel", s.logID)
+	}()
+	payload := nc.ExtraData()
+	go ssh.DiscardRequests(requests)
+	s.Logger.Debugf("SSH Effective \"req-pty\" size as \"init-size\" payload: %v", payload)
+	if len(payload) > 0 {
+		var winSize conf.TermDimensions
+		if jErr := json.Unmarshal(payload, &winSize); jErr != nil {
+			s.Logger.Errorf("Failed to unmarshal terminal size payload: %v", jErr)
+		}
+		s.setInitTermSize(winSize)
+	}
 }

@@ -6,18 +6,15 @@ import (
 	"os"
 	"slices"
 	"slider/pkg/scrypt"
+	"slider/pkg/sio"
 	"sync/atomic"
 )
 
 func (s *server) loadCertJar() error {
-	saveJar := os.Getenv("SLIDER_CERT_JAR")
-	switch saveJar {
-	case "1", "", "true":
-		s.certSaveOn = true
-	case "0", "false":
-		s.Logger.Warnf("Environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
-	default:
-		s.Logger.Warnf("Unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
+	var sfErr error
+	s.certSaveOn, sfErr = safeEnabled()
+	if sfErr != nil {
+		s.Logger.Warnf("CertJar - %s", sfErr)
 	}
 
 	_, sErr := os.Stat(s.certJarFile)
@@ -63,6 +60,17 @@ func (s *server) loadCertJar() error {
 	s.Logger.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
 
 	return nil
+}
+
+func safeEnabled() (bool, error) {
+	saveJar := os.Getenv("SLIDER_CERT_JAR")
+	switch saveJar {
+	case "1", "", "true":
+		return true, nil
+	case "0", "false":
+		return false, fmt.Errorf("environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
+	}
+	return false, fmt.Errorf("unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
 }
 
 func (s *server) newCertItem() (*scrypt.KeyPair, error) {
@@ -144,4 +152,46 @@ func (s *server) getSessionsByCertID(id int64) []int64 {
 		}
 	}
 	return sessionList
+}
+
+func (s *server) savePrivateKey(certID int64) (string, error) {
+	keyPair, err := s.getCert(certID)
+	if err != nil {
+		return "", fmt.Errorf("certID %d not found in cert jar", certID)
+	}
+	privateKeyPath := fmt.Sprintf("%sid_ed25519_cert%d", sio.GetSliderHome(), certID)
+	privateKey, pvOErr := os.OpenFile(
+		privateKeyPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0600)
+	if pvOErr != nil {
+		return "", fmt.Errorf("failed to open private key file")
+	}
+	defer func() { _ = privateKey.Close() }()
+	_, pvWErr := privateKey.Write([]byte(keyPair.SSHPrivateKey))
+	if pvWErr != nil {
+		return "", fmt.Errorf("failed to write private key file")
+	}
+	return privateKeyPath, nil
+}
+
+func (s *server) savePublicKey(certID int64) (string, error) {
+	keyPair, err := s.getCert(certID)
+	if err != nil {
+		return "", fmt.Errorf("certID %d not found in cert jar", certID)
+	}
+	publicKeyPath := fmt.Sprintf("%sid_ed25519_cert%d.pub", sio.GetSliderHome(), certID)
+	publicKey, pvOErr := os.OpenFile(
+		publicKeyPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0644)
+	if pvOErr != nil {
+		return "", fmt.Errorf("failed to open public key file")
+	}
+	defer func() { _ = publicKey.Close() }()
+	_, pvWErr := publicKey.Write([]byte(keyPair.SSHPublicKey))
+	if pvWErr != nil {
+		return "", fmt.Errorf("failed to write public key file")
+	}
+	return publicKeyPath, nil
 }

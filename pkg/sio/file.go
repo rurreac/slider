@@ -70,7 +70,9 @@ func GetSliderHome() string {
 
 func ensurePath(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err = os.MkdirAll(path, os.ModePerm); err != nil {
+		// If we store actual certificates here some ssh/sftp clients may complain
+		// if directory  are perms not restrictive
+		if err = os.MkdirAll(path, 0700); err != nil {
 			return err
 		}
 	}
