@@ -344,7 +344,7 @@ func (s *server) sessionsCommand(args ...string) {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		s.console.Printf("Active sessions: %d\n", s.sessionTrack.SessionActive)
+		s.console.Printf("Active sessions: %d\n\n", s.sessionTrack.SessionActive)
 		return
 	}
 
@@ -518,12 +518,16 @@ func (s *server) certsCommand(args ...string) {
 				)
 				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].EncPrivateKey)
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
-				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%d\t\n", s.getSessionsByCertID(int64(k)))
+				sessionList := "None"
+				if sl := s.getSessionsByCertID(int64(k)); len(sl) > 0 {
+					sessionList = strings.Trim(strings.Replace(fmt.Sprint(sl), " ", ",", -1), "[]")
+				}
+				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%s\t\n", sessionList)
 			}
 			_, _ = fmt.Fprintln(twl)
 			_ = twl.Flush()
 		}
-		s.console.Printf("Certificates in Jar: %d\n", s.certTrack.CertActive)
+		s.console.Printf("Certificates in Jar: %d\n\n", s.certTrack.CertActive)
 		return
 	}
 
