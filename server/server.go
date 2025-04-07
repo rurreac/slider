@@ -139,7 +139,7 @@ func NewServer(args []string) {
 		} else if os.IsNotExist(sErr) && *keyStore {
 			s.Logger.Debugf("Storing New Server Certificate on %s", kp)
 		} else {
-			s.Logger.Debugf("Importing existing Server Certificate from %s", kp)
+			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
 		}
 
 		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
@@ -151,7 +151,7 @@ func NewServer(args []string) {
 			s.Logger.Fatalf("Failed generate SSH signer: %v", prErr)
 		}
 	} else {
-		serverKeyPair, kErr = scrypt.NewSSHSigner()
+		serverKeyPair, kErr = scrypt.NewServerKeyPair()
 		if kErr != nil {
 			s.Logger.Fatalf("Failed to generate Server Key: %v", kErr)
 		}

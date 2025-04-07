@@ -2,6 +2,7 @@ package scrypt
 
 import (
 	"crypto"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -9,18 +10,17 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"golang.org/x/crypto/ed25519"
 	"golang.org/x/crypto/ssh"
 	"os"
 	"path"
 )
 
 type ServerKeyPair struct {
-	*CertificateAuthority
-	*KeyPair
+	*CertificateAuthority `json:"CertificateAuthority"`
+	*KeyPair              `json:"KeyPair"`
 }
 type KeyPair struct {
-	EncPrivateKey string `json:"PrivateKey"`
+	EncPrivateKey string `json:"EncPrivateKey"`
 	SSHPrivateKey string `json:"SSHPrivateKey"`
 	SSHPublicKey  string `json:"SSHPublicKey"`
 	FingerPrint   string `json:"FingerPrint"`
@@ -32,24 +32,24 @@ type CertTrack struct {
 	Certs      map[int64]*KeyPair
 }
 
-func NewSSHSigner() (*ServerKeyPair, error) {
-	caAuth, cErr := CreateCA()
+func NewServerKeyPair() (*ServerKeyPair, error) {
+	ca, cErr := CreateCA()
 	if cErr != nil {
 		return nil, fmt.Errorf("failed to create CA: %v", cErr)
 	}
 
 	// MarshalPKCS8PrivateKey supports ed25519
-	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(caAuth.PrivateKey)
+	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(ca.PrivateKey)
 	if xErr != nil {
 		return nil, xErr
 	}
 
-	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(caAuth.PrivateKey), "")
+	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(ca.PrivateKey), "")
 	if mErr != nil {
 		return nil, mErr
 	}
 
-	pbKey, pbErr := ssh.NewPublicKey(caAuth.PublicKey)
+	pbKey, pbErr := ssh.NewPublicKey(ca.PublicKey)
 	if pbErr != nil {
 		return nil, pbErr
 	}
@@ -60,7 +60,7 @@ func NewSSHSigner() (*ServerKeyPair, error) {
 	}
 
 	return &ServerKeyPair{
-		CertificateAuthority: caAuth,
+		CertificateAuthority: ca,
 		KeyPair: &KeyPair{
 			EncPrivateKey: base64.RawStdEncoding.EncodeToString(pvBytes),
 			SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
@@ -75,7 +75,7 @@ func ServerKeyPairFromFile(keyPath string) (*ServerKeyPair, error) {
 	var err error
 
 	if _, sErr := os.Stat(keyPath); os.IsNotExist(sErr) {
-		serverKeyPair, err = NewSSHSigner()
+		serverKeyPair, err = NewServerKeyPair()
 		if err != nil {
 			return nil, err
 		}

@@ -61,6 +61,10 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		c.Logger.Fatalf("Interpreter not supported - %v", iErr)
 	}
 	session.interpreter = i
+	session.initTermSize = &conf.TermDimensions{
+		Width:  uint32(0),
+		Height: uint32(0),
+	}
 	c.sessionTrack.Sessions[sc] = session
 
 	c.Logger.Debugf("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",

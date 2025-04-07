@@ -168,8 +168,13 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			return
 		}
 		defer func() { _ = ptyF.Close() }()
+		if sErr := pty.Setsize(ptyF, &pty.Winsize{
+			Rows: uint16(s.initTermSize.Height),
+			Cols: uint16(s.initTermSize.Width)}); sErr != nil {
+			s.Logger.Debugf("Failed to set window size, but will proceed: %v", sErr)
+		}
 
-		// Handle window changes
+		// Handle window-change events
 		go func() {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
