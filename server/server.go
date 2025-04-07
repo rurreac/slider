@@ -151,7 +151,7 @@ func NewServer(args []string) {
 			s.Logger.Fatalf("Failed generate SSH signer: %v", prErr)
 		}
 	} else {
-		serverKeyPair, kErr = scrypt.NewSSHSigner()
+		serverKeyPair, kErr = scrypt.NewServerKeyPair()
 		if kErr != nil {
 			s.Logger.Fatalf("Failed to generate Server Key: %v", kErr)
 		}

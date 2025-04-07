@@ -40,13 +40,13 @@ func (s *server) NewConsole() string {
 
 	// Initialize Term
 	var rErr error
-	s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
+	s.console.InitState, rErr = term.MakeRaw(int(os.Stdout.Fd()))
 	if rErr != nil {
 		s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
 		return exitCmd
 	}
 	defer func() {
-		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
+		_ = term.Restore(int(os.Stdout.Fd()), s.console.InitState)
 	}()
 
 	screen := struct {
@@ -79,7 +79,7 @@ func (s *server) NewConsole() string {
 	s.console.Output = log.New(s.console.Term, "", 0)
 
 	// Set Console
-	if width, height, tErr := term.GetSize(int(os.Stdin.Fd())); tErr == nil {
+	if width, height, tErr := term.GetSize(int(os.Stdout.Fd())); tErr == nil {
 		// Disregard the error if fails setting Console size
 		_ = s.console.Term.SetSize(width, height)
 	}
@@ -196,6 +196,11 @@ func (s *server) executeCommand(args ...string) {
 		return
 	}
 
+	if len(executeFlags.Args()) == 0 {
+		s.console.PrintlnErrorStep("Nothing to execute")
+		return
+	}
+
 	var sessions []*Session
 	if *eSession > 0 {
 		session, sessErr := s.getSession(*eSession)
@@ -219,21 +224,16 @@ func (s *server) executeCommand(args ...string) {
 				fmt.Sprintf("SessionID %d", session.sessionID),
 			)
 		}
-		if _, _, err := session.sendRequest(
-			"session-exec",
-			true,
-			[]byte(strings.Join(executeFlags.Args(), " ")),
-		); err != nil {
-			s.console.PrintlnErrorStep("%v", err)
-			continue
-		}
 
-		cmdOut, sErr := session.sessionExecute()
-		if sErr != nil {
-			s.console.PrintlnErrorStep("%v", sErr)
-			continue
+		command := strings.Join(executeFlags.Args(), " ")
+		var envVarList []struct{ Key, Value string }
+
+		instance := session.newExecInstance(envVarList)
+
+		if err := instance.ExecuteCommand(command, s.console.InitState); err != nil {
+			s.console.PrintlnErrorStep("%v", err)
 		}
-		s.console.Printf("%s", cmdOut)
+		s.console.Println("")
 	}
 }
 
@@ -930,7 +930,7 @@ func (s *server) shellCommand(args ...string) {
 			// Generate certificate and establish connection
 			cert, ccErr := s.CertificateAuthority.CreateCertificate(false)
 			if ccErr != nil {
-				s.console.PrintlnErrorStep("Failed to create client TLS certificate - %v", ccErr)
+				s.console.PrintlnErrorStep("Failed to create Client TLS certificate - %v", ccErr)
 				return
 			}
 			tlsConfig := s.CertificateAuthority.GetTLSClientConfig(cert)
@@ -949,25 +949,25 @@ func (s *server) shellCommand(args ...string) {
 			// Set up the terminal according to the client
 			if session.IsPtyOn() {
 				s.console.PrintlnOkStep("Shell has PTY, switching to raw terminal")
-				tState, tErr := term.MakeRaw(int(os.Stdin.Fd()))
+				tState, tErr := term.MakeRaw(int(os.Stdout.Fd()))
 				if tErr != nil {
 					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
 					return
 				}
 				defer func() {
-					if rErr := term.Restore(int(os.Stdin.Fd()), tState); rErr != nil {
+					if rErr := term.Restore(int(os.Stdout.Fd()), tState); rErr != nil {
 						session.Logger.Errorf("Failed to restore terminal state - %v", rErr)
 					}
 				}()
 			} else {
 				s.console.PrintlnDebugStep("Client does not support PTY, terminal not raw, echo is enabled")
 
-				conState, _ := term.GetState(int(os.Stdin.Fd()))
-				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
+				conState, _ := term.GetState(int(os.Stdout.Fd()))
+				if rErr := term.Restore(int(os.Stdout.Fd()), s.console.InitState); rErr != nil {
 					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
 					return
 				}
-				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
+				defer func() { _ = term.Restore(int(os.Stdout.Fd()), conState) }()
 
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
@@ -989,7 +989,7 @@ func (s *server) shellCommand(args ...string) {
 				_, _ = io.Copy(os.Stdout, conn)
 				s.console.PrintlnWarn("Press ENTER twice to get back to console")
 			}()
-			_, _ = io.Copy(conn, os.Stdin)
+			_, _ = io.Copy(conn, os.Stdout)
 
 			return
 		} else {
