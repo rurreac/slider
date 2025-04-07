@@ -139,7 +139,7 @@ func NewServer(args []string) {
 		} else if os.IsNotExist(sErr) && *keyStore {
 			s.Logger.Debugf("Storing New Server Certificate on %s", kp)
 		} else {
-			s.Logger.Debugf("Importing existing Server Certificate from %s", kp)
+			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
 		}
 
 		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
