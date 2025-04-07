@@ -222,47 +222,6 @@ func (session *Session) closeSessionChannel() {
 	session.sessionMutex.Unlock()
 }
 
-func (session *Session) sessionExecute() ([]byte, error) {
-	defer session.closeSessionChannel()
-
-	showLoading := make(chan bool, 1)
-	defer close(showLoading)
-	go func(c chan bool) {
-		var loadingPos int
-		loading := []string{"\\", "|", "/", "-"}
-
-		ticker := time.NewTicker(250 * time.Millisecond)
-		for loop := true; loop; {
-			select {
-			case <-ticker.C:
-				fmt.Printf("\r%s", loading[loadingPos])
-				if loadingPos == 3 {
-					loadingPos = 0
-				}
-				loadingPos++
-			case loop = <-c:
-			}
-		}
-	}(showLoading)
-
-	cmdOut := make([]byte, 0)
-	for loop := true; loop; {
-		partialOut := make([]byte, 1024)
-		i, sErr := session.sshChannel.Read(partialOut)
-		if sErr == io.EOF {
-			cmdOut = append(cmdOut, partialOut[:i]...)
-			loop = false
-			continue
-		} else if sErr != nil {
-			break
-		}
-		cmdOut = append(cmdOut, partialOut...)
-	}
-	showLoading <- false
-
-	return cmdOut, nil
-}
-
 func (session *Session) sessionInteractive(initTermState *term.State, winChangeCall syscall.Signal) {
 	// Consider Reverse Shell is opened
 	session.shellOpened = true
@@ -495,6 +454,7 @@ func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, inter
 		session.ShellInstance.SetTLSOn(tlsOn)
 		if interactiveOn {
 			session.ShellInstance.SetInteractiveOn(interactiveOn)
+			defer session.ShellInstance.SetInteractiveOn(false)
 		}
 		if sErr := session.ShellInstance.StartTLSEndpoint(port); sErr != nil {
 			session.Logger.Errorf(session.LogPrefix+"SHELL(TLS) - %v", sErr)
@@ -519,4 +479,16 @@ func (session *Session) sshEnable(port int, exposePort bool) {
 		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
 		return
 	}
+}
+
+func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }) *instance.Config {
+	config := instance.New(&instance.Config{
+		Logger:    session.Logger,
+		LogPrefix: fmt.Sprintf("SessionID %d - EXEC ", session.sessionID),
+	})
+	config.SetSSHConn(session.sshConn)
+	config.SetPtyOn(session.clientInterpreter.PtyOn)
+	config.SetEnvVarList(envVarList)
+
+	return config
 }

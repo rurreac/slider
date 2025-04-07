@@ -2,13 +2,13 @@ package scrypt
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"golang.org/x/crypto/ed25519"
 	"math/big"
 	"net"
 	"time"
@@ -16,20 +16,20 @@ import (
 
 // CertificateAuthority holds the CA certificate and private key
 type CertificateAuthority struct {
-	Cert       *x509.Certificate
-	PrivateKey ed25519.PrivateKey
-	PublicKey  ed25519.PublicKey
-	CertPEM    []byte
-	KeyPEM     []byte
+	Template   *x509.Certificate  `json:"Template"`
+	PrivateKey ed25519.PrivateKey `json:"PrivateKey"`
+	PublicKey  ed25519.PublicKey  `json:"PublicKey"`
+	CertPEM    []byte             `json:"CertPEM"`
+	KeyPEM     []byte             `json:"KeyPEM"`
 }
 
 // GeneratedCertificate holds a generated certificate and its details
 type GeneratedCertificate struct {
-	Cert       *x509.Certificate
-	PrivateKey ed25519.PrivateKey
-	CertPEM    []byte
-	KeyPEM     []byte
-	TLSCert    tls.Certificate
+	Cert       *x509.Certificate  `json:"Cert"`
+	PrivateKey ed25519.PrivateKey `json:"PrivateKey"`
+	CertPEM    []byte             `json:"CertPEM"`
+	KeyPEM     []byte             `json:"KeyPEM"`
+	TLSCert    tls.Certificate    `json:"TLSCert"`
 }
 
 // CreateCA creates a new certificate authority
@@ -64,12 +64,6 @@ func CreateCA() (*CertificateAuthority, error) {
 		return nil, fmt.Errorf("failed to create CA certificate: %v", cErr)
 	}
 
-	// Parse the certificate to get the x509.Certificate object
-	caCert, pErr := x509.ParseCertificate(caCertDER)
-	if pErr != nil {
-		return nil, fmt.Errorf("failed to parse CA certificate: %v", pErr)
-	}
-
 	// Encode the CA certificate in PEM format
 	caCertPEM := new(bytes.Buffer)
 	peErr := pem.Encode(caCertPEM, &pem.Block{
@@ -81,7 +75,7 @@ func CreateCA() (*CertificateAuthority, error) {
 	}
 
 	// Encode the CA private key in PEM format
-	privKeyBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
+	pvKeyBytes, mErr := x509.MarshalPKCS8PrivateKey(privateKey)
 	if mErr != nil {
 		return nil, fmt.Errorf("failed to marshal private key: %v", mErr)
 	}
@@ -89,14 +83,14 @@ func CreateCA() (*CertificateAuthority, error) {
 	caKeyPEM := new(bytes.Buffer)
 	keErr := pem.Encode(caKeyPEM, &pem.Block{
 		Type:  "PRIVATE KEY",
-		Bytes: privKeyBytes,
+		Bytes: pvKeyBytes,
 	})
 	if keErr != nil {
 		return nil, fmt.Errorf("failed to encode CA key to PEM: %v", keErr)
 	}
 
 	return &CertificateAuthority{
-		Cert:       caCert,
+		Template:   caTemplate,
 		PrivateKey: privateKey,
 		PublicKey:  publicKey,
 		CertPEM:    caCertPEM.Bytes(),
@@ -148,7 +142,7 @@ func (ca *CertificateAuthority) CreateCertificate(isServer bool) (*GeneratedCert
 	}
 
 	// Sign the certificate with the CA
-	certDER, ccErr := x509.CreateCertificate(rand.Reader, certTemplate, ca.Cert, publicKey, ca.PrivateKey)
+	certDER, ccErr := x509.CreateCertificate(rand.Reader, certTemplate, ca.Template, publicKey, ca.PrivateKey)
 	if ccErr != nil {
 		return nil, fmt.Errorf("failed to create certificate: %v", ccErr)
 	}

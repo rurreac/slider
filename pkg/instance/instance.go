@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
+	"io"
 	"net"
 	"os"
+	"os/signal"
 	"slider/pkg/conf"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"sync"
+	"syscall"
 )
 
 const (
@@ -45,6 +48,7 @@ type Config struct {
 	CertificateAuthority *scrypt.CertificateAuthority
 	certExists           bool
 	serverCertificate    *scrypt.GeneratedCertificate
+	envVarList           []struct{ Key, Value string }
 }
 
 // PTYRequest is the structure of a message for
@@ -125,6 +129,12 @@ func (si *Config) SetInteractiveOn(interactiveOn bool) {
 func (si *Config) SetAllowedFingerprint(fp string) {
 	si.sshMutex.Lock()
 	si.allowedFingerprint = fp
+	si.sshMutex.Unlock()
+}
+
+func (si *Config) SetEnvVarList(evl []struct{ Key, Value string }) {
+	si.sshMutex.Lock()
+	si.envVarList = evl
 	si.sshMutex.Unlock()
 }
 
@@ -420,6 +430,59 @@ func (si *Config) sendInitTermSize(payload []byte) {
 		go ssh.DiscardRequests(requests)
 	}
 
+}
+
+func (si *Config) ExecuteCommand(command string, initState *term.State) error {
+	// Build command payload
+	cmdLen := len(command)
+	cmdBytes := []byte(command)
+	payload := []byte{0, 0, 0, byte(cmdLen)}
+	payload = append(payload, cmdBytes...)
+
+	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel("exec", payload)
+	if oErr != nil {
+		return fmt.Errorf("could not open ssh channel - %v", oErr)
+	}
+	defer func() { _ = sliderClientChannel.Close() }()
+
+	go ssh.DiscardRequests(shellRequests)
+
+	var envCloser struct{ Key, Value string }
+	envCloser.Key = "SLIDER_ENV"
+	envCloser.Value = "true"
+	envVarList := append(si.envVarList, envCloser)
+
+	// Handle environment variable events
+	go func() {
+		for _, envVar := range envVarList {
+			if _, eErr := sliderClientChannel.SendRequest("env", true, ssh.Marshal(envVar)); eErr != nil {
+				si.Logger.Errorf(si.LogPrefix+"Failed to send env request - %v", eErr)
+			}
+		}
+	}()
+	state, _ := term.GetState(int(os.Stdout.Fd()))
+	if rErr := term.Restore(int(os.Stdout.Fd()), initState); rErr != nil {
+		return rErr
+	}
+	defer func() { _ = term.Restore(int(os.Stdout.Fd()), state) }()
+
+	// Capture interrupt signal once to simulate that we can actually interact with a CTR^C
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		for range sig {
+			// Stop capture
+			signal.Stop(sig)
+			close(sig)
+			fmt.Printf("\n\n\rInterrupting execute...\n\r")
+			// Manually write SIGQUIT to the channel to stop the process
+			_, _ = sliderClientChannel.Write([]byte{0x03})
+		}
+	}()
+
+	_, _ = io.Copy(os.Stdout, sliderClientChannel)
+
+	return nil
 }
 
 func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte) {

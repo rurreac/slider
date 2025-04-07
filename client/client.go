@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
@@ -397,9 +396,6 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			if err := s.replyConnRequest(req, true, []byte("pong")); err != nil {
 				s.Logger.Errorf("%sError sending \"%s\" reply to Server - %v", s.logID, req.Type, err)
 			}
-		case "session-exec":
-			s.Logger.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
-			go s.sendCommandExec(req)
 		case "session-shell":
 			s.Logger.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
 			go s.sendReverseShell(req)
@@ -424,35 +420,6 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			_ = req.Reply(false, nil)
 		}
 	}
-}
-
-func (s *Session) sendCommandExec(request *ssh.Request) {
-	channel, _, openErr := s.sshConn.OpenChannel("session", nil)
-	if openErr != nil {
-		s.Logger.Errorf("%sFailed to open a \"session\" channel to server", s.logID)
-		return
-	}
-	defer func() { _ = channel.Close() }()
-
-	// Notify Server we are good to go
-	if err := s.replyConnRequest(request, true, []byte("exec-ready")); err != nil {
-		s.Logger.Errorf("%sFailed to send reply to request \"%s\"", s.logID, request.Type)
-	}
-
-	rcvCmd := string(request.Payload)
-	s.Logger.Debugf("%sReceived Bytes Payload: %v, Command: \"%s\"", s.logID, request.Payload, rcvCmd)
-
-	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
-
-	out, coErr := cmd.CombinedOutput()
-	if coErr != nil {
-		out = []byte(fmt.Sprintf("Failed to process command: %s", coErr))
-	}
-	_, cwErr := channel.Write(out)
-	if cwErr != nil {
-		s.Logger.Errorf("%sFailed to write command \"%s\" output into channel", s.logID, rcvCmd)
-	}
-
 }
 
 func (s *Session) keepAlive(keepalive time.Duration) {
