@@ -13,7 +13,7 @@ func (si *Config) StartTLSEndpoint(port int) error {
 		var ccErr error
 		cert, ccErr = si.CertificateAuthority.CreateCertificate(true)
 		if ccErr != nil {
-			return fmt.Errorf("failed to create client TLS certificate - %v", ccErr)
+			return fmt.Errorf("failed to create Server TLS certificate - %v", ccErr)
 		}
 		si.setServerCertificate(cert)
 		si.Logger.Debugf(si.LogPrefix + "Created new TLS server certificate")
