@@ -28,6 +28,7 @@ type Console struct {
 	Term      *term.Terminal
 	InitState *term.State
 	Output    *log.Logger
+	FirstRun  bool
 }
 
 func (s *server) NewConsole() string {
@@ -84,10 +85,17 @@ func (s *server) NewConsole() string {
 		// Disregard the error if fails setting Console size
 		_ = s.console.Term.SetSize(width, height)
 	}
-	s.console.PrintlnWarn(
-		"\r\nPress CTRL^C again or Type \"bg\" to background the console," +
-			"\r\nType \"exit\" to terminate the server.\r\n",
-	)
+
+	if s.console.FirstRun {
+		s.console.PrintlnWarn(
+			"\r\n" +
+				"\r\n* Type \"bg\" or press CTRL^C again to return to logging" +
+				"\r\n* Type \"help\" to see available commands." +
+				"\r\n* Type \"exit\" to terminate the server." +
+				"\r\n",
+		)
+		s.console.FirstRun = false
+	}
 
 	for consoleInput := true; consoleInput; {
 		var fCmd string
