@@ -5,6 +5,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"github.com/UserExistsError/conpty"
 	"golang.org/x/crypto/ssh"
 	"io"
 	"os/exec"
