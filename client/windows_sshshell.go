@@ -70,7 +70,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := conPty.Resize(int(cols), int(rows)); sErr != nil {
-					s.Logger.Debugf("Failed to set window size - %v", sErr)
+					s.Logger.Warnf("Failed to update window size - %v", sErr)
 				}
 			}
 		}()
@@ -112,7 +112,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 
 		// Discard window-change events
 		go func() {
-			for _ = range envChange {
+			for range envChange {
 			}
 		}()
 
@@ -192,7 +192,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	// Discard window-change events
 	go func() {
-		for _ = range envChange {
+		for range envChange {
 		}
 	}()
 

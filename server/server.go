@@ -146,7 +146,7 @@ func NewServer(args []string) {
 		if kErr != nil {
 			s.Logger.Fatalf("Failed to load Server Key: %v", kErr)
 		}
-		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.EncPrivateKey)
+		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
 			s.Logger.Fatalf("Failed generate SSH signer: %v", prErr)
 		}
@@ -155,7 +155,7 @@ func NewServer(args []string) {
 		if kErr != nil {
 			s.Logger.Fatalf("Failed to generate Server Key: %v", kErr)
 		}
-		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.EncPrivateKey)
+		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
 			s.Logger.Fatalf("failed to create signer: %v", prErr)
 		}
@@ -200,7 +200,7 @@ func NewServer(args []string) {
 			s.Logger.Fatalf("Redirect: %v", wErr)
 		}
 		s.webRedirect = *webRedirect
-		s.Logger.Debugf("Redirect incomming HTTP requests to \"%s\"", s.webRedirect)
+		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.webRedirect)
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
