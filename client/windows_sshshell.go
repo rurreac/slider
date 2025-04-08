@@ -5,7 +5,6 @@ package client
 import (
 	"context"
 	"fmt"
-	"github.com/UserExistsError/conpty"
 	"golang.org/x/crypto/ssh"
 	"io"
 	"os/exec"
@@ -70,7 +69,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := conPty.Resize(int(cols), int(rows)); sErr != nil {
-					s.Logger.Debugf("Failed to set window size - %v", sErr)
+					s.Logger.Warnf("Failed to update window size - %v", sErr)
 				}
 			}
 		}()

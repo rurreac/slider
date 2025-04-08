@@ -171,7 +171,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 		if sErr := pty.Setsize(ptyF, &pty.Winsize{
 			Rows: uint16(s.initTermSize.Height),
 			Cols: uint16(s.initTermSize.Width)}); sErr != nil {
-			s.Logger.Debugf("Failed to set window size, but will proceed: %v", sErr)
+			s.Logger.Warnf("Failed to set window size, but will proceed: %v", sErr)
 		}
 
 		// Handle window-change events
@@ -179,7 +179,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := pty.Setsize(ptyF, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); sErr != nil {
-					s.Logger.Debugf("Failed to set window size: %v", sErr)
+					s.Logger.Warnf("Failed to update window size: %v", sErr)
 				}
 			}
 		}()
