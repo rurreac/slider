@@ -15,8 +15,8 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("server", c.webTemplate.ServerHeader)
 
-	if c.webRedirect != "" {
-		http.Redirect(w, r, c.webRedirect, http.StatusFound)
+	if c.webRedirect.String() != "" {
+		http.Redirect(w, r, c.webRedirect.String(), http.StatusFound)
 		return
 	}
 

@@ -14,7 +14,6 @@ import (
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/sio"
-	"slider/pkg/web"
 	"sort"
 	"strings"
 	"syscall"
@@ -592,6 +591,7 @@ func (s *server) connectCommand(args ...string) {
 	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
 	connectFlags.SetOutput(s.console.Term)
 	cCert := connectFlags.Int64("c", 0, "Specify certID for key authentication")
+	cDNS := connectFlags.String("d", "", "Use custom DNS resolver")
 	connectFlags.Usage = func() {
 		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
 	}
@@ -603,19 +603,19 @@ func (s *server) connectCommand(args ...string) {
 		return
 	}
 	clientURL := connectFlags.Args()[0]
-	cu, uErr := web.ResolveURL(clientURL)
+	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
 		s.console.PrintlnErrorStep("Failed to resolve URL: %v", uErr)
 		return
 	}
 
-	s.console.PrintlnDebugStep("Establishing Connection to %s (Timeout: %s)", clientURL, conf.Timeout)
+	s.console.PrintlnDebugStep("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
 	notifier := make(chan bool, 1)
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(cu, notifier, *cCert)
+	go s.newClientConnector(cu, notifier, *cCert, *cDNS)
 
 	for {
 		select {
