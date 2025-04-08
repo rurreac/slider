@@ -14,6 +14,7 @@ import (
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/sio"
+	"slider/pkg/web"
 	"sort"
 	"strings"
 	"syscall"
@@ -516,7 +517,7 @@ func (s *server) certsCommand(args ...string) {
 					k,
 					strings.Repeat("-", 11),
 				)
-				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].EncPrivateKey)
+				_, _ = fmt.Fprintf(twl, "\tPrivate Key:\t%s\t\n", s.certTrack.Certs[int64(k)].PrivateKey)
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
 				sessionList := "None"
 				if sl := s.getSessionsByCertID(int64(k)); len(sl) > 0 {
@@ -562,7 +563,7 @@ func (s *server) certsCommand(args ...string) {
 		twn := new(tabwriter.Writer)
 		twn.Init(s.console.Term, 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(twn)
-		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.EncPrivateKey)
+		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
 		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
 		_, _ = fmt.Fprintln(twn)
 		_ = twn.Flush()
@@ -593,38 +594,36 @@ func (s *server) connectCommand(args ...string) {
 		connectFlags.Usage()
 		return
 	}
-	clientAddr, rErr := net.ResolveTCPAddr("tcp", connectFlags.Args()[0])
-	if rErr != nil {
-		s.console.PrintlnErrorStep("Argument \"%s\" is not a valid address", connectFlags.Args()[0])
+	clientURL := connectFlags.Args()[0]
+	cu, uErr := web.ResolveURL(clientURL)
+	if uErr != nil {
+		s.console.PrintlnErrorStep("Failed to resolve URL: %v", uErr)
 		return
 	}
-	var ip = clientAddr.IP.String()
-	if clientAddr.IP == nil {
-		ip = "127.0.0.1"
-	}
-	s.console.PrintlnDebugStep("Establishing Connection to %s:%d (Timeout: %s)", ip, clientAddr.Port, conf.Timeout)
+
+	s.console.PrintlnDebugStep("Establishing Connection to %s (Timeout: %s)", clientURL, conf.Timeout)
 
 	notifier := make(chan bool, 1)
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(clientAddr, notifier, *cCert)
+	go s.newClientConnector(cu, notifier, *cCert)
 
 	for {
 		select {
 		case connected := <-notifier:
 			if connected {
-				s.console.PrintlnOkStep("Successfully connected to Client %s:%d", ip, clientAddr.Port)
+				s.console.PrintlnOkStep("Successfully connected to Client")
 				close(notifier)
 				return
 			} else {
-				s.console.PrintlnErrorStep("Failed to connect to Client %s:%d", ip, clientAddr.Port)
+				s.console.PrintlnErrorStep("Failed to connect to Client")
 				close(notifier)
 				return
 			}
 		case t := <-ticker.C:
 			if t.After(timeout) {
-				s.console.PrintlnErrorStep("Timed out connecting to Client %s:%d", ip, clientAddr.Port)
+				s.console.PrintlnErrorStep("Timed out connecting to Client")
 				close(notifier)
 				return
 			}

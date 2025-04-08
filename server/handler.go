@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
+	"net/url"
 	"slider/pkg/conf"
 	"slider/pkg/scrypt"
 	"strings"
@@ -55,18 +55,18 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool, certID int64) {
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64) {
 	wsConfig := conf.DefaultWebSocketDialer
 
-	wsConn, _, err := wsConfig.DialContext(
-		context.Background(),
-		fmt.Sprintf("ws://%s", clientAddr.String()), http.Header{})
+	wsURL := fmt.Sprintf("ws://%s", strings.TrimPrefix(clientUrl.String(), clientUrl.Scheme+"://"))
+	if clientUrl.Scheme == "https" {
+		wsURL = fmt.Sprintf("wss://%s", strings.TrimPrefix(clientUrl.String(), clientUrl.Scheme+"://"))
+	}
+
+	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURL, http.Header{})
 	if err != nil {
 		s.Logger.Errorf(
-			"Failed to open a WebSocket connection to \"%s\": %v",
-			clientAddr.String(),
-			err,
-		)
+			"Failed to open a WebSocket connection to \"%s\": %v", wsURL, err)
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
@@ -87,7 +87,7 @@ func (s *server) newClientConnector(clientAddr *net.TCPAddr, notifier chan bool,
 		}
 		session.addCertInfo(certID, keyPair.FingerPrint)
 
-		signerKey, sErr := scrypt.SignerFromKey(keyPair.EncPrivateKey)
+		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
 		if sErr != nil {
 			s.Logger.Errorf("Failed to create client ssh signer with certID %d key", certID)
 			return

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"slider/pkg/conf"
@@ -20,6 +21,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/web"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +38,7 @@ type sessionTrack struct {
 
 type client struct {
 	Logger            *slog.Logger
-	serverAddr        string
+	serverURL         *url.URL
 	keepalive         time.Duration
 	wsConfig          *websocket.Dialer
 	httpHeaders       http.Header
@@ -177,11 +179,13 @@ func NewClient(args []string) {
 		c.Logger.Infof("Listening on %s://%s", clientAddr.Network(), clientAddr.String())
 		<-shutdown
 	} else {
-		serverAddr, rErr := net.ResolveTCPAddr("tcp", clientFlags.Args()[0])
-		if rErr != nil {
-			c.Logger.Fatalf("Not a valid IP address \"%s\"", clientFlags.Args()[0])
+		serverURL := clientFlags.Args()[0]
+		su, uErr := web.ResolveURL(serverURL)
+		if uErr != nil {
+			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", serverURL)
 		}
-		c.serverAddr = serverAddr.String()
+
+		c.serverURL = su
 		c.wsConfig = conf.DefaultWebSocketDialer
 
 		for loop := true; loop; {
@@ -249,7 +253,14 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 }
 
 func (c *client) startConnection() {
-	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), fmt.Sprintf("ws://%s", c.serverAddr), c.httpHeaders)
+	wsURL := fmt.Sprintf("ws://%s", strings.TrimPrefix(c.serverURL.String(), c.serverURL.Scheme+"://"))
+	if c.serverURL.Scheme == "https" {
+		wsURL = fmt.Sprintf("wss://%s", strings.TrimPrefix(c.serverURL.String(), c.serverURL.Scheme+"://"))
+	}
+
+	c.Logger.Infof("Connecting to %s", wsURL)
+
+	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), wsURL, c.httpHeaders)
 	if wErr != nil {
 		c.Logger.Errorf("Can't connect to Server address: %s", wErr)
 		return
@@ -270,7 +281,7 @@ func (c *client) newSSHClient(session *Session) {
 	var newChan <-chan ssh.NewChannel
 	var connErr error
 
-	session.sshConn, newChan, reqChan, connErr = ssh.NewClientConn(netConn, c.serverAddr, c.sshConfig)
+	session.sshConn, newChan, reqChan, connErr = ssh.NewClientConn(netConn, session.wsConn.RemoteAddr().String(), c.sshConfig)
 	if connErr != nil {
 		c.Logger.Errorf("%s\n", connErr)
 		session.disconnect <- true

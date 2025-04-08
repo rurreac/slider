@@ -14,7 +14,7 @@ func TestNewEd25519KeyPair(t *testing.T) {
 	}
 
 	// Verify key pair components
-	if keyPair.EncPrivateKey == "" {
+	if keyPair.PrivateKey == "" {
 		t.Error("Private key is empty")
 	}
 
@@ -31,7 +31,7 @@ func TestSignerFromKey(t *testing.T) {
 	}
 
 	// Test creating a signer from the key
-	signer, err := SignerFromKey(keyPair.EncPrivateKey)
+	signer, err := SignerFromKey(keyPair.PrivateKey)
 	if err != nil {
 		t.Fatalf("Failed to create signer from key: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestFingerprintGeneration(t *testing.T) {
 	}
 
 	// Create signer to get the public key
-	signer, err := SignerFromKey(keyPair.EncPrivateKey)
+	signer, err := SignerFromKey(keyPair.PrivateKey)
 	if err != nil {
 		t.Fatalf("Failed to create signer from key: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	if kErr != nil {
 		t.Fatalf("Failed to load Server Key: %v", kErr)
 	}
-	signer1, prErr := SignerFromKey(serverKeyPair.EncPrivateKey)
+	signer1, prErr := SignerFromKey(serverKeyPair.PrivateKey)
 	if prErr != nil {
 		t.Fatalf("Failed generate SSH signer: %v", prErr)
 	}
@@ -113,7 +113,7 @@ func TestSSHSignerFromFile(t *testing.T) {
 	if k2Err != nil {
 		t.Fatalf("Failed to load Server Key: %v", k2Err)
 	}
-	signer2, pr2Err := SignerFromKey(serverKeyPair2.EncPrivateKey)
+	signer2, pr2Err := SignerFromKey(serverKeyPair2.PrivateKey)
 	if pr2Err != nil {
 		t.Fatalf("Failed generate SSH signer: %v", pr2Err)
 	}
