@@ -29,7 +29,7 @@ func setConsoleColors() {
 }
 
 func getPrompt() string {
-	return fmt.Sprintf("Slider%s>%s ", string(systemColor), string(resetColor))
+	return fmt.Sprintf("\rSlider%s>%s ", string(systemColor), string(resetColor))
 }
 
 func (c *Console) PrintlnWarn(m string, args ...interface{}) {

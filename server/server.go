@@ -101,7 +101,7 @@ func NewServer(args []string) {
 			Sessions: make(map[int64]*Session),
 		},
 		sshConf: sshConf,
-		console: Console{},
+		console: Console{FirstRun: true},
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
