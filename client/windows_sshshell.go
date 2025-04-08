@@ -112,7 +112,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 
 		// Discard window-change events
 		go func() {
-			for _ = range envChange {
+			for range envChange {
 			}
 		}()
 
@@ -192,7 +192,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	// Discard window-change events
 	go func() {
-		for _ = range envChange {
+		for range envChange {
 		}
 	}()
 
