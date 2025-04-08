@@ -200,7 +200,7 @@ func NewServer(args []string) {
 			s.Logger.Fatalf("Redirect: %v", wErr)
 		}
 		s.webRedirect = *webRedirect
-		s.Logger.Debugf("Redirect incomming HTTP requests to \"%s\"", s.webRedirect)
+		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.webRedirect)
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
