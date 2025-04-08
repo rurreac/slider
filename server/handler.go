@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"slider/pkg/conf"
@@ -19,8 +18,8 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Add("server", s.webTemplate.ServerHeader)
 
-	if s.webRedirect != "" {
-		http.Redirect(w, r, s.webRedirect, http.StatusFound)
+	if s.webRedirect.String() != "" {
+		http.Redirect(w, r, s.webRedirect.String(), http.StatusFound)
 		return
 	}
 
@@ -55,14 +54,24 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64) {
-	wsConfig := conf.DefaultWebSocketDialer
-
-	wsURL := fmt.Sprintf("ws://%s", strings.TrimPrefix(clientUrl.String(), clientUrl.Scheme+"://"))
-	if clientUrl.Scheme == "https" {
-		wsURL = fmt.Sprintf("wss://%s", strings.TrimPrefix(clientUrl.String(), clientUrl.Scheme+"://"))
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string) {
+	wsURL, wErr := conf.FormatToWS(clientUrl)
+	if wErr != nil {
+		s.Logger.Errorf("Failed to convert %s to WebSocket URL: %v", clientUrl.String(), wErr)
+		return
 	}
 
+	if customDNS != "" {
+		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
+		if dErr != nil {
+			s.Logger.Errorf("Failed to resolve host %s: %v", clientUrl.Hostname(), dErr)
+			return
+		}
+
+		wsURL = strings.Replace(wsURL, clientUrl.Hostname(), ip, 1)
+	}
+
+	wsConfig := conf.DefaultWebSocketDialer
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURL, http.Header{})
 	if err != nil {
 		s.Logger.Errorf(
@@ -97,4 +106,5 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 	session.setSSHConf(&sshConf)
 
 	s.NewSSHServer(session)
+
 }

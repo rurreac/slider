@@ -3,7 +3,6 @@ package web
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -50,16 +49,4 @@ func GetTemplate(n string) (Template, error) {
 	}
 
 	return t, nil
-}
-
-func CheckURL(u string) error {
-	pURL, uErr := url.Parse(u)
-	if uErr != nil {
-		return fmt.Errorf("not a valid URL")
-	}
-	if pURL.Scheme == "" || pURL.Host == "" {
-		return fmt.Errorf("expecting a full URL including scheme and host")
-	}
-
-	return nil
 }

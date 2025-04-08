@@ -50,7 +50,7 @@ type client struct {
 	isListener        bool
 	firstRun          bool
 	webTemplate       web.Template
-	webRedirect       string
+	webRedirect       *url.URL
 }
 
 const clientHelp = `
@@ -78,7 +78,8 @@ func NewClient(args []string) {
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
 	webTemplate := clientFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
-	webRedirect := clientFlags.String("redirect", "", "Redirect incoming HTTP connections to given URL")
+	webRedirect := clientFlags.String("redirect", "", "Redirects incoming HTTP connections to given URL")
+	customDNS := clientFlags.String("dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
 		clientFlags.PrintDefaults()
@@ -157,11 +158,12 @@ func NewClient(args []string) {
 		c.webTemplate = t
 
 		if *webRedirect != "" {
-			if wErr := web.CheckURL(*webRedirect); wErr != nil {
-				c.Logger.Fatalf("Redirect: %v", wErr)
+			wr, wErr := conf.ResolveURL(*webRedirect)
+			if wErr != nil {
+				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 			}
-			c.webRedirect = *webRedirect
-			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.webRedirect)
+			c.webRedirect = wr
+			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.webRedirect.String())
 		}
 
 		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
@@ -180,7 +182,7 @@ func NewClient(args []string) {
 		<-shutdown
 	} else {
 		serverURL := clientFlags.Args()[0]
-		su, uErr := web.ResolveURL(serverURL)
+		su, uErr := conf.ResolveURL(serverURL)
 		if uErr != nil {
 			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", serverURL)
 		}
@@ -189,7 +191,7 @@ func NewClient(args []string) {
 		c.wsConfig = conf.DefaultWebSocketDialer
 
 		for loop := true; loop; {
-			c.startConnection()
+			c.startConnection(*customDNS)
 
 			// When the Client is not Listener a Server disconnection
 			// will shut down the Client
@@ -252,13 +254,22 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 	return nil
 }
 
-func (c *client) startConnection() {
-	wsURL := fmt.Sprintf("ws://%s", strings.TrimPrefix(c.serverURL.String(), c.serverURL.Scheme+"://"))
-	if c.serverURL.Scheme == "https" {
-		wsURL = fmt.Sprintf("wss://%s", strings.TrimPrefix(c.serverURL.String(), c.serverURL.Scheme+"://"))
+func (c *client) startConnection(customDNS string) {
+	wsURL, wErr := conf.FormatToWS(c.serverURL)
+	if wErr != nil {
+		c.Logger.Errorf("Failed to convert %s to WebSocket URL: %v", c.serverURL.String(), wErr)
+		return
 	}
 
-	c.Logger.Infof("Connecting to %s", wsURL)
+	if customDNS != "" {
+		ip, rErr := conf.CustomResolver(customDNS, c.serverURL.Hostname())
+		if rErr != nil {
+			c.Logger.Errorf("Failed to resolve host %s: %v", c.serverURL.Hostname(), rErr)
+			return
+		}
+		wsURL = strings.Replace(wsURL, c.serverURL.Hostname(), ip, 1)
+		c.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
+	}
 
 	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), wsURL, c.httpHeaders)
 	if wErr != nil {
