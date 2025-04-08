@@ -47,12 +47,18 @@ For building binaries with the same compression level as the ones available for 
 ```
 make <TARGET> UPX_BRUTE=yes
 ```
+Makefiles for building [Server](server/cmd) or [Client](client/cmd) only, are also included just in case it fits best your
+purpose. 
+But be aware that size wise the difference between a full build and a server or client build is slightly noticeable, 
+and the more compression the less noticeable. 
+Generally speaking you would like to stick with the full binary.
 
 Currently Slider uses the following external dependencies:
 * [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
 * [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
 * [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
 * [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
+* [pkg/sftp](https://github.com/pkg/sftp) - SFTP server side implementation
 
 
 ## Server
@@ -579,13 +585,6 @@ This project is built on top the idea of using SSH over a websocket connection.
 The concept is not new, there are quite a few online services for such matter and if you are interested only on 
 traversing through networks, then should definitively check [Chisel](https://github.com/jpillora/chisel) out, which 
 brought us here and is way more versed and versatile in this matter.
-
-As stated in the [dependencies](#external-dependencies) section:
-* [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
-* [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
-* [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
-* [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
-* []() - 
 
 Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs). Tape samples in 
 the [doc](./doc) folder.
