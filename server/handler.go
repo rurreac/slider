@@ -12,8 +12,10 @@ import (
 func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		s.handleWebSocket(w, r)
-		return
+		if r.Header.Get("Sec-WebSocket-Protocol") == conf.ProtoVersion {
+			s.handleWebSocket(w, r)
+			return
+		}
 	}
 
 	w.Header().Add("server", s.webTemplate.ServerHeader)
@@ -61,18 +63,22 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 		return
 	}
 
+	wsURLStr := wsURL.String()
 	if customDNS != "" {
 		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
 		if dErr != nil {
 			s.Logger.Errorf("Failed to resolve host %s: %v", clientUrl.Hostname(), dErr)
 			return
 		}
-
-		wsURL = strings.Replace(wsURL, clientUrl.Hostname(), ip, 1)
+		wsURLStr = strings.Replace(wsURL.String(), clientUrl.Hostname(), ip, 1)
+		s.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
 	}
 
 	wsConfig := conf.DefaultWebSocketDialer
-	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURL, http.Header{})
+	if wsURL.Scheme == "wss" {
+		wsConfig.TLSClientConfig.InsecureSkipVerify = true
+	}
+	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{})
 	if err != nil {
 		s.Logger.Errorf(
 			"Failed to open a WebSocket connection to \"%s\": %v", wsURL, err)

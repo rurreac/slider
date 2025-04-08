@@ -108,6 +108,7 @@ func NewServer(args []string) {
 		},
 		certJarFile: *certJarFile,
 		authOn:      *auth,
+		webRedirect: &url.URL{},
 	}
 
 	// Ensure a minimum keepalive

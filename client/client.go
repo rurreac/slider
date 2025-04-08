@@ -115,7 +115,8 @@ func NewClient(args []string) {
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
-		firstRun: true,
+		firstRun:    true,
+		webRedirect: &url.URL{},
 	}
 
 	if *keepalive < conf.MinKeepAlive {
@@ -145,7 +146,7 @@ func NewClient(args []string) {
 
 	// Check the use of extra headers for added functionality
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
-	c.httpHeaders = http.Header{}
+	c.httpHeaders = http.Header{"Sec-WebSocket-Protocol": {conf.ProtoVersion}}
 
 	if *listener {
 		c.isListener = *listener
@@ -261,19 +262,24 @@ func (c *client) startConnection(customDNS string) {
 		return
 	}
 
+	wsURLStr := wsURL.String()
 	if customDNS != "" {
 		ip, rErr := conf.CustomResolver(customDNS, c.serverURL.Hostname())
 		if rErr != nil {
 			c.Logger.Errorf("Failed to resolve host %s: %v", c.serverURL.Hostname(), rErr)
 			return
 		}
-		wsURL = strings.Replace(wsURL, c.serverURL.Hostname(), ip, 1)
+		wsURLStr = strings.Replace(wsURL.String(), c.serverURL.Hostname(), ip, 1)
 		c.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
 	}
 
-	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), wsURL, c.httpHeaders)
-	if wErr != nil {
-		c.Logger.Errorf("Can't connect to Server address: %s", wErr)
+	if wsURL.Scheme == "wss" {
+		c.wsConfig.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	wsConn, _, cErr := c.wsConfig.DialContext(context.Background(), wsURLStr, c.httpHeaders)
+	if cErr != nil {
+		c.Logger.Errorf("Can't connect to Server address: %s", cErr)
 		return
 	}
 	session := c.newWebSocketSession(wsConn)

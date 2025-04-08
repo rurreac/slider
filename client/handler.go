@@ -9,8 +9,10 @@ import (
 func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		c.handleWebSocket(w, r)
-		return
+		if r.Header.Get("Sec-WebSocket-Protocol") == conf.ProtoVersion {
+			c.handleWebSocket(w, r)
+			return
+		}
 	}
 
 	w.Header().Add("server", c.webTemplate.ServerHeader)
@@ -34,7 +36,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = conf.DefaultWebSocketUpgrader
+	upgrader := conf.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {
