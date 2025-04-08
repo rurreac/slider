@@ -59,7 +59,7 @@ Slider Client
   Creates a new Slider Client instance and connects 
 to the defined Slider Server.
 
-Usage: ./slider client [flags] [<[server_address]:port>]
+Usage: <slider_client> [flags] [<[server_address]:port>]
 
 Flags:`
 

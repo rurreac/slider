@@ -15,7 +15,7 @@ incoming Slider Client connections on the defined port.
   Interaction with Slider Clients can be performed through
 its integrated Console by pressing CTR^C at any time.
 
-Usage: ./slider server [flags]
+Usage: <slider_server> [flags]
 
 Flags:`
 

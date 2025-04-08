@@ -1,4 +1,6 @@
-# Makefile for Slider cross-platform build
+################
+# Build Slider #
+################
 
 # Set variables
 BUILD_DIR := build
@@ -35,12 +37,22 @@ all: clean $(BUILD_DIR) macos-arm64 macos-amd64 windows-x86 windows-amd64 window
 
 # Build for common platforms for quick testing
 .PHONY: basic
-basic: clean $(BUILD_DIR) macos-amd64 linux-amd64 windows-x86
+basic: $(BUILD_DIR) macos-amd64 linux-amd64 windows-x86
+
+# Build for arm64 platforms for quick testing
+.PHONY: basic-arm64
+basic-arm64: $(BUILD_DIR) macos-arm64 linux-arm64 windows-arm64
 
 # Clean build directory
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)/*
+
+# List all builds with their sizes
+.PHONY: list
+list:
+	@echo "Available builds:"
+	@ls -lh $(BUILD_DIR) | grep -v total
 
 # macOS (arm64)
 .PHONY: macos-arm64
@@ -112,9 +124,3 @@ ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-linux-arm64 || echo "UPX compression failed, using uncompressed binary"
 endif
-
-# List all builds with their sizes
-.PHONY: list
-list:
-	@echo "Available builds:"
-	@ls -lh $(BUILD_DIR) | grep -v total
