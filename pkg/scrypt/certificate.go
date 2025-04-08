@@ -16,11 +16,11 @@ import (
 
 // CertificateAuthority holds the CA certificate and private key
 type CertificateAuthority struct {
-	Template   *x509.Certificate  `json:"Template"`
-	PrivateKey ed25519.PrivateKey `json:"PrivateKey"`
-	PublicKey  ed25519.PublicKey  `json:"PublicKey"`
-	CertPEM    []byte             `json:"CertPEM"`
-	KeyPEM     []byte             `json:"KeyPEM"`
+	Template     *x509.Certificate  `json:"Template"`
+	CAPrivateKey ed25519.PrivateKey `json:"CAPrivateKey"`
+	CAPublicKey  ed25519.PublicKey  `json:"CAPublicKey"`
+	CertPEM      []byte             `json:"CertPEM"`
+	KeyPEM       []byte             `json:"KeyPEM"`
 }
 
 // GeneratedCertificate holds a generated certificate and its details
@@ -90,11 +90,11 @@ func CreateCA() (*CertificateAuthority, error) {
 	}
 
 	return &CertificateAuthority{
-		Template:   caTemplate,
-		PrivateKey: privateKey,
-		PublicKey:  publicKey,
-		CertPEM:    caCertPEM.Bytes(),
-		KeyPEM:     caKeyPEM.Bytes(),
+		Template:     caTemplate,
+		CAPrivateKey: privateKey,
+		CAPublicKey:  publicKey,
+		CertPEM:      caCertPEM.Bytes(),
+		KeyPEM:       caKeyPEM.Bytes(),
 	}, nil
 }
 
@@ -142,7 +142,7 @@ func (ca *CertificateAuthority) CreateCertificate(isServer bool) (*GeneratedCert
 	}
 
 	// Sign the certificate with the CA
-	certDER, ccErr := x509.CreateCertificate(rand.Reader, certTemplate, ca.Template, publicKey, ca.PrivateKey)
+	certDER, ccErr := x509.CreateCertificate(rand.Reader, certTemplate, ca.Template, publicKey, ca.CAPrivateKey)
 	if ccErr != nil {
 		return nil, fmt.Errorf("failed to create certificate: %v", ccErr)
 	}

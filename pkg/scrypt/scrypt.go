@@ -20,7 +20,7 @@ type ServerKeyPair struct {
 	*KeyPair              `json:"KeyPair"`
 }
 type KeyPair struct {
-	EncPrivateKey string `json:"EncPrivateKey"`
+	PrivateKey    string `json:"PrivateKey"`
 	SSHPrivateKey string `json:"SSHPrivateKey"`
 	SSHPublicKey  string `json:"SSHPublicKey"`
 	FingerPrint   string `json:"FingerPrint"`
@@ -39,17 +39,17 @@ func NewServerKeyPair() (*ServerKeyPair, error) {
 	}
 
 	// MarshalPKCS8PrivateKey supports ed25519
-	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(ca.PrivateKey)
+	pvBytes, xErr := x509.MarshalPKCS8PrivateKey(ca.CAPrivateKey)
 	if xErr != nil {
 		return nil, xErr
 	}
 
-	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(ca.PrivateKey), "")
+	pvBlock, mErr := ssh.MarshalPrivateKey(crypto.PrivateKey(ca.CAPrivateKey), "")
 	if mErr != nil {
 		return nil, mErr
 	}
 
-	pbKey, pbErr := ssh.NewPublicKey(ca.PublicKey)
+	pbKey, pbErr := ssh.NewPublicKey(ca.CAPublicKey)
 	if pbErr != nil {
 		return nil, pbErr
 	}
@@ -62,7 +62,7 @@ func NewServerKeyPair() (*ServerKeyPair, error) {
 	return &ServerKeyPair{
 		CertificateAuthority: ca,
 		KeyPair: &KeyPair{
-			EncPrivateKey: base64.RawStdEncoding.EncodeToString(pvBytes),
+			PrivateKey:    base64.RawStdEncoding.EncodeToString(pvBytes),
 			SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
 			SSHPublicKey:  string(ssh.MarshalAuthorizedKey(pbKey)),
 			FingerPrint:   fingerprint,
@@ -166,7 +166,7 @@ func NewEd25519KeyPair() (*KeyPair, error) {
 	}
 
 	return &KeyPair{
-		EncPrivateKey: base64.RawStdEncoding.EncodeToString(pvBytes),
+		PrivateKey:    base64.RawStdEncoding.EncodeToString(pvBytes),
 		SSHPrivateKey: string(pem.EncodeToMemory(pvBlock)),
 		SSHPublicKey:  string(ssh.MarshalAuthorizedKey(pbKey)),
 		FingerPrint:   fingerprint,
