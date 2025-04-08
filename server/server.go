@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -45,7 +46,7 @@ type server struct {
 	certSaveOn           bool
 	keepalive            time.Duration
 	webTemplate          web.Template
-	webRedirect          string
+	webRedirect          *url.URL
 	serverKey            ssh.Signer
 	CertificateAuthority *scrypt.CertificateAuthority
 }
@@ -196,10 +197,11 @@ func NewServer(args []string) {
 	s.webTemplate = t
 
 	if *webRedirect != "" {
-		if wErr := web.CheckURL(*webRedirect); wErr != nil {
-			s.Logger.Fatalf("Redirect: %v", wErr)
+		wr, wErr := conf.ResolveURL(*webRedirect)
+		if wErr != nil {
+			s.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 		}
-		s.webRedirect = *webRedirect
+		s.webRedirect = wr
 		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.webRedirect)
 	}
 
