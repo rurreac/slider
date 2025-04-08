@@ -1,3 +1,6 @@
 .idea
+.vscode
 dist
 build
+server/cmd/build
+client/cmd/build
