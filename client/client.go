@@ -20,7 +20,6 @@ import (
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
-	"slider/pkg/web"
 	"strings"
 	"sync"
 	"time"
@@ -49,8 +48,16 @@ type client struct {
 	sessionTrackMutex sync.Mutex
 	isListener        bool
 	firstRun          bool
-	webTemplate       web.Template
-	webRedirect       *url.URL
+	*listenerConf
+}
+
+type listenerConf struct {
+	urlRedirect  *url.URL
+	templatePath string
+	httpVersion  bool
+	httpHealth   bool
+	serverHeader string
+	statusCode   int
 }
 
 const clientHelp = `
@@ -71,14 +78,18 @@ func NewClient(args []string) {
 	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
 	keepalive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
 	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
-	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification")
+	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification (listener)")
 	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
 	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
 	port := clientFlags.Int("port", 8081, "Listener port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	webTemplate := clientFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
-	webRedirect := clientFlags.String("redirect", "", "Redirects incoming HTTP connections to given URL")
+	templatePath := clientFlags.String("http-template", "", "Path of a default file to serve (listener)")
+	serverHeader := clientFlags.String("http-server-header", "", "Sets a server header value (listener)")
+	httpRedirect := clientFlags.String("http-redirect", "", "Redirects incoming HTTP to given URL (listener)")
+	statusCode := clientFlags.Int("http-status-code", 200, "Template Status code [200|301|302|400|401|403|500|502|503] (listener)")
+	httpVersion := clientFlags.Bool("http-version", false, "Enables /version HTTP path")
+	httpHealth := clientFlags.Bool("http-health", false, "Enables /health HTTP path")
 	customDNS := clientFlags.String("dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
@@ -116,6 +127,11 @@ func NewClient(args []string) {
 			Sessions: make(map[int64]*Session),
 		},
 		firstRun: true,
+		listenerConf: &listenerConf{
+			urlRedirect: &url.URL{},
+			httpVersion: *httpVersion,
+			httpHealth:  *httpHealth,
+		},
 	}
 
 	if *keepalive < conf.MinKeepAlive {
@@ -145,25 +161,33 @@ func NewClient(args []string) {
 
 	// Check the use of extra headers for added functionality
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
-	c.httpHeaders = http.Header{}
+	c.httpHeaders = http.Header{"Sec-WebSocket-Protocol": {conf.HttpVersionResponse.ProtoVersion}}
 
 	if *listener {
 		c.isListener = *listener
+		c.listenerConf.serverHeader = *serverHeader
 
-		c.Logger.Debugf("Using \"%s\" web server template", *webTemplate)
-		t, tErr := web.GetTemplate(*webTemplate)
-		if tErr != nil {
-			c.Logger.Errorf("%v", tErr)
+		if *templatePath != "" {
+			tErr := conf.CheckTemplate(*templatePath)
+			if tErr != nil {
+				c.Logger.Fatalf("Wrong template: %s", tErr)
+			}
+			c.listenerConf.templatePath = *templatePath
 		}
-		c.webTemplate = t
 
-		if *webRedirect != "" {
-			wr, wErr := conf.ResolveURL(*webRedirect)
+		c.listenerConf.statusCode = *statusCode
+		if !conf.CheckStatusCode(*statusCode) {
+			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", *statusCode, http.StatusOK)
+			c.listenerConf.statusCode = http.StatusOK
+		}
+
+		if *httpRedirect != "" {
+			wr, wErr := conf.ResolveURL(*httpRedirect)
 			if wErr != nil {
 				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 			}
-			c.webRedirect = wr
-			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.webRedirect.String())
+			c.urlRedirect = wr
+			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.urlRedirect.String())
 		}
 
 		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
@@ -239,8 +263,17 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		if conf.FlagIsDefined(clientFlags, "template") {
 			flagExclusion = append(flagExclusion, "-template")
 		}
+		if conf.FlagIsDefined(clientFlags, "server-header") {
+			flagExclusion = append(flagExclusion, "-server-header")
+		}
+		if conf.FlagIsDefined(clientFlags, "status-code") {
+			flagExclusion = append(flagExclusion, "-status-code")
+		}
 		if conf.FlagIsDefined(clientFlags, "redirect") {
 			flagExclusion = append(flagExclusion, "-redirect")
+		}
+		if conf.FlagIsDefined(clientFlags, "dns") {
+			flagExclusion = append(flagExclusion, "-dns")
 		}
 		argNumber := len(clientFlags.Args())
 		if argNumber != 1 {
@@ -261,19 +294,24 @@ func (c *client) startConnection(customDNS string) {
 		return
 	}
 
+	wsURLStr := wsURL.String()
 	if customDNS != "" {
 		ip, rErr := conf.CustomResolver(customDNS, c.serverURL.Hostname())
 		if rErr != nil {
 			c.Logger.Errorf("Failed to resolve host %s: %v", c.serverURL.Hostname(), rErr)
 			return
 		}
-		wsURL = strings.Replace(wsURL, c.serverURL.Hostname(), ip, 1)
+		wsURLStr = strings.Replace(wsURL.String(), c.serverURL.Hostname(), ip, 1)
 		c.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
 	}
 
-	wsConn, _, wErr := c.wsConfig.DialContext(context.Background(), wsURL, c.httpHeaders)
-	if wErr != nil {
-		c.Logger.Errorf("Can't connect to Server address: %s", wErr)
+	if wsURL.Scheme == "wss" {
+		c.wsConfig.TLSClientConfig.InsecureSkipVerify = true
+	}
+
+	wsConn, _, cErr := c.wsConfig.DialContext(context.Background(), wsURLStr, c.httpHeaders)
+	if cErr != nil {
+		c.Logger.Errorf("Can't connect to Server address: %s", cErr)
 		return
 	}
 	session := c.newWebSocketSession(wsConn)
