@@ -169,13 +169,17 @@ When the flag `-keystore` is provided, Slider will store a new KeyPair in disk, 
 ##### `-port`:
 By default, Slider listens in port `8080`. Specify any other port using this flag.
 
-##### `-template`:
-Mimic "server" HTTP Response Header, web page and status code of web server passed as parameter.
+##### `-http-template`, `-http-server-header`, `-http-status-code`:
+Allows mimicking another web server while accepts setting a status code and a using a file as template.
 
-Apache and Nginx are presented with their default web pages and a 200 status code. Other templates might be presented
-in the form of error pages with their respective status code.
+This may help you blend Slider with your environment.
 
-##### `-redirect`:
+Size of the file is currently limited to 2MB which should be enough for an HTML template with embedded images.
+
+##### `-http-version`:
+Disabled by default, it will serve a JSON with current Proto and Slider version at `/version`. 
+
+##### `-http-redirect`:
 A redirect parameter must be at least a URL with a valid scheme and host (`http[s]://<host>[:<port>]`).
 
 HTTP connections will be redirected to the given URL while Slider connections will proceed as usual.

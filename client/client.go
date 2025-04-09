@@ -54,7 +54,8 @@ type client struct {
 type listenerConf struct {
 	urlRedirect  *url.URL
 	templatePath string
-	showVersion  bool
+	httpVersion  bool
+	httpHealth   bool
 	serverHeader string
 	statusCode   int
 }
@@ -83,11 +84,12 @@ func NewClient(args []string) {
 	port := clientFlags.Int("port", 8081, "Listener port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	templatePath := clientFlags.String("template", "", "Path of a default file to serve (listener)")
-	serverHeader := clientFlags.String("server-header", "", "Sets a server header value (listener)")
-	httpRedirect := clientFlags.String("redirect", "", "Redirects incoming HTTP to given URL (listener)")
-	statusCode := clientFlags.Int("status-code", 200, "Status code [200|301|302|400|401|403|500|502|503] (listener)")
-	httpVersion := clientFlags.Bool("show-version", false, "Enables /version HTTP path")
+	templatePath := clientFlags.String("http-template", "", "Path of a default file to serve (listener)")
+	serverHeader := clientFlags.String("http-server-header", "", "Sets a server header value (listener)")
+	httpRedirect := clientFlags.String("http-redirect", "", "Redirects incoming HTTP to given URL (listener)")
+	statusCode := clientFlags.Int("http-status-code", 200, "Template Status code [200|301|302|400|401|403|500|502|503] (listener)")
+	httpVersion := clientFlags.Bool("http-version", false, "Enables /version HTTP path")
+	httpHealth := clientFlags.Bool("http-health", false, "Enables /health HTTP path")
 	customDNS := clientFlags.String("dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
 	clientFlags.Usage = func() {
 		fmt.Println(clientHelp)
@@ -127,7 +129,8 @@ func NewClient(args []string) {
 		firstRun: true,
 		listenerConf: &listenerConf{
 			urlRedirect: &url.URL{},
-			showVersion: *httpVersion,
+			httpVersion: *httpVersion,
+			httpHealth:  *httpHealth,
 		},
 	}
 
@@ -174,8 +177,8 @@ func NewClient(args []string) {
 
 		c.listenerConf.statusCode = *statusCode
 		if !conf.CheckStatusCode(*statusCode) {
-			c.Logger.Warnf("Invalid status code \"%d\", will use \"200\"", *statusCode)
-			c.listenerConf.statusCode = 200
+			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", *statusCode, http.StatusOK)
+			c.listenerConf.statusCode = http.StatusOK
 		}
 
 		if *httpRedirect != "" {

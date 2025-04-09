@@ -49,7 +49,8 @@ type server struct {
 	serverHeader         string
 	statusCode           int
 	serverKey            ssh.Signer
-	showVersion          bool
+	httpVersion          bool
+	httpHealth           bool
 	CertificateAuthority *scrypt.CertificateAuthority
 }
 
@@ -64,11 +65,12 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading and/or storing a Server key")
-	templatePath := serverFlags.String("template", "", "Path of a default file to serve")
-	serverHeader := serverFlags.String("server-header", "", "Sets a server header value")
-	httpRedirect := serverFlags.String("redirect", "", "Redirects incoming HTTP to given URL")
-	statusCode := serverFlags.Int("status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
-	httpVersion := serverFlags.Bool("show-version", false, "Enables /version HTTP path")
+	templatePath := serverFlags.String("http-template", "", "Path of a default file to serve")
+	serverHeader := serverFlags.String("http-server-header", "", "Sets a server header value")
+	httpRedirect := serverFlags.String("http-redirect", "", "Redirects incoming HTTP to given URL")
+	statusCode := serverFlags.Int("http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
+	httpVersion := serverFlags.Bool("http-version", false, "Enables /version HTTP path")
+	httpHealth := serverFlags.Bool("http-health", false, "Enables /health HTTP path")
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -115,7 +117,8 @@ func NewServer(args []string) {
 		authOn:       *auth,
 		urlRedirect:  &url.URL{},
 		serverHeader: *serverHeader,
-		showVersion:  *httpVersion,
+		httpVersion:  *httpVersion,
+		httpHealth:   *httpHealth,
 	}
 
 	if *templatePath != "" {
@@ -128,8 +131,8 @@ func NewServer(args []string) {
 
 	s.statusCode = *statusCode
 	if !conf.CheckStatusCode(*statusCode) {
-		s.Logger.Warnf("Invalid status code \"%d\", will use \"200\"", *statusCode)
-		s.statusCode = 200
+		s.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", *statusCode, http.StatusOK)
+		s.statusCode = http.StatusOK
 	}
 
 	// Ensure a minimum keepalive

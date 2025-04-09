@@ -12,7 +12,7 @@ import (
 
 type VersionHolder struct {
 	ProtoVersion string `json:"ProtoVersion"`
-	Version      string `json:"version"`
+	Version      string `json:"Version"`
 }
 
 type HttpHandler struct {
@@ -20,7 +20,8 @@ type HttpHandler struct {
 	ServerHeader string
 	StatusCode   int
 	UrlRedirect  *url.URL
-	ShowVersion  bool
+	VersionOn    bool
+	HealthOn     bool
 }
 
 // 2MB is a lot for an HTML template, but just in case want to embed images
@@ -88,10 +89,12 @@ func HandleHttpRequest(w http.ResponseWriter, r *http.Request, handler *HttpHand
 			return fmt.Errorf("template is not accesible: %v", tErr)
 		}
 	case "/health":
-		_, _ = w.Write([]byte("OK"))
-		return nil
+		if handler.HealthOn {
+			_, _ = w.Write([]byte("OK"))
+			return nil
+		}
 	case "/version":
-		if handler.ShowVersion {
+		if handler.VersionOn {
 			r.Header.Add("Content-Type", "application/json")
 			vRes, mErr := json.Marshal(HttpVersionResponse)
 			if mErr != nil {

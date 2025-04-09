@@ -20,7 +20,8 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 		ServerHeader: c.serverHeader,
 		StatusCode:   c.statusCode,
 		UrlRedirect:  c.urlRedirect,
-		ShowVersion:  c.showVersion,
+		VersionOn:    c.httpVersion,
+		HealthOn:     c.httpHealth,
 	}); hErr != nil {
 		c.Logger.Errorf("Error handling HTTP request: %v", hErr)
 		w.WriteHeader(http.StatusInternalServerError)

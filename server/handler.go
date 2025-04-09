@@ -23,7 +23,8 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		ServerHeader: s.serverHeader,
 		StatusCode:   s.statusCode,
 		UrlRedirect:  s.urlRedirect,
-		ShowVersion:  s.showVersion,
+		VersionOn:    s.httpVersion,
+		HealthOn:     s.httpHealth,
 	}); hErr != nil {
 		s.Logger.Errorf("Error handling HTTP request: %v", hErr)
 		w.WriteHeader(http.StatusInternalServerError)
