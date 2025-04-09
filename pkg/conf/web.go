@@ -3,6 +3,7 @@ package conf
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,6 +22,9 @@ type HttpHandler struct {
 	UrlRedirect  *url.URL
 	ShowVersion  bool
 }
+
+// 2MB is a lot for an HTML template, but just in case want to embed images
+const maxTemplateSize = 2
 
 var HttpVersionResponse = &VersionHolder{
 	ProtoVersion: proto,
@@ -50,6 +54,10 @@ func TemplateExists(filePath string) error {
 	}
 	if fileInfo.IsDir() {
 		return fmt.Errorf("%s is a directory", filePath)
+	}
+	sizeMB := float64(fileInfo.Size()) / math.Pow(1000, 2)
+	if sizeMB > maxTemplateSize {
+		return fmt.Errorf("%s should be less than %dMB", filePath, maxTemplateSize)
 	}
 
 	return nil
