@@ -544,17 +544,8 @@ This flag could either be a fingerprint string or a file containing a list finge
 a different Slider Server. This is useful when we want to be able to authorize several Servers by their public key.
 A connection from a Server with a fingerprint not successfully verified will be rejected.
 
-##### `-template`:
-Mimic "server" HTTP Response Header, web page and status code of web server passed as parameter.
-
-Apache and Nginx are presented with their default web pages and a 200 status code. Other templates might be presented 
-in the form of error pages with their respective status code. 
-
-##### `-redirect`:
-A redirect parameter must be at least a URL with a valid scheme and host (`http[s]://<host>[:<port>]`).
-
-HTTP connections will be redirected to the given URL while Slider connections will proceed as usual. 
-Can be used in combination with `-template` to include a server header in the response headers.
+##### HTTP flags:
+Same considerations as in Server HTTP flags documentation applies.
 
 #### Reverse Client Flags
 
