@@ -3,7 +3,6 @@ package conf
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,9 +55,9 @@ func CheckTemplate(filePath string) error {
 	if fileInfo.IsDir() {
 		return fmt.Errorf("\"%s\" is a directory", filePath)
 	}
-	sizeMB := float64(fileInfo.Size()) / math.Pow(1000, 2)
-	if sizeMB > maxTemplateSize {
-		return fmt.Errorf("\"%s\" should be less than %dMB", filePath, maxTemplateSize)
+	sizeMiB := float64(fileInfo.Size()) / (1024 * 1024)
+	if sizeMiB > maxTemplateSize {
+		return fmt.Errorf("\"%s\" should be less than %dMiB", filePath, maxTemplateSize)
 	}
 
 	return nil
