@@ -9,30 +9,24 @@ import (
 func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		if r.Header.Get("Sec-WebSocket-Protocol") == conf.ProtoVersion {
+		if r.Header.Get("Sec-WebSocket-Protocol") == conf.HttpVersionResponse.ProtoVersion {
 			c.handleWebSocket(w, r)
 			return
 		}
 	}
 
-	w.Header().Add("server", c.webTemplate.ServerHeader)
-
-	if c.webRedirect.String() != "" {
-		http.Redirect(w, r, c.webRedirect.String(), http.StatusFound)
-		return
+	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
+		TemplatePath: c.httpTemplate,
+		ServerHeader: c.serverHeader,
+		StatusCode:   c.statusCode,
+		UrlRedirect:  c.urlRedirect,
+		ShowVersion:  c.showVersion,
+	}); hErr != nil {
+		c.Logger.Errorf("Error handling HTTP request: %v", hErr)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Internal Server Error"))
 	}
 
-	var wErr error
-	switch r.URL.Path {
-	case "/":
-		w.WriteHeader(c.webTemplate.StatusCode)
-		_, wErr = w.Write([]byte(c.webTemplate.HtmlTemplate))
-	default:
-		http.Redirect(w, r, "/", http.StatusMovedPermanently)
-	}
-	if wErr != nil {
-		c.Logger.Errorf("handleClient: %v", wErr)
-	}
 }
 
 func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {

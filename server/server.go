@@ -14,7 +14,6 @@ import (
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
-	"slider/pkg/web"
 	"sync"
 	"syscall"
 	"time"
@@ -45,9 +44,12 @@ type server struct {
 	authOn               bool
 	certSaveOn           bool
 	keepalive            time.Duration
-	webTemplate          web.Template
-	webRedirect          *url.URL
+	urlRedirect          *url.URL
+	httpTemplate         string
+	serverHeader         string
+	statusCode           int
 	serverKey            ssh.Signer
+	showVersion          bool
 	CertificateAuthority *scrypt.CertificateAuthority
 }
 
@@ -61,9 +63,12 @@ func NewServer(args []string) {
 	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
-	keyPath := serverFlags.String("keypath", "", "Path for reading or storing a Server key")
-	webTemplate := serverFlags.String("template", "default", "Mimic web server page [apache|iis|nginx|tomcat]")
-	webRedirect := serverFlags.String("redirect", "", "Redirect incoming HTTP connections to given URL")
+	keyPath := serverFlags.String("keypath", "", "Path for reading and/or storing a Server key")
+	httpTemplate := serverFlags.String("template", "", "Path of a default file to serve")
+	serverHeader := serverFlags.String("server-header", "", "Sets a server header value")
+	httpRedirect := serverFlags.String("redirect", "", "Redirects incoming HTTP to given URL")
+	statusCode := serverFlags.Int("status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
+	httpVersion := serverFlags.Bool("show-version", false, "Enables /version HTTP path")
 	serverFlags.Usage = func() {
 		fmt.Println(serverHelp)
 		serverFlags.PrintDefaults()
@@ -106,9 +111,24 @@ func NewServer(args []string) {
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
-		certJarFile: *certJarFile,
-		authOn:      *auth,
-		webRedirect: &url.URL{},
+		certJarFile:  *certJarFile,
+		authOn:       *auth,
+		urlRedirect:  &url.URL{},
+		serverHeader: *serverHeader,
+		showVersion:  *httpVersion,
+	}
+
+	if *httpTemplate != "" {
+		if _, fErr := os.Stat(*httpTemplate); fErr != nil {
+			s.Logger.Fatalf("Invalid httpTemplate path \"%s\"", *httpTemplate)
+		}
+		s.httpTemplate = *httpTemplate
+	}
+
+	s.statusCode = *statusCode
+	if !conf.CheckStatusCode(*statusCode) {
+		s.Logger.Warnf("Invalid status code \"%d\", will use \"200\"", *statusCode)
+		s.statusCode = 200
 	}
 
 	// Ensure a minimum keepalive
@@ -191,19 +211,13 @@ func NewServer(args []string) {
 		}
 	}
 
-	t, tErr := web.GetTemplate(*webTemplate)
-	if tErr != nil {
-		s.Logger.Errorf("%v", tErr)
-	}
-	s.webTemplate = t
-
-	if *webRedirect != "" {
-		wr, wErr := conf.ResolveURL(*webRedirect)
+	if *httpRedirect != "" {
+		wr, wErr := conf.ResolveURL(*httpRedirect)
 		if wErr != nil {
 			s.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 		}
-		s.webRedirect = wr
-		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.webRedirect)
+		s.urlRedirect = wr
+		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.urlRedirect)
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", *address, *port)

@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-var ProtoVersion = "v1"
-
 // Timeout acts as the general Timeout value
 var Timeout = 10 * time.Second
 
