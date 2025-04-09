@@ -246,6 +246,9 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		if conf.FlagIsDefined(clientFlags, "retry") {
 			flagExclusion = append(flagExclusion, "-retry")
 		}
+		if conf.FlagIsDefined(clientFlags, "dns") {
+			flagExclusion = append(flagExclusion, "-dns")
+		}
 		if len(clientFlags.Args()) > 0 {
 			flagExclusion = append(flagExclusion, clientFlags.Args()...)
 		}
@@ -260,20 +263,23 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		if conf.FlagIsDefined(clientFlags, "port") {
 			flagExclusion = append(flagExclusion, "-port")
 		}
-		if conf.FlagIsDefined(clientFlags, "template") {
-			flagExclusion = append(flagExclusion, "-template")
+		if conf.FlagIsDefined(clientFlags, "html-template") {
+			flagExclusion = append(flagExclusion, "-html-template")
 		}
-		if conf.FlagIsDefined(clientFlags, "server-header") {
-			flagExclusion = append(flagExclusion, "-server-header")
+		if conf.FlagIsDefined(clientFlags, "html-server-header") {
+			flagExclusion = append(flagExclusion, "-html-server-header")
 		}
-		if conf.FlagIsDefined(clientFlags, "status-code") {
-			flagExclusion = append(flagExclusion, "-status-code")
+		if conf.FlagIsDefined(clientFlags, "html-status-code") {
+			flagExclusion = append(flagExclusion, "-html-status-code")
 		}
-		if conf.FlagIsDefined(clientFlags, "redirect") {
-			flagExclusion = append(flagExclusion, "-redirect")
+		if conf.FlagIsDefined(clientFlags, "html-redirect") {
+			flagExclusion = append(flagExclusion, "-html-redirect")
 		}
-		if conf.FlagIsDefined(clientFlags, "dns") {
-			flagExclusion = append(flagExclusion, "-dns")
+		if conf.FlagIsDefined(clientFlags, "html-version") {
+			flagExclusion = append(flagExclusion, "-html-version")
+		}
+		if conf.FlagIsDefined(clientFlags, "html-health") {
+			flagExclusion = append(flagExclusion, "-html-health")
 		}
 		argNumber := len(clientFlags.Args())
 		if argNumber != 1 {

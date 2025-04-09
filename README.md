@@ -174,7 +174,7 @@ Allows mimicking another web server while accepts setting a status code and a us
 
 This may help you blend Slider with your environment.
 
-Size of the file is currently limited to 2MB which should be enough for an HTML template with embedded images.
+Size of the file is currently limited to 2MiB which should be enough for an HTML template with embedded images.
 
 ##### `-http-version`:
 Disabled by default, it will serve a JSON with current Proto and Slider version at `/version`. 
