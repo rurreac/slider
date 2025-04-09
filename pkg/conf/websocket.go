@@ -1,6 +1,7 @@
 package conf
 
 import (
+	"crypto/tls"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"net/url"
@@ -14,25 +15,25 @@ var DefaultWebSocketDialer = &websocket.Dialer{
 	// Use Default Buffer Size
 	ReadBufferSize:  0,
 	WriteBufferSize: 0,
+	TLSClientConfig: &tls.Config{},
 }
 
 var DefaultWebSocketUpgrader = &websocket.Upgrader{
 	HandshakeTimeout: Timeout,
 }
 
-func FormatToWS(u *url.URL) (string, error) {
-	var wsURL string
+func FormatToWS(u *url.URL) (*url.URL, error) {
 	switch u.Scheme {
 	case "http":
-		wsURL = fmt.Sprintf("ws://%s", strings.TrimPrefix(u.String(), u.Scheme+"://"))
+		u.Scheme = "ws"
 	case "https":
-		wsURL = fmt.Sprintf("wss://%s", strings.TrimPrefix(u.String(), u.Scheme+"://"))
+		u.Scheme = "wss"
 	case "":
-		wsURL = fmt.Sprintf("ws://%s", u.String())
+		u.Scheme = "ws"
 	default:
-		return "", fmt.Errorf("unknown client url scheme \"%s\"", u.Scheme)
+		return u, fmt.Errorf("unknown client url scheme \"%s\"", u.Scheme)
 	}
-	return wsURL, nil
+	return u, nil
 }
 
 func ResolveURL(rawURL string) (*url.URL, error) {

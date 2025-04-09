@@ -12,32 +12,28 @@ import (
 func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		s.handleWebSocket(w, r)
-		return
+		if r.Header.Get("Sec-WebSocket-Protocol") == conf.HttpVersionResponse.ProtoVersion {
+			s.handleWebSocket(w, r)
+			return
+		}
 	}
 
-	w.Header().Add("server", s.webTemplate.ServerHeader)
-
-	if s.webRedirect.String() != "" {
-		http.Redirect(w, r, s.webRedirect.String(), http.StatusFound)
-		return
-	}
-
-	var wErr error
-	switch r.URL.Path {
-	case "/":
-		w.WriteHeader(s.webTemplate.StatusCode)
-		_, wErr = w.Write([]byte(s.webTemplate.HtmlTemplate))
-	default:
-		http.Redirect(w, r, "/", http.StatusMovedPermanently)
-	}
-	if wErr != nil {
-		s.Logger.Errorf("handleClient: %v", wErr)
+	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
+		TemplatePath: s.templatePath,
+		ServerHeader: s.serverHeader,
+		StatusCode:   s.statusCode,
+		UrlRedirect:  s.urlRedirect,
+		VersionOn:    s.httpVersion,
+		HealthOn:     s.httpHealth,
+	}); hErr != nil {
+		s.Logger.Errorf("Error handling HTTP request: %v", hErr)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("Internal Server Error"))
 	}
 }
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	var upgrader = conf.DefaultWebSocketUpgrader
+	upgrader := conf.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -61,18 +57,22 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 		return
 	}
 
+	wsURLStr := wsURL.String()
 	if customDNS != "" {
 		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
 		if dErr != nil {
 			s.Logger.Errorf("Failed to resolve host %s: %v", clientUrl.Hostname(), dErr)
 			return
 		}
-
-		wsURL = strings.Replace(wsURL, clientUrl.Hostname(), ip, 1)
+		wsURLStr = strings.Replace(wsURL.String(), clientUrl.Hostname(), ip, 1)
+		s.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
 	}
 
 	wsConfig := conf.DefaultWebSocketDialer
-	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURL, http.Header{})
+	if wsURL.Scheme == "wss" {
+		wsConfig.TLSClientConfig.InsecureSkipVerify = true
+	}
+	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{})
 	if err != nil {
 		s.Logger.Errorf(
 			"Failed to open a WebSocket connection to \"%s\": %v", wsURL, err)
