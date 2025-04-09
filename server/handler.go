@@ -19,7 +19,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
-		TemplatePath: s.httpTemplate,
+		TemplatePath: s.templatePath,
 		ServerHeader: s.serverHeader,
 		StatusCode:   s.statusCode,
 		UrlRedirect:  s.urlRedirect,

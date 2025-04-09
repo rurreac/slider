@@ -53,7 +53,7 @@ type client struct {
 
 type listenerConf struct {
 	urlRedirect  *url.URL
-	httpTemplate string
+	templatePath string
 	showVersion  bool
 	serverHeader string
 	statusCode   int
@@ -83,7 +83,7 @@ func NewClient(args []string) {
 	port := clientFlags.Int("port", 8081, "Listener port")
 	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
 	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	httpTemplate := clientFlags.String("template", "", "Path of a default file to serve (listener)")
+	templatePath := clientFlags.String("template", "", "Path of a default file to serve (listener)")
 	serverHeader := clientFlags.String("server-header", "", "Sets a server header value (listener)")
 	httpRedirect := clientFlags.String("redirect", "", "Redirects incoming HTTP to given URL (listener)")
 	statusCode := clientFlags.Int("status-code", 200, "Status code [200|301|302|400|401|403|500|502|503] (listener)")
@@ -164,11 +164,12 @@ func NewClient(args []string) {
 		c.isListener = *listener
 		c.listenerConf.serverHeader = *serverHeader
 
-		if *httpTemplate != "" {
-			if _, fErr := os.Stat(*httpTemplate); fErr != nil {
-				c.Logger.Fatalf("Invalid httpTemplate path \"%s\"", *httpTemplate)
+		if *templatePath != "" {
+			tErr := conf.CheckTemplate(*templatePath)
+			if tErr != nil {
+				c.Logger.Fatalf("Wrong template: %s", tErr)
 			}
-			c.listenerConf.httpTemplate = *httpTemplate
+			c.listenerConf.templatePath = *templatePath
 		}
 
 		c.listenerConf.statusCode = *statusCode

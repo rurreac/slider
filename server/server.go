@@ -45,7 +45,7 @@ type server struct {
 	certSaveOn           bool
 	keepalive            time.Duration
 	urlRedirect          *url.URL
-	httpTemplate         string
+	templatePath         string
 	serverHeader         string
 	statusCode           int
 	serverKey            ssh.Signer
@@ -64,7 +64,7 @@ func NewServer(args []string) {
 	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
 	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
 	keyPath := serverFlags.String("keypath", "", "Path for reading and/or storing a Server key")
-	httpTemplate := serverFlags.String("template", "", "Path of a default file to serve")
+	templatePath := serverFlags.String("template", "", "Path of a default file to serve")
 	serverHeader := serverFlags.String("server-header", "", "Sets a server header value")
 	httpRedirect := serverFlags.String("redirect", "", "Redirects incoming HTTP to given URL")
 	statusCode := serverFlags.Int("status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
@@ -118,11 +118,12 @@ func NewServer(args []string) {
 		showVersion:  *httpVersion,
 	}
 
-	if *httpTemplate != "" {
-		if _, fErr := os.Stat(*httpTemplate); fErr != nil {
-			s.Logger.Fatalf("Invalid httpTemplate path \"%s\"", *httpTemplate)
+	if *templatePath != "" {
+		tErr := conf.CheckTemplate(*templatePath)
+		if tErr != nil {
+			s.Logger.Fatalf("Wrong template: %s", tErr)
 		}
-		s.httpTemplate = *httpTemplate
+		s.templatePath = *templatePath
 	}
 
 	s.statusCode = *statusCode

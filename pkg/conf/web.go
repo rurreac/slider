@@ -47,17 +47,17 @@ func CheckStatusCode(statusCode int) bool {
 	return slices.Contains(acceptedCodes, statusCode)
 }
 
-func TemplateExists(filePath string) error {
+func CheckTemplate(filePath string) error {
 	fileInfo, fErr := os.Stat(filePath)
 	if fErr != nil {
-		return fmt.Errorf("file does not exist: %s", filePath)
+		return fmt.Errorf("\"%s\" does not exist", filePath)
 	}
 	if fileInfo.IsDir() {
-		return fmt.Errorf("%s is a directory", filePath)
+		return fmt.Errorf("\"%s\" is a directory", filePath)
 	}
 	sizeMB := float64(fileInfo.Size()) / math.Pow(1000, 2)
 	if sizeMB > maxTemplateSize {
-		return fmt.Errorf("%s should be less than %dMB", filePath, maxTemplateSize)
+		return fmt.Errorf("\"%s\" should be less than %dMB", filePath, maxTemplateSize)
 	}
 
 	return nil
@@ -74,17 +74,18 @@ func HandleHttpRequest(w http.ResponseWriter, r *http.Request, handler *HttpHand
 	switch r.URL.Path {
 	case "/":
 		if handler.TemplatePath != "" {
-			tErr := TemplateExists(handler.TemplatePath)
+			// Double-checking just in case the template was changed after stating up
+			tErr := CheckTemplate(handler.TemplatePath)
 			if tErr == nil {
 				fb, rErr := os.ReadFile(handler.TemplatePath)
 				if rErr != nil {
-					return fmt.Errorf("failed to read HTTP template: %v", rErr)
+					return fmt.Errorf("failed to read HTTP template \"%v\"", rErr)
 				}
 				w.WriteHeader(handler.StatusCode)
 				_, _ = w.Write(fb)
 				return nil
 			}
-			return fmt.Errorf("template \"%s\" is not accesible: %v", handler.TemplatePath, tErr)
+			return fmt.Errorf("template is not accesible: %v", tErr)
 		}
 	case "/health":
 		_, _ = w.Write([]byte("OK"))

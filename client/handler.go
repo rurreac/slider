@@ -16,7 +16,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
-		TemplatePath: c.httpTemplate,
+		TemplatePath: c.templatePath,
 		ServerHeader: c.serverHeader,
 		StatusCode:   c.statusCode,
 		UrlRedirect:  c.urlRedirect,
