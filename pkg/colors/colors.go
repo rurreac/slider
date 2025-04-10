@@ -1,7 +1,7 @@
 package colors
 
 type consoleColors struct {
-	Ok, Debug, Warn, Error, System []byte
+	Ok, Info, Debug, Warn, Error, System, Clear, Home []byte
 }
 
 type logColors struct {
@@ -12,12 +12,16 @@ type logColors struct {
 const keyEscape = 27
 
 var (
-	Reset   = []byte{keyEscape, '[', '0', 'm'}
-	Console = consoleColors{
-		Ok:     []byte{keyEscape, '[', '1', ';', '3', '2', 'm'}, // 36  37 35 42
-		Debug:  []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
-		Warn:   []byte{keyEscape, '[', '0', ';', '3', '3', 'm'},
+	Reset      = []byte{keyEscape, 'c'}
+	ResetColor = []byte{keyEscape, '[', '0', 'm'}
+	Clear      = []byte{keyEscape, '[', '2', 'J'}
+	Home       = []byte{keyEscape, '[', '2', 'H'}
+	Console    = consoleColors{
+		Ok:     []byte{keyEscape, '[', '1', ';', '3', '2', 'm'},
+		Info:   []byte{keyEscape, '[', '1', ';', '9', '0', 'm'},
 		Error:  []byte{keyEscape, '[', '1', ';', '9', '1', 'm'},
+		Warn:   []byte{keyEscape, '[', '0', ';', '9', '3', 'm'},
+		Debug:  []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
 		System: []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
 	}
 	Log = logColors{

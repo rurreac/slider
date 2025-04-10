@@ -69,11 +69,11 @@ func NewDummyLog() *log.Logger {
 func (l *Logger) WithColors() {
 	l.colorOn = true
 	// Log Level
-	DEBUG = string(colors.Log.Debug) + DEBUG + string(colors.Reset)
-	INFO = string(colors.Log.Info) + INFO + string(colors.Reset)
-	WARN = string(colors.Log.Warn) + WARN + string(colors.Reset)
-	ERROR = string(colors.Log.Error) + ERROR + string(colors.Reset)
-	FATAL = string(colors.Log.Fatal) + FATAL + string(colors.Reset)
+	DEBUG = string(colors.Log.Debug) + DEBUG + string(colors.ResetColor)
+	INFO = string(colors.Log.Info) + INFO + string(colors.ResetColor)
+	WARN = string(colors.Log.Warn) + WARN + string(colors.ResetColor)
+	ERROR = string(colors.Log.Error) + ERROR + string(colors.ResetColor)
+	FATAL = string(colors.Log.Fatal) + FATAL + string(colors.ResetColor)
 }
 
 func (l *Logger) LogToBuffer() {
