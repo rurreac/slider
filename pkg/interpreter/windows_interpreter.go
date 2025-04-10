@@ -17,6 +17,7 @@ type Interpreter struct {
 	Arch              string   `json:"Arch"`
 	System            string   `json:"System"`
 	User              string   `json:"User"`
+	HomeDir           string   `json:"HomeDir"`
 	Hostname          string   `json:"Hostname"`
 	Shell             string   `json:"Shell"`
 	ShellArgs         []string `json:"ShellArgs"`
@@ -69,8 +70,10 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 	i.User = "--"
+	i.HomeDir = "C:\\"
 	if u, uErr := user.Current(); uErr == nil {
 		i.User = u.Username
+		i.HomeDir = u.HomeDir
 		fUserName := strings.Split(u.Username, string(os.PathSeparator))
 		// If the username does not identify a Domain User
 		// remove the hostname part from the username

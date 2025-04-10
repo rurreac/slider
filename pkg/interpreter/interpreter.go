@@ -16,6 +16,7 @@ type Interpreter struct {
 	Arch          string   `json:"Arch"`
 	System        string   `json:"System"`
 	User          string   `json:"User"`
+	HomeDir       string   `json:"HomeDir"`
 	Hostname      string   `json:"Hostname"`
 	Shell         string   `json:"Shell"`
 	ShellArgs     []string `json:"ShellArgs"`
@@ -83,8 +84,10 @@ func NewInterpreter() (*Interpreter, error) {
 	i.Arch = runtime.GOARCH
 	i.System = runtime.GOOS
 	i.User = "--"
+	i.HomeDir = "/"
 	if u, uErr := user.Current(); uErr == nil {
 		i.User = u.Username
+		i.HomeDir = u.HomeDir
 	}
 	var hErr error
 	i.Hostname, hErr = os.Hostname()
