@@ -6,7 +6,8 @@ import (
 	"text/tabwriter"
 )
 
-const serverHelp = `
+const (
+	serverHelp = `
 Slider Server
 
   Creates a new Slider Server instance and waits for 
@@ -19,28 +20,28 @@ Usage: <slider_server> [flags]
 
 Flags:`
 
-// Console System Commands
-const bgCmd = "bg"
-const bgDesc = "Puts Console into background and returns to logging output"
-const exitCmd = "exit"
-const exitDesc = "Exits Console and terminates the Server"
-const helpCmd = "help"
-const helpDesc = "Shows this output"
+	// Console System Commands
+	bgCmd    = "bg"
+	bgDesc   = "Puts Console into background and returns to logging output"
+	exitCmd  = "exit"
+	exitDesc = "Exits Console and terminates the Server"
+	helpCmd  = "help"
+	helpDesc = "Shows this output"
 
-// Console Execute Command
-const executeCmd = "execute"
-const executeDesc = "Runs a command remotely and returns the output"
-const executeUsage = `
+	// Console Execute Command
+	executeCmd   = "execute"
+	executeDesc  = "Runs a command remotely and returns the output"
+	executeUsage = `
 
 Usage: execute [flags] [command]
 
 Flags:
 `
 
-// Console Sessions Command
-const sessionsCmd = "sessions"
-const sessionsDesc = "Interacts with Client Sessions"
-const sessionsUsage = `
+	// Console Sessions Command
+	sessionsCmd   = "sessions"
+	sessionsDesc  = "Interacts with Client Sessions"
+	sessionsUsage = `
 
 When run without parameters, all available Sessions will be listed.
 
@@ -49,40 +50,40 @@ Usage: sessions [flags]
 Flags:
 `
 
-// Console Socks Command
-const socksCmd = "socks"
-const socksDesc = "Runs or Kills a Reverse Socks server"
-const socksUsage = `
+	// Console Socks Command
+	socksCmd   = "socks"
+	socksDesc  = "Runs or Kills a Reverse Socks server"
+	socksUsage = `
 
 Usage: socks [flags]
 
 Flags:
 `
 
-// Console SSH Command
-const sshCmd = "ssh"
-const sshDesc = "Opens an SSH session to a client"
-const sshUsage = `
+	// Console SSH Command
+	sshCmd   = "ssh"
+	sshDesc  = "Opens an SSH session to a client"
+	sshUsage = `
 
 Usage: ssh [flags]
 
 Flags:
 `
 
-// Console Shell Command
-const shellCmd = "shell"
-const shellDesc = "Binds to a client Shell"
-const shellUsage = `
+	// Console Shell Command
+	shellCmd   = "shell"
+	shellDesc  = "Binds to a client Shell"
+	shellUsage = `
 
 Usage: shell [flags]
 
 Flags:
 `
 
-// Console Upload Command
-const uploadCmd = "upload"
-const uploadDesc = "Uploads file passed as an argument to Client"
-const uploadUsage = `
+	// Console Upload Command
+	uploadCmd   = "upload"
+	uploadDesc  = "Uploads file passed as an argument to Client"
+	uploadUsage = `
 
 Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
 Use -sftp flag for more reliable transfer of large files with progress reporting.
@@ -92,10 +93,10 @@ Usage: upload [flags] [src] [dst]
 Flags:
 `
 
-// Console Download Command
-const downloadCmd = "download"
-const downloadDesc = "Downloads file passed as an argument from Client"
-const downloadUsage = `
+	// Console Download Command
+	downloadCmd   = "download"
+	downloadDesc  = "Downloads file passed as an argument from Client"
+	downloadUsage = `
 
 * If no destination name is given, file will be downloaded with the same basename to the Server CWD.
 * Downloading from a file list does not allow specifying destination.
@@ -106,10 +107,10 @@ Usage: download [flags] [src] [dst]
 Flags:
 `
 
-// Console Cert Command
-const certsCmd = "certs"
-const certsDesc = "Interacts with the Server Certificate Jar"
-const certsUsage = `
+	// Console Cert Command
+	certsCmd   = "certs"
+	certsDesc  = "Interacts with the Server Certificate Jar"
+	certsUsage = `
 
 When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
 
@@ -118,10 +119,10 @@ Usage: certs [flags]
 Flags:
 `
 
-// Console Client Connect Command
-const connectCmd = "connect"
-const connectDesc = "Receives the address of a Client to connect to"
-const connectUsage = `
+	// Console Client Connect Command
+	connectCmd   = "connect"
+	connectDesc  = "Receives the address of a Client to connect to"
+	connectUsage = `
 
 Connects to a Client configured as Listener and creates a new Session
 
@@ -129,6 +130,7 @@ Usage: connect [flags] <[client_address]:port>
 
 Flags:
 `
+)
 
 type commandStruct struct {
 	desc    string
@@ -193,7 +195,8 @@ func (s *server) initCommands() map[string]commandStruct {
 func (s *server) printConsoleHelp() {
 	tw := new(tabwriter.Writer)
 	tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintf(tw, "\n\tCommands\tDescription\t\n\n")
+	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
+	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 	commands := s.initCommands()
 	var cmdNames []string
 
