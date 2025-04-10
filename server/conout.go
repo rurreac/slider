@@ -13,8 +13,12 @@ var (
 	debugColor  = colors.Console.Debug
 	errorColor  = colors.Console.Error
 	okColor     = colors.Console.Ok
-	resetColor  = colors.Reset
+	resetColor  = colors.ResetColor
 	systemColor = colors.Console.System
+	infoColor   = colors.Console.Info
+	clearScreen = colors.Clear
+	home        = colors.Home
+	reset       = colors.Reset
 )
 
 func setConsoleColors() {
@@ -40,6 +44,24 @@ func (c *Console) PrintlnWarn(m string, args ...interface{}) {
 		msg,
 		string(resetColor),
 	)
+}
+
+func (c *Console) PrintlnInfo(m string, args ...interface{}) {
+	msg := fmt.Sprintf(m, args...)
+	fmt.Printf(
+		"\r%s%s%s\r\n",
+		string(infoColor),
+		msg,
+		string(resetColor),
+	)
+}
+
+func (c *Console) clearScreen() {
+	fmt.Printf("%s%s", clearScreen, home)
+}
+
+func (c *Console) resetScreen() {
+	fmt.Printf("%s", reset)
 }
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
@@ -84,8 +106,8 @@ func (c *Console) Println(m string) {
 	c.Output.Printf("\r%s\n", m)
 }
 
-func (c *Console) Printf(format string, args ...interface{}) {
-	_, _ = fmt.Fprintf(c.Term, format, args...)
+func (c *Console) TermPrintln(format string, args ...interface{}) {
+	_, _ = fmt.Fprintf(c.Term, fmt.Sprintf("\r%s", format), args...)
 }
 
 func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
