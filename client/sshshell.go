@@ -24,7 +24,10 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		)
 		return
 	}
-	defer func() { _ = sshChan.Close() }()
+	defer func() {
+		s.Logger.Debugf(s.logID+"Closing \"%s\" channel", channel.ChannelType())
+		_ = sshChan.Close()
+	}()
 
 	winChange := make(chan []byte, 10)
 	defer close(winChange)
