@@ -474,7 +474,6 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 			// Stop capture
 			signal.Stop(sig)
 			close(sig)
-			fmt.Printf("\n\n\rInterrupting execute...\n\r")
 			// Manually write SIGQUIT to the channel to stop the process
 			_, _ = sliderClientChannel.Write([]byte{0x03})
 		}
