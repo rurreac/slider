@@ -1,27 +1,16 @@
 package conf
 
 import (
-	"flag"
 	"time"
 )
 
-// Timeout acts as the general Timeout value
+// Timeout acts as the general Timeout defValue
 var Timeout = 10 * time.Second
 
 var dnsTimeout = 5 * time.Second
 
-// Keepalive acts as the general KeepAlive value
+// Keepalive acts as the general KeepAlive defValue
 var Keepalive = 60 * time.Second
 
 // MinKeepAlive is the minimum keepalive allowed duration
 var MinKeepAlive = 5 * time.Second
-
-func FlagIsDefined(flagSet *flag.FlagSet, flagName string) bool {
-	var flagIsUsed bool
-	flagSet.Visit(func(f *flag.Flag) {
-		if f.Name == flagName {
-			flagIsUsed = true
-		}
-	})
-	return flagIsUsed
-}
