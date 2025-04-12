@@ -1,7 +1,7 @@
 package escseq
 
 type conEscChars struct {
-	GreenBold, GreyBold, BlueBrightBold, Yellow, RedBold, CyanBold, Clear, Home []byte
+	GreenBold, GreyBold, BlueBrightBold, YellowBright, Yellow, RedBold, CyanBrightBoldB, CyanBold, Clear, Home []byte
 }
 
 type logColors struct {
@@ -18,12 +18,14 @@ var (
 	CursorClear = []byte{keyEscape, '[', '2', 'J'}
 	CursorHome  = []byte{keyEscape, '[', '2', 'H'}
 	Console     = conEscChars{
-		GreenBold:      []byte{keyEscape, '[', '1', ';', '3', '2', 'm'},
-		GreyBold:       []byte{keyEscape, '[', '1', ';', '9', '0', 'm'},
-		RedBold:        []byte{keyEscape, '[', '1', ';', '9', '1', 'm'},
-		Yellow:         []byte{keyEscape, '[', '0', ';', '9', '3', 'm'},
-		BlueBrightBold: []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
-		CyanBold:       []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
+		GreenBold:       []byte{keyEscape, '[', '1', ';', '3', '2', 'm'},
+		GreyBold:        []byte{keyEscape, '[', '1', ';', '9', '0', 'm'},
+		RedBold:         []byte{keyEscape, '[', '1', ';', '9', '1', 'm'},
+		YellowBright:    []byte{keyEscape, '[', '0', ';', '9', '3', 'm'},
+		Yellow:          []byte{keyEscape, '[', '0', ';', '3', '3', 'm'},
+		BlueBrightBold:  []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
+		CyanBold:        []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
+		CyanBrightBoldB: []byte{keyEscape, '[', '1', ';', '9', '6', 'm'},
 	}
 	Log = logColors{
 		Info:  []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
