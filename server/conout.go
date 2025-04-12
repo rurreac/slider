@@ -3,46 +3,46 @@ package server
 import (
 	"flag"
 	"fmt"
-	"slider/pkg/colors"
+	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
 	"strings"
 )
 
 var (
-	warnColor   = colors.Console.Warn
-	debugColor  = colors.Console.Debug
-	errorColor  = colors.Console.Error
-	okColor     = colors.Console.Ok
-	resetColor  = colors.ResetColor
-	systemColor = colors.Console.System
-	infoColor   = colors.Console.Info
-	clearScreen = colors.Clear
-	home        = colors.Home
-	reset       = colors.Reset
+	yellow         = string(escseq.Console.Yellow)
+	blueBrightBold = string(escseq.Console.BlueBrightBold)
+	redBold        = string(escseq.Console.RedBold)
+	greenBold      = string(escseq.Console.GreenBold)
+	resetColor     = string(escseq.ResetColor)
+	cyanBold       = string(escseq.Console.CyanBold)
+	greyBold       = string(escseq.Console.GreyBold)
+	cursorClear    = string(escseq.CursorClear)
+	cursorHome     = string(escseq.CursorHome)
+	resetScreen    = string(escseq.ResetScreen)
 )
 
 func setConsoleColors() {
 	if !interpreter.IsPtyOn() {
-		warnColor = []byte{}
-		debugColor = []byte{}
-		errorColor = []byte{}
-		okColor = []byte{}
-		systemColor = []byte{}
-		resetColor = []byte{}
+		yellow = ""
+		blueBrightBold = ""
+		redBold = ""
+		greenBold = ""
+		cyanBold = ""
+		resetColor = ""
 	}
 }
 
 func getPrompt() string {
-	return fmt.Sprintf("\rSlider%s>%s ", string(systemColor), string(resetColor))
+	return fmt.Sprintf("\rSlider%s>%s ", cyanBold, resetColor)
 }
 
 func (c *Console) PrintlnWarn(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	fmt.Printf(
 		"\r%s%s%s\r\n",
-		string(warnColor),
+		yellow,
 		msg,
-		string(resetColor),
+		resetColor,
 	)
 }
 
@@ -50,25 +50,25 @@ func (c *Console) PrintlnInfo(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	fmt.Printf(
 		"\r%s%s%s\r\n",
-		string(infoColor),
+		greyBold,
 		msg,
-		string(resetColor),
+		resetColor,
 	)
 }
 
 func (c *Console) clearScreen() {
-	fmt.Printf("%s%s", clearScreen, home)
+	fmt.Printf("%s%s", cursorClear, cursorHome)
 }
 
 func (c *Console) resetScreen() {
-	fmt.Printf("%s", reset)
+	fmt.Printf("%s", resetScreen)
 }
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
 	msg := fmt.Sprintf("%s%s%s",
-		string(warnColor),
+		yellow,
 		selected,
-		string(resetColor))
+		resetColor)
 	c.Output.Printf("\r%s%s\r\n", msg, strings.Join(args, " "))
 }
 
@@ -76,8 +76,8 @@ func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r[%s*%s] %s\r\n",
-		string(debugColor),
-		string(resetColor),
+		blueBrightBold,
+		resetColor,
 		msg,
 	)
 }
@@ -86,8 +86,8 @@ func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r[%s-%s] %s\r\n",
-		string(errorColor),
-		string(resetColor),
+		redBold,
+		resetColor,
 		msg,
 	)
 }
@@ -96,8 +96,8 @@ func (c *Console) PrintlnOkStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
 		"\r[%s+%s] %s\r\n",
-		string(okColor),
-		string(resetColor),
+		greenBold,
+		resetColor,
 		msg,
 	)
 }
@@ -106,8 +106,8 @@ func (c *Console) Println(m string) {
 	c.Output.Printf("\r%s\n", m)
 }
 
-func (c *Console) TermPrintln(format string, args ...interface{}) {
-	_, _ = fmt.Fprintf(c.Term, fmt.Sprintf("\r%s", format), args...)
+func (c *Console) TermPrintf(format string, args ...interface{}) {
+	fmt.Printf(fmt.Sprintf("\r%s", format), args...)
 }
 
 func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
