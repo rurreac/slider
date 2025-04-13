@@ -19,6 +19,7 @@ type Interpreter struct {
 	HomeDir       string   `json:"HomeDir"`
 	Hostname      string   `json:"Hostname"`
 	Shell         string   `json:"Shell"`
+	BackupShell   string   `json:"BackupShell"`
 	ShellArgs     []string `json:"ShellArgs"`
 	CmdArgs       []string `json:"CmdArgs"`
 	PtyOn         bool     `json:"PtyOn"`
@@ -40,11 +41,11 @@ var (
 	}
 	// common *nix shells
 	safeShells = []string{
-		"/bin/bash",
 		"/bin/sh",
 	}
 	extShells = []string{
 		"/bin/zsh",
+		"/bin/bash",
 		"/bin/csh",
 		"/bin/ksh",
 		"/bin/tsh",
@@ -108,7 +109,7 @@ func NewInterpreter() (*Interpreter, error) {
 	} else if i.Shell == "" && i.PtyOn {
 		i.Shell = findNixShell()
 	}
-
+	i.BackupShell = findSafeShell()
 	i.ShellArgs = []string{"-i"}
 	i.CmdArgs = []string{"-c"}
 

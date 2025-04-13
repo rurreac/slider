@@ -20,6 +20,7 @@ type Interpreter struct {
 	HomeDir           string   `json:"HomeDir"`
 	Hostname          string   `json:"Hostname"`
 	Shell             string   `json:"Shell"`
+	BackupShell       string   `json:"BackupShell"`
 	ShellArgs         []string `json:"ShellArgs"`
 	CmdArgs           []string `json:"CmdArgs"`
 	PtyOn             bool     `json:"PtyOn"`
@@ -87,12 +88,14 @@ func NewInterpreter() (*Interpreter, error) {
 	}
 
 	var winCmd = "Windows\\system32\\cmd.exe"
+	var pShell = "Windows\\System32\\WindowsPowershell\\v1.0\\powershell.exe"
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {
 		// Try default if not automatically detected
 		systemDrive = "C:"
 	}
 	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, winCmd)
+	i.BackupShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
 	i.CmdArgs = []string{"/c"}
 
 	return i, nil
