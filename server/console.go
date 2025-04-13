@@ -536,7 +536,12 @@ func (s *server) certsCommand(args ...string) {
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
 				sessionList := "None"
 				if sl := s.getSessionsByCertID(int64(k)); len(sl) > 0 {
-					sessionList = strings.Trim(strings.Replace(fmt.Sprint(sl), " ", ",", -1), "[]")
+					sessionListStr := make([]string, 0)
+					for i := range sl {
+						sStr := fmt.Sprintf("%d", sl[i])
+						sessionListStr = append(sessionListStr, sStr)
+					}
+					sessionList = strings.Join(sessionListStr, ", ")
 				}
 				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%s\t\n", sessionList)
 			}
