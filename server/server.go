@@ -12,7 +12,6 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
-	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"sync"
 	"syscall"
@@ -163,7 +162,7 @@ func NewServer(args []string) {
 	var serverKeyPair *scrypt.ServerKeyPair
 	var privateKeySigner ssh.Signer
 	if *keyStore || *keyPath != "" {
-		kp := sio.GetSliderHome() + serverCertFile
+		kp := conf.GetSliderHome() + serverCertFile
 
 		if *keyPath != "" {
 			kp = *keyPath
@@ -210,7 +209,7 @@ func NewServer(args []string) {
 		s.Logger.Warnf("Client Authentication enabled, a valid certificate will be required")
 
 		if s.certJarFile == "" {
-			s.certJarFile = sio.GetSliderHome() + clientCertsFile
+			s.certJarFile = conf.GetSliderHome() + clientCertsFile
 		}
 		if lcErr := s.loadCertJar(); lcErr != nil {
 			s.Logger.Fatalf("%v", lcErr)

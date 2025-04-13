@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"slider/pkg/conf"
 	"slider/pkg/scrypt"
-	"slider/pkg/sio"
 	"sync/atomic"
 )
 
@@ -159,7 +159,7 @@ func (s *server) savePrivateKey(certID int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("certID %d not found in cert jar", certID)
 	}
-	privateKeyPath := fmt.Sprintf("%sid_ed25519_cert%d", sio.GetSliderHome(), certID)
+	privateKeyPath := fmt.Sprintf("%sid_ed25519_cert%d", conf.GetSliderHome(), certID)
 	privateKey, pvOErr := os.OpenFile(
 		privateKeyPath,
 		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
@@ -180,7 +180,7 @@ func (s *server) savePublicKey(certID int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("certID %d not found in cert jar", certID)
 	}
-	publicKeyPath := fmt.Sprintf("%sid_ed25519_cert%d.pub", sio.GetSliderHome(), certID)
+	publicKeyPath := fmt.Sprintf("%sid_ed25519_cert%d.pub", conf.GetSliderHome(), certID)
 	publicKey, pvOErr := os.OpenFile(
 		publicKeyPath,
 		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
