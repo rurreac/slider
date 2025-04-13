@@ -14,9 +14,9 @@ var (
 	blueBrightBold = string(escseq.Console.BlueBrightBold)
 	redBold        = string(escseq.Console.RedBold)
 	greenBold      = string(escseq.Console.GreenBold)
-	resetColor     = string(escseq.ResetColor)
 	cyanBold       = string(escseq.Console.CyanBold)
 	greyBold       = string(escseq.Console.GreyBold)
+	resetColor     = string(escseq.ResetColor)
 	cursorClear    = string(escseq.CursorClear)
 	cursorHome     = string(escseq.CursorHome)
 	resetScreen    = string(escseq.ResetScreen)
@@ -25,14 +25,15 @@ var (
 func setConsoleColors() {
 	if !interpreter.IsPtyOn() {
 		yellowBright = ""
+		yellow = ""
 		blueBrightBold = ""
 		redBold = ""
 		greenBold = ""
 		cyanBold = ""
-		resetColor = ""
 		greyBold = ""
-		cursorHome = "\n"
+		resetColor = ""
 		cursorClear = ""
+		cursorHome = "\n"
 		resetScreen = ""
 	}
 }
