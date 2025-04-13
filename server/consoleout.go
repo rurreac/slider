@@ -30,6 +30,10 @@ func setConsoleColors() {
 		greenBold = ""
 		cyanBold = ""
 		resetColor = ""
+		greyBold = ""
+		cursorHome = "\n"
+		cursorClear = ""
+		resetScreen = ""
 	}
 }
 
