@@ -117,6 +117,10 @@ func (c *Console) Println(m string) {
 	c.Output.Printf("\r%s\n", m)
 }
 
+func (c *Console) Printf(format string, args ...interface{}) {
+	c.Output.Printf(fmt.Sprintf("\r%s", format), args...)
+}
+
 func (c *Console) TermPrintf(format string, args ...interface{}) {
 	fmt.Printf(fmt.Sprintf("\r%s", format), args...)
 }
