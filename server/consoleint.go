@@ -154,10 +154,7 @@ func (c *Console) setSftpConsoleAutoComplete(commands map[string]sftpCommandStru
 	// List of the Ordered the commands for autocompletion
 	var cmdList []string
 	for k := range commands {
-		for _, a := range commands[k].alias {
-			cmdList = append(cmdList, a)
-		}
-
+		cmdList = append(cmdList, commands[k].alias...)
 	}
 	slices.Sort(cmdList)
 	// Simple autocompletion
