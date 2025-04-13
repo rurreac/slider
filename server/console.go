@@ -30,7 +30,7 @@ type Console struct {
 
 func (s *server) consoleBanner() {
 	s.console.clearScreen()
-	s.console.Printf("%s\n\n", conf.Banner)
+	s.console.Printf("%s%s%s\n\n", greyBold, conf.Banner, resetColor)
 	s.console.PrintlnDebugStep("Type \"bg\" or press CTRL^C again to return to logging.")
 	s.console.PrintlnDebugStep("Type \"help\" to see available commands.")
 	s.console.PrintlnDebugStep("Type \"exit\" to exit the console.\n")
@@ -882,6 +882,10 @@ func (s *server) shellCommand(args ...string) {
 				}()
 			}
 
+			// Clear screen (Windows Command Prompt already does that)
+			if string(session.clientInterpreter.System) != "windows" {
+				s.console.clearScreen()
+			}
 			go func() {
 				_, _ = io.Copy(os.Stdout, conn)
 				s.console.PrintlnWarn("Press ENTER twice to get back to console")
