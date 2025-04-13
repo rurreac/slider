@@ -48,11 +48,18 @@ func (s *server) NewConsole() string {
 
 	// Initialize Term
 	var rErr error
-	// Not Initializing with os.Stdin will fail on Windows
-	s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
-	if rErr != nil {
-		s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
-		return exitCmd
+	if s.serverInterpreter.PtyOn {
+		// Not Initializing with os.Stdin will fail on Windows
+		s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
+		if rErr != nil {
+			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
+		}
+	} else {
+		// If Server does not support PTY don't make terminal raw
+		s.console.InitState, rErr = term.GetState(int(os.Stdin.Fd()))
+		if rErr != nil {
+			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
+		}
 	}
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)

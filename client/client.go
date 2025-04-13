@@ -411,9 +411,17 @@ func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) e
 
 func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	clientInfoBytes, _ := json.Marshal(ci)
-	ok, _, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
+	ok, ciAnswerBytes, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
 	if sErr != nil || !ok {
 		s.Logger.Errorf("%sclient information was not sent to server - %v", s.logID, sErr)
+		return
+	}
+	if len(ciAnswerBytes) != 0 {
+		ciAnswer := &interpreter.Interpreter{}
+		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
+			s.Logger.Debugf("%sServer requested shell: %s", s.logID, ciAnswer.BackupShell)
+			s.interpreter.Shell = ciAnswer.BackupShell
+		}
 	}
 }
 

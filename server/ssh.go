@@ -141,6 +141,15 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			}
 			session.setInterpreter(ci.Interpreter)
 
+			if !s.serverInterpreter.PtyOn {
+				cliInterpreter := ci.Interpreter
+				cliInterpreter.Shell = cliInterpreter.BackupShell
+
+				// Best effort, is server doesn't support PTY, use simple client Shell
+				if ciResp, jErr := json.Marshal(ci.Interpreter); jErr == nil {
+					_ = session.replyConnRequest(r, true, ciResp)
+				}
+			}
 			_ = session.replyConnRequest(r, true, nil)
 		default:
 			ssh.DiscardRequests(connReq)
