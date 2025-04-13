@@ -40,7 +40,8 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	cliHomeDir := session.clientInterpreter.HomeDir
 	cliSystem := strings.ToLower(session.clientInterpreter.System)
 	serverSystem := strings.ToLower(s.serverInterpreter.System)
-	// Fixing some path inconsistencies between SFTP client and server path
+
+	// Fixing some path inconsistencies between SFTP client and server
 	if cliSystem == "windows" && serverSystem != "windows" {
 		cliHomeDir = fmt.Sprintf("/%s", strings.Replace(cliHomeDir, "\\", "/", -1))
 	} else if cliSystem == "windows" {
