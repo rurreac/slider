@@ -184,7 +184,7 @@ func CopyWithProgress(dst io.Writer, src io.Reader, console Console, srcName, ds
 }
 
 // removeDirectoryRecursive recursively removes a directory and its contents
-func (s *server) removeDirectoryRecursive(client *sftp.Client, dirPath string) error {
+func (ic *intConsole) removeDirectoryRecursive(client *sftp.Client, dirPath string) error {
 	// List directory contents
 	// List directory contents
 	entries, err := client.ReadDir(dirPath)
@@ -198,7 +198,7 @@ func (s *server) removeDirectoryRecursive(client *sftp.Client, dirPath string) e
 
 		if entry.IsDir() {
 			// Recursively remove subdirectory
-			err = s.removeDirectoryRecursive(client, path)
+			err = ic.removeDirectoryRecursive(client, path)
 			if err != nil {
 				return err
 			}
@@ -221,7 +221,7 @@ func (s *server) removeDirectoryRecursive(client *sftp.Client, dirPath string) e
 }
 
 // walkLocalDir recursively walks a local directory for upload operations
-func (s *server) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
+func (ic *intConsole) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
 	fullPath := filepath.Join(basePath, relativePath)
 
 	// Get file info
@@ -251,7 +251,7 @@ func (s *server) walkLocalDir(basePath, relativePath string, callback func(local
 
 		for _, entry := range entries {
 			entryRelPath := filepath.Join(relativePath, entry.Name())
-			err = s.walkLocalDir(basePath, entryRelPath, callback)
+			err = ic.walkLocalDir(basePath, entryRelPath, callback)
 			if err != nil {
 				return err
 			}
@@ -262,7 +262,7 @@ func (s *server) walkLocalDir(basePath, relativePath string, callback func(local
 }
 
 // walkRemoteDir recursively walks a remote directory via SFTP for download operations
-func (s *server) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath string, callback func(remotePath, localPath string, isDir bool) error) error {
+func (ic *intConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath string, callback func(remotePath, localPath string, isDir bool) error) error {
 	fullPath := filepath.Join(basePath, relativePath)
 
 	// Get file info
@@ -292,7 +292,7 @@ func (s *server) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath s
 
 		for _, entry := range entries {
 			entryRelPath := filepath.Join(relativePath, entry.Name())
-			wdErr := s.walkRemoteDir(sftpClient, basePath, entryRelPath, callback)
+			wdErr := ic.walkRemoteDir(sftpClient, basePath, entryRelPath, callback)
 			if wdErr != nil {
 				return wdErr
 			}
@@ -320,6 +320,6 @@ func ensureRemoteDir(sftpClient *sftp.Client, path string) error {
 }
 
 // copyFileWithProgress copies a file with progress reporting
-func (s *server) copyFileWithProgress(src io.Reader, dst io.Writer, srcName, dstName string, size int64, operation string) (int64, error) {
-	return CopyWithProgress(dst, src, s.console, srcName, dstName, size, operation)
+func (ic *intConsole) copyFileWithProgress(src io.Reader, dst io.Writer, srcName, dstName string, size int64, operation string) (int64, error) {
+	return CopyWithProgress(dst, src, ic.console, srcName, dstName, size, operation)
 }
