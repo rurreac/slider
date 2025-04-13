@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	yellowBright   = string(escseq.Console.YellowBright)
 	yellow         = string(escseq.Console.Yellow)
 	blueBrightBold = string(escseq.Console.BlueBrightBold)
 	redBold        = string(escseq.Console.RedBold)
@@ -23,7 +24,7 @@ var (
 
 func setConsoleColors() {
 	if !interpreter.IsPtyOn() {
-		yellow = ""
+		yellowBright = ""
 		blueBrightBold = ""
 		redBold = ""
 		greenBold = ""
@@ -66,7 +67,7 @@ func (c *Console) resetScreen() {
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
 	msg := fmt.Sprintf("%s%s%s",
-		yellow,
+		yellowBright,
 		selected,
 		resetColor)
 	c.Output.Printf("\r%s%s\r\n", msg, strings.Join(args, " "))
@@ -77,6 +78,16 @@ func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
 	c.Output.Printf(
 		"\r[%s*%s] %s\r\n",
 		blueBrightBold,
+		resetColor,
+		msg,
+	)
+}
+
+func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
+	msg := fmt.Sprintf(m, args...)
+	c.Output.Printf(
+		"\r[%s*%s] %s\r\n",
+		yellowBright,
 		resetColor,
 		msg,
 	)
