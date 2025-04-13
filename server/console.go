@@ -896,7 +896,7 @@ func (s *server) shellCommand(args ...string) {
 				_, _ = io.Copy(os.Stdout, conn)
 				s.console.PrintlnWarn("Press ENTER twice to get back to console")
 			}()
-			_, _ = io.Copy(conn, os.Stdout)
+			_, _ = io.Copy(conn, os.Stdin)
 
 			return
 		} else {
