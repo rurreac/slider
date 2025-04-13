@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -10,11 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/sflag"
-	"slider/pkg/sio"
 	"sort"
 	"strings"
 	"syscall"
@@ -73,21 +70,7 @@ func (s *server) NewConsole() string {
 
 	// Disabling autocompletion if not PTY as tabs won't the handled properly
 	if s.serverInterpreter.PtyOn {
-		// List of the Ordered the commands for autocompletion
-		var cmdList []string
-		for k := range commands {
-			cmdList = append(cmdList, k)
-		}
-		slices.Sort(cmdList)
-		// Simple autocompletion
-		s.console.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
-			// If TAB key is pressed and text was written
-			if key == 9 && len(line) > 0 {
-				newLine, newPos := s.autocompleteCommand(line, cmdList)
-				return newLine, newPos, true
-			}
-			return line, pos, false
-		}
+		s.console.setConsoleAutoComplete(commands)
 	}
 
 	s.console.Output = log.New(s.console.Term, "", 0)
@@ -148,7 +131,25 @@ func (s *server) NewConsole() string {
 	return out
 }
 
-func (s *server) autocompleteCommand(input string, cmdList []string) (string, int) {
+func (c *Console) setConsoleAutoComplete(commands map[string]commandStruct) {
+	// List of the Ordered the commands for autocompletion
+	var cmdList []string
+	for k := range commands {
+		cmdList = append(cmdList, k)
+	}
+	slices.Sort(cmdList)
+	// Simple autocompletion
+	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// If TAB key is pressed and text was written
+		if key == 9 && len(line) > 0 {
+			newLine, newPos := autocompleteCommand(line, cmdList)
+			return newLine, newPos, true
+		}
+		return line, pos, false
+	}
+}
+
+func autocompleteCommand(input string, cmdList []string) (string, int) {
 	var cmd string
 	var substring string
 	var count int
@@ -721,118 +722,6 @@ func (s *server) sshCommand(args ...string) {
 	}
 
 	sshFlags.PrintUsage(true)
-}
-
-func (s *server) uploadCommand(args ...string) {
-	uploadFlags := flag.NewFlagSet(uploadCmd, flag.ContinueOnError)
-	uploadFlags.SetOutput(s.console.Term)
-	uSession := uploadFlags.Int("s", 0, "Uploads file to selected Session ID")
-
-	uploadFlags.Usage = func() {
-		s.console.PrintCommandUsage(uploadFlags, uploadDesc+uploadUsage)
-	}
-
-	if pErr := uploadFlags.Parse(args); pErr != nil {
-		return
-	}
-
-	if len(uploadFlags.Args()) > 2 || len(uploadFlags.Args()) < 1 {
-		uploadFlags.Usage()
-		return
-	}
-
-	if *uSession > 0 {
-		session, sessErr := s.getSession(*uSession)
-		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *uSession)
-			return
-		}
-
-		src := uploadFlags.Args()[0]
-		dst := filepath.Base(src)
-		if len(uploadFlags.Args()) == 2 {
-			dst = uploadFlags.Args()[1]
-		}
-
-		for statusChan := range session.uploadFile(src, dst) {
-			if statusChan.Success {
-				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\"",
-					src,
-					statusChan.FileName,
-				)
-			} else {
-				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %v", src, statusChan.Err)
-			}
-		}
-	}
-}
-
-func (s *server) downloadCommand(args ...string) {
-	downloadFlags := flag.NewFlagSet(downloadCmd, flag.ContinueOnError)
-	downloadFlags.SetOutput(s.console.Term)
-	dSession := downloadFlags.Int("s", 0, "Downloads file from a given a Session ID")
-	dFile := downloadFlags.String("f", "", "Receives a file list with items to download")
-
-	downloadFlags.Usage = func() {
-		s.console.PrintCommandUsage(downloadFlags, downloadDesc+downloadUsage)
-	}
-
-	if pErr := downloadFlags.Parse(args); pErr != nil {
-		return
-	}
-
-	if *dSession == 0 {
-		downloadFlags.Usage()
-		return
-	}
-
-	if *dSession > 0 {
-		session, sessErr := s.getSession(*dSession)
-		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *dSession)
-			return
-		}
-
-		if *dFile == "" && downloadFlags.NFlag() >= 2 {
-			s.console.PrintlnDebugStep("Need to provide a file list")
-			return
-		} else if *dFile != "" {
-			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetSliderHome())
-
-			for statusChan := range session.downloadFileBatch(*dFile) {
-				if statusChan.Success {
-					s.console.PrintlnOkStep("Downloaded \"%s\"",
-						statusChan.FileName,
-					)
-				} else {
-					s.console.PrintlnErrorStep("Failed to Download \"%v\"", statusChan.Err)
-				}
-			}
-			return
-		}
-
-		if len(downloadFlags.Args()) > 2 || len(downloadFlags.Args()) < 1 {
-			s.console.PrintlnDebugStep("Incorrect number of arguments")
-			return
-		}
-
-		src := downloadFlags.Args()[0]
-		dst := filepath.Base(src)
-		if len(downloadFlags.Args()) == 2 {
-			dst = downloadFlags.Args()[1]
-		}
-
-		for statusChan := range session.downloadFile(src, dst) {
-			if statusChan.Success {
-				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\"",
-					src,
-					statusChan.FileName,
-				)
-			} else {
-				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
-			}
-		}
-	}
 }
 
 func (s *server) shellCommand(args ...string) {

@@ -41,33 +41,6 @@ const (
 	shellDesc  = "Binds to a client Shell"
 	shellUsage = "Usage: shell [flags]"
 
-	// Console Upload Command
-	uploadCmd   = "upload"
-	uploadDesc  = "Uploads file passed as an argument to Client"
-	uploadUsage = `
-
-Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
-Use -sftp flag for more reliable transfer of large files with progress reporting.
-
-Usage: upload [flags] [src] [dst]
-
-Flags:
-`
-
-	// Console Download Command
-	downloadCmd   = "download"
-	downloadDesc  = "Downloads file passed as an argument from Client"
-	downloadUsage = `
-
-* If no destination name is given, file will be downloaded with the same basename to the Server CWD.
-* Downloading from a file list does not allow specifying destination.
-* Use -sftp flag for more reliable transfer of large files with progress reporting.
-
-Usage: download [flags] [src] [dst]
-
-Flags:
-`
-
 	// Console Cert Command
 	certsCmd   = "certs"
 	certsDesc  = "Interacts with the Server Certificate Jar"
@@ -107,14 +80,6 @@ func (s *server) initCommands() map[string]commandStruct {
 		socksCmd: {
 			desc:    socksDesc,
 			cmdFunc: s.socksCommand,
-		},
-		uploadCmd: {
-			desc:    uploadDesc,
-			cmdFunc: s.uploadCommand,
-		},
-		downloadCmd: {
-			desc:    downloadDesc,
-			cmdFunc: s.downloadCommand,
 		},
 		sshCmd: {
 			desc:    sshDesc,
