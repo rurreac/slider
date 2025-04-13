@@ -321,7 +321,6 @@ func (ic *intConsole) commandIntMkdir(c *intCommandRequest) {
 	}
 
 	ic.console.PrintlnOkStep("Created directory: %s", dirPath)
-	return
 }
 
 func (ic *intConsole) commandIntRm(c *intCommandRequest) {
@@ -791,7 +790,7 @@ func (ic *intConsole) commandIntChmod(c *intCommandRequest) {
 	// Check if file exists
 	_, err = c.sftpCli.Stat(path)
 	if err != nil {
-		ic.console.PrintlnErrorStep("File or directory not found: %v", path, err)
+		ic.console.PrintlnErrorStep("File or directory \"%s\" not found: %v", path, err)
 		return
 	}
 
