@@ -176,7 +176,7 @@ func autocompleteCommand(input string, cmdList []string) (string, int) {
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
-	s.console.PrintWarnSelect("Console does not recognize Command: ", fCmd...)
+	s.console.PrintlnWarnStep("Console does not recognize Command: %s", fCmd)
 
 	// If a Shell was not set just return
 	if s.serverInterpreter.Shell == "" {
@@ -184,7 +184,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	}
 
 	// Else, we'll try to execute the command locally
-	s.console.PrintlnWarn("Will run an OS command locally instead...")
+	s.console.PrintlnDebugStep("Will run an OS command locally instead...")
 	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
@@ -377,7 +377,11 @@ func (s *server) sessionsCommand(args ...string) {
 			s.console.PrintlnDebugStep("Failed to create SFTP Client: %v", sErr)
 		}
 		defer func() { _ = sftpCli.Close() }()
-		s.startInteractiveSFTPSession(session, sftpCli)
+		s.newSftpConsole(session, sftpCli)
+
+		// Reset autocomplete commands
+		commands := s.initCommands()
+		s.console.setConsoleAutoComplete(commands)
 
 		return
 	}

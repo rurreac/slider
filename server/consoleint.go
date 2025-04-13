@@ -19,7 +19,7 @@ type intConsole struct {
 	cliSystem string
 }
 
-type intCommandRequest struct {
+type sftpCommandRequest struct {
 	sftpCli    *sftp.Client
 	remoteCwd  *string
 	args       []string
@@ -27,8 +27,8 @@ type intCommandRequest struct {
 	*intConsole
 }
 
-// startInteractiveSFTPSession provides an interactive SFTP session
-func (s *server) startInteractiveSFTPSession(session *Session, sftpClient *sftp.Client) {
+// newSftpConsole provides an interactive SFTP session
+func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	// Get current remote directory for prompt
 	remoteCwd, cErr := sftpClient.Getwd()
 	if cErr != nil {
@@ -77,6 +77,8 @@ func (s *server) startInteractiveSFTPSession(session *Session, sftpClient *sftp.
 
 	// Set the terminal prompt
 	s.console.Term.SetPrompt(sftpPrompt())
+	commands := ic.initSftpCommands()
+	s.console.setSftpConsoleAutoComplete(commands)
 
 	for {
 		input, rErr := s.console.Term.ReadLine()
@@ -98,7 +100,7 @@ func (s *server) startInteractiveSFTPSession(session *Session, sftpClient *sftp.
 		// Process commands
 		switch command {
 		case helpCmd:
-			ic.printInteractiveConsoleHelp()
+			ic.printSftpConsoleHelp()
 		case "pwd", "getwd":
 			if len(args) > 0 {
 				s.console.PrintlnErrorStep("Too many arguments\n")
@@ -113,17 +115,17 @@ func (s *server) startInteractiveSFTPSession(session *Session, sftpClient *sftp.
 		default:
 			cmdIndex, cmdErr := ic.isCommand(command)
 			if cmdErr != nil {
-				s.console.PrintlnErrorStep("%v", cmdErr)
+				s.console.PrintlnErrorStep("%v\n", cmdErr)
 				continue
 			}
-			cmdReq := &intCommandRequest{
+			cmdReq := &sftpCommandRequest{
 				sftpCli:    sftpClient,
 				remoteCwd:  &remoteCwd,
 				args:       args,
 				cliHomeDir: cliHomeDir,
 				intConsole: ic,
 			}
-			ic.initInteractCommands()[cmdIndex].cmdFunc(cmdReq)
+			commands[cmdIndex].cmdFunc(cmdReq)
 			s.console.Term.SetPrompt(sftpPrompt())
 			s.console.Println("")
 		}
@@ -131,7 +133,7 @@ func (s *server) startInteractiveSFTPSession(session *Session, sftpClient *sftp.
 }
 
 func (ic *intConsole) isCommand(command string) (string, error) {
-	for c, cMap := range ic.initInteractCommands() {
+	for c, cMap := range ic.initSftpCommands() {
 		if slices.Contains(cMap.alias, command) {
 			return c, nil
 		}
@@ -139,7 +141,28 @@ func (ic *intConsole) isCommand(command string) (string, error) {
 	return "", errors.New("Unknown command: " + command)
 }
 
-func (ic *intConsole) commandIntList(c *intCommandRequest) {
+func (c *Console) setSftpConsoleAutoComplete(commands map[string]sftpCommandStruck) {
+	// List of the Ordered the commands for autocompletion
+	var cmdList []string
+	for k := range commands {
+		for _, a := range commands[k].alias {
+			cmdList = append(cmdList, a)
+		}
+
+	}
+	slices.Sort(cmdList)
+	// Simple autocompletion
+	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// If TAB key is pressed and text was written
+		if key == 9 && len(line) > 0 {
+			newLine, newPos := autocompleteCommand(line, cmdList)
+			return newLine, newPos, true
+		}
+		return line, pos, false
+	}
+}
+
+func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
 	path := *c.remoteCwd
 
 	if len(c.args) > 1 {
@@ -237,7 +260,7 @@ func (ic *intConsole) commandIntList(c *intCommandRequest) {
 	_ = tw.Flush()
 }
 
-func (ic *intConsole) commandIntCd(c *intCommandRequest) {
+func (ic *intConsole) commandSftpCd(c *sftpCommandRequest) {
 	if len(c.args) < 1 {
 		*c.remoteCwd = c.cliHomeDir
 		return
@@ -284,7 +307,7 @@ func (ic *intConsole) commandIntCd(c *intCommandRequest) {
 	*c.remoteCwd = newPath
 }
 
-func (ic *intConsole) commandIntMkdir(c *intCommandRequest) {
+func (ic *intConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	mkdirFlags := sflag.NewFlagPack([]string{mkdCmd}, mkdUsage, mkdDesc, ic.console.Term)
 	mkdirFlags.Set.Usage = func() {
 		mkdirFlags.PrintUsage(true)
@@ -323,8 +346,8 @@ func (ic *intConsole) commandIntMkdir(c *intCommandRequest) {
 	ic.console.PrintlnOkStep("Created directory: %s", dirPath)
 }
 
-func (ic *intConsole) commandIntRm(c *intCommandRequest) {
-	rmFlags := sflag.NewFlagPack(ic.initInteractCommands()[rmCmd].alias, rmUsage, rmDesc, ic.console.Term)
+func (ic *intConsole) commandSftpRm(c *sftpCommandRequest) {
+	rmFlags := sflag.NewFlagPack(ic.initSftpCommands()[rmCmd].alias, rmUsage, rmDesc, ic.console.Term)
 	recursive, _ := rmFlags.NewBoolFlag("r", "", "Remove directory and their contents recursively", false)
 	rmFlags.Set.Usage = func() {
 		rmFlags.PrintUsage(true)
@@ -412,8 +435,8 @@ func (ic *intConsole) commandIntRm(c *intCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandIntGet(c *intCommandRequest) {
-	getFlags := sflag.NewFlagPack(ic.initInteractCommands()[getCmd].alias, getUsage, getDesc, ic.console.Term)
+func (ic *intConsole) commandSftpGet(c *sftpCommandRequest) {
+	getFlags := sflag.NewFlagPack(ic.initSftpCommands()[getCmd].alias, getUsage, getDesc, ic.console.Term)
 	recursive, _ := getFlags.NewBoolFlag("r", "", "Download directories recursively", false)
 	getFlags.Set.Usage = func() {
 		getFlags.PrintUsage(true)
@@ -578,8 +601,8 @@ func (ic *intConsole) commandIntGet(c *intCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandIntPut(c *intCommandRequest) {
-	putFlags := sflag.NewFlagPack(ic.initInteractCommands()[putCmd].alias, putUsage, putDesc, ic.console.Term)
+func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
+	putFlags := sflag.NewFlagPack(ic.initSftpCommands()[putCmd].alias, putUsage, putDesc, ic.console.Term)
 	recursive, _ := putFlags.NewBoolFlag("r", "", "Upload directory recursively", false)
 	putFlags.Set.Usage = func() {
 		putFlags.PrintUsage(true)
@@ -746,8 +769,8 @@ func (ic *intConsole) commandIntPut(c *intCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandIntChmod(c *intCommandRequest) {
-	chmodFlags := sflag.NewFlagPack(ic.initInteractCommands()[chmodCmd].alias, chmodUsage, chmodDesc, ic.console.Term)
+func (ic *intConsole) commandSftpChmod(c *sftpCommandRequest) {
+	chmodFlags := sflag.NewFlagPack(ic.initSftpCommands()[chmodCmd].alias, chmodUsage, chmodDesc, ic.console.Term)
 	chmodFlags.Set.Usage = func() {
 		chmodFlags.PrintUsage(true)
 	}
@@ -807,8 +830,8 @@ func (ic *intConsole) commandIntChmod(c *intCommandRequest) {
 		os.FileMode(mode).String())
 }
 
-func (ic *intConsole) commandIntStat(c *intCommandRequest) {
-	statFlags := sflag.NewFlagPack(ic.initInteractCommands()[statCmd].alias, statUsage, statDesc, ic.console.Term)
+func (ic *intConsole) commandSftpStat(c *sftpCommandRequest) {
+	statFlags := sflag.NewFlagPack(ic.initSftpCommands()[statCmd].alias, statUsage, statDesc, ic.console.Term)
 	statFlags.Set.Usage = func() {
 		statFlags.PrintUsage(true)
 	}
@@ -886,8 +909,8 @@ func (ic *intConsole) commandIntStat(c *intCommandRequest) {
 	_ = tw.Flush()
 }
 
-func (ic *intConsole) commandIntMove(c *intCommandRequest) {
-	mvFlags := sflag.NewFlagPack(ic.initInteractCommands()[mvCmd].alias, mvUsage, mvDesc, ic.console.Term)
+func (ic *intConsole) commandSftpMove(c *sftpCommandRequest) {
+	mvFlags := sflag.NewFlagPack(ic.initSftpCommands()[mvCmd].alias, mvUsage, mvDesc, ic.console.Term)
 	mvFlags.Set.Usage = func() {
 		mvFlags.PrintUsage(true)
 	}

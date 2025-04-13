@@ -50,60 +50,60 @@ const (
 type sftpCommandStruck struct {
 	cmd         string
 	alias       []string
-	cmdFunc     func(request *intCommandRequest)
+	cmdFunc     func(request *sftpCommandRequest)
 	description string
 	usage       string
 }
 
-func (ic *intConsole) initInteractCommands() map[string]sftpCommandStruck {
+func (ic *intConsole) initSftpCommands() map[string]sftpCommandStruck {
 	var commands = map[string]sftpCommandStruck{
 		lsCmd: {
 			cmd:         lsCmd,
 			alias:       []string{lsCmd, "dir", "list"},
 			description: lsDesc,
-			cmdFunc:     ic.commandIntList,
+			cmdFunc:     ic.commandSftpList,
 		},
 		cdCmd: {
 			cmd:         cdCmd,
 			alias:       []string{cdCmd, "chdir"},
 			description: cdDesc,
-			cmdFunc:     ic.commandIntCd,
+			cmdFunc:     ic.commandSftpCd,
 		},
 		getCmd: {
 			alias:       []string{getCmd, "download"},
 			description: getDesc,
 			usage:       getUsage,
-			cmdFunc:     ic.commandIntGet,
+			cmdFunc:     ic.commandSftpGet,
 		},
 		putCmd: {
 			alias:       []string{putCmd, "upload"},
 			description: putDesc,
 			usage:       putUsage,
-			cmdFunc:     ic.commandIntPut,
+			cmdFunc:     ic.commandSftpPut,
 		},
 		mkdCmd: {
 			alias:       []string{mkdCmd},
 			description: mkdDesc,
 			usage:       mkdUsage,
-			cmdFunc:     ic.commandIntMkdir,
+			cmdFunc:     ic.commandSftpMkdir,
 		},
 		rmCmd: {
 			alias:       []string{rmCmd, "del", "delete"},
 			description: rmDesc,
 			usage:       rmUsage,
-			cmdFunc:     ic.commandIntRm,
+			cmdFunc:     ic.commandSftpRm,
 		},
 		statCmd: {
 			alias:       []string{statCmd, "info"},
 			description: statDesc,
 			usage:       statUsage,
-			cmdFunc:     ic.commandIntStat,
+			cmdFunc:     ic.commandSftpStat,
 		},
 		mvCmd: {
 			alias:       []string{mvCmd, "rename", "move"},
 			description: mvDesc,
 			usage:       mvUsage,
-			cmdFunc:     ic.commandIntMove,
+			cmdFunc:     ic.commandSftpMove,
 		},
 		pwdCmd: {
 			alias:       []string{pwdCmd, "getwd"},
@@ -129,19 +129,19 @@ func (ic *intConsole) initInteractCommands() map[string]sftpCommandStruck {
 			alias:       []string{chmodCmd},
 			description: chmodDesc,
 			usage:       chmodUsage,
-			cmdFunc:     ic.commandIntChmod,
+			cmdFunc:     ic.commandSftpChmod,
 		}
 	}
 
 	return commands
 }
 
-func (ic *intConsole) printInteractiveConsoleHelp() {
+func (ic *intConsole) printSftpConsoleHelp() {
 	tw := new(tabwriter.Writer)
 	tw.Init(ic.console.Term, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
-	commands := ic.initInteractCommands()
+	commands := ic.initSftpCommands()
 	var cmdNames []string
 
 	for k := range commands {
