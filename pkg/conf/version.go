@@ -7,7 +7,7 @@ import (
 	"text/tabwriter"
 )
 
-const banner = `
+const Banner = `
   ███████╗██╗     ██╗██████╗ ███████╗██████╗ 
   ██╔════╝██║     ██║██╔══██╗██╔════╝██╔══██╗
   ███████╗██║     ██║██║  ██║█████╗  ██████╔╝
@@ -26,7 +26,7 @@ var (
 )
 
 func PrintVersion() {
-	fmt.Printf("%s\n\n", banner)
+	fmt.Printf("%s\n\n", Banner)
 	twl := new(tabwriter.Writer)
 	twl.Init(os.Stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(twl, "\tVersion:\t%s\t\n", version)

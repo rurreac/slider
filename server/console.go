@@ -29,11 +29,8 @@ type Console struct {
 }
 
 func (s *server) consoleBanner() {
-	s.console.Println(
-		"\r\n" +
-			"\r\n╬════════════════════╬" +
-			"\r\n    Slider Console    " +
-			"\r\n╬════════════════════╬\n")
+	s.console.clearScreen()
+	s.console.Printf("%s\n\n", conf.Banner)
 	s.console.PrintlnDebugStep("Type \"bg\" or press CTRL^C again to return to logging.")
 	s.console.PrintlnDebugStep("Type \"help\" to see available commands.")
 	s.console.PrintlnDebugStep("Type \"exit\" to exit the console.\n")
