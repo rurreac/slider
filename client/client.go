@@ -18,6 +18,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
+	"slider/pkg/sflag"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"strings"
@@ -238,15 +239,15 @@ func NewClient(args []string) {
 func flagSanityCheck(clientFlags *flag.FlagSet) error {
 	var flagExclusion []string
 	var clientType string
-	if conf.FlagIsDefined(clientFlags, "listener") {
+	if sflag.FlagIsDefined(clientFlags, "listener") {
 		clientType = "listener"
-		if conf.FlagIsDefined(clientFlags, "key") {
+		if sflag.FlagIsDefined(clientFlags, "key") {
 			flagExclusion = append(flagExclusion, "-key")
 		}
-		if conf.FlagIsDefined(clientFlags, "retry") {
+		if sflag.FlagIsDefined(clientFlags, "retry") {
 			flagExclusion = append(flagExclusion, "-retry")
 		}
-		if conf.FlagIsDefined(clientFlags, "dns") {
+		if sflag.FlagIsDefined(clientFlags, "dns") {
 			flagExclusion = append(flagExclusion, "-dns")
 		}
 		if len(clientFlags.Args()) > 0 {
@@ -254,31 +255,31 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		}
 	} else {
 		clientType = "reverse"
-		if conf.FlagIsDefined(clientFlags, "fingerprint") {
+		if sflag.FlagIsDefined(clientFlags, "fingerprint") {
 			flagExclusion = append(flagExclusion, "-fingerprint")
 		}
-		if conf.FlagIsDefined(clientFlags, "address") {
+		if sflag.FlagIsDefined(clientFlags, "address") {
 			flagExclusion = append(flagExclusion, "-address")
 		}
-		if conf.FlagIsDefined(clientFlags, "port") {
+		if sflag.FlagIsDefined(clientFlags, "port") {
 			flagExclusion = append(flagExclusion, "-port")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-template") {
+		if sflag.FlagIsDefined(clientFlags, "html-template") {
 			flagExclusion = append(flagExclusion, "-html-template")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-server-header") {
+		if sflag.FlagIsDefined(clientFlags, "html-server-header") {
 			flagExclusion = append(flagExclusion, "-html-server-header")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-status-code") {
+		if sflag.FlagIsDefined(clientFlags, "html-status-code") {
 			flagExclusion = append(flagExclusion, "-html-status-code")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-redirect") {
+		if sflag.FlagIsDefined(clientFlags, "html-redirect") {
 			flagExclusion = append(flagExclusion, "-html-redirect")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-version") {
+		if sflag.FlagIsDefined(clientFlags, "html-version") {
 			flagExclusion = append(flagExclusion, "-html-version")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-health") {
+		if sflag.FlagIsDefined(clientFlags, "html-health") {
 			flagExclusion = append(flagExclusion, "-html-health")
 		}
 		argNumber := len(clientFlags.Args())
