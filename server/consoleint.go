@@ -111,7 +111,16 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			// Exit SFTP session
 			return
 		case "shell":
-			s.shellCommand("-s", fmt.Sprintf("%d", session.sessionID), "-i")
+			s.shellCommand(fmt.Sprintf("-s %d -i", session.sessionID))
+		case "execute":
+			if len(args) < 1 {
+				s.console.PrintlnWarnStep("Nothing to execute\n")
+				continue
+			}
+			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID)}
+			eArgs = append(eArgs, args...)
+			s.executeCommand(eArgs...)
+			continue
 		default:
 			cmdIndex, cmdErr := ic.isCommand(command)
 			if cmdErr != nil {

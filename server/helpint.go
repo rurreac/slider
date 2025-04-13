@@ -110,6 +110,10 @@ func (ic *intConsole) initSftpCommands() map[string]sftpCommandStruck {
 			description: pwdDesc,
 		},
 		// Common commands
+		executeCmd: {
+			alias:       []string{executeCmd},
+			description: executeDesc,
+		},
 		shellCmd: {
 			alias:       []string{shellCmd},
 			description: shellDesc,
