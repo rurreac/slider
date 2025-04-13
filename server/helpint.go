@@ -154,7 +154,7 @@ func (ic *intConsole) printSftpConsoleHelp() {
 	sort.Strings(cmdNames)
 
 	for _, cmd := range cmdNames {
-		aliases := strings.Trim(strings.Replace(fmt.Sprint(commands[cmd].alias), " ", ", ", -1), "[]")
+		aliases := strings.Join(commands[cmd].alias, ", ")
 		_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", aliases, commands[cmd].description)
 	}
 	_, _ = fmt.Fprintln(tw)
