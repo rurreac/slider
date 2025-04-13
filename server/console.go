@@ -48,13 +48,14 @@ func (s *server) NewConsole() string {
 
 	// Initialize Term
 	var rErr error
-	s.console.InitState, rErr = term.MakeRaw(int(os.Stdout.Fd()))
+	// Not Initializing with os.Stdin will fail on Windows
+	s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
 	if rErr != nil {
 		s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
 		return exitCmd
 	}
 	defer func() {
-		_ = term.Restore(int(os.Stdout.Fd()), s.console.InitState)
+		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
 
 	screen := struct {
@@ -846,25 +847,25 @@ func (s *server) shellCommand(args ...string) {
 			// Set up the terminal according to the client
 			if session.IsPtyOn() {
 				s.console.PrintlnOkStep("Shell has PTY, switching to raw terminal")
-				tState, tErr := term.MakeRaw(int(os.Stdout.Fd()))
+				tState, tErr := term.MakeRaw(int(os.Stdin.Fd()))
 				if tErr != nil {
 					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
 					return
 				}
 				defer func() {
-					if rErr := term.Restore(int(os.Stdout.Fd()), tState); rErr != nil {
+					if rErr := term.Restore(int(os.Stdin.Fd()), tState); rErr != nil {
 						session.Logger.Errorf("Failed to restore terminal state - %v", rErr)
 					}
 				}()
 			} else {
 				s.console.PrintlnDebugStep("Client does not support PTY, terminal not raw, echo is enabled")
 
-				conState, _ := term.GetState(int(os.Stdout.Fd()))
-				if rErr := term.Restore(int(os.Stdout.Fd()), s.console.InitState); rErr != nil {
+				conState, _ := term.GetState(int(os.Stdin.Fd()))
+				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
 					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
 					return
 				}
-				defer func() { _ = term.Restore(int(os.Stdout.Fd()), conState) }()
+				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
