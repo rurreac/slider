@@ -7,20 +7,7 @@ import (
 )
 
 const (
-	serverHelp = `
-Slider Server
-
-  Creates a new Slider Server instance and waits for 
-incoming Slider Client connections on the defined port.
-
-  Interaction with Slider Clients can be performed through
-its integrated Console by pressing CTR^C at any time.
-
-Usage: <slider_server> [flags]
-
-Flags:`
-
-	// Console System Commands
+	// Console CyanBold Commands
 	bgCmd    = "bg"
 	bgDesc   = "Puts Console into background and returns to logging output"
 	exitCmd  = "exit"
@@ -31,54 +18,28 @@ Flags:`
 	// Console Execute Command
 	executeCmd   = "execute"
 	executeDesc  = "Runs a command remotely and returns the output"
-	executeUsage = `
-
-Usage: execute [flags] [command]
-
-Flags:
-`
+	executeUsage = "Usage: execute [flags] [command]"
 
 	// Console Sessions Command
 	sessionsCmd   = "sessions"
 	sessionsDesc  = "Interacts with Client Sessions"
-	sessionsUsage = `
-
-When run without parameters, all available Sessions will be listed.
-
-Usage: sessions [flags]
-
-Flags:
-`
+	sessionsUsage = "When run without parameters, all available Sessions are listed." +
+		"\n\n\rUsage: sessions [flags]"
 
 	// Console Socks Command
 	socksCmd   = "socks"
 	socksDesc  = "Runs or Kills a Reverse Socks server"
-	socksUsage = `
-
-Usage: socks [flags]
-
-Flags:
-`
+	socksUsage = "Usage: socks [flags]"
 
 	// Console SSH Command
 	sshCmd   = "ssh"
 	sshDesc  = "Opens an SSH session to a client"
-	sshUsage = `
-
-Usage: ssh [flags]
-
-Flags:
-`
+	sshUsage = "Usage: ssh [flags]"
 
 	// Console Shell Command
 	shellCmd   = "shell"
 	shellDesc  = "Binds to a client Shell"
-	shellUsage = `
-
-Usage: shell [flags]
-
-Flags:
-`
+	shellUsage = "Usage: shell [flags]"
 
 	// Console Upload Command
 	uploadCmd   = "upload"
@@ -110,26 +71,13 @@ Flags:
 	// Console Cert Command
 	certsCmd   = "certs"
 	certsDesc  = "Interacts with the Server Certificate Jar"
-	certsUsage = `
-
-When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
-
-Usage: certs [flags]
-
-Flags:
-`
+	certsUsage = "When run without parameters, all available Slider key pairs are listed." +
+		"\n\n\rUsage: certs [flags]"
 
 	// Console Client Connect Command
 	connectCmd   = "connect"
 	connectDesc  = "Receives the address of a Client to connect to"
-	connectUsage = `
-
-Connects to a Client configured as Listener and creates a new Session
-
-Usage: connect [flags] <[client_address]:port>
-
-Flags:
-`
+	connectUsage = "Usage: connect [flags] <[client_address]:port>"
 )
 
 type commandStruct struct {
