@@ -65,7 +65,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 		}
 
 		return fmt.Sprintf(
-			"\r(%sS%d%s) %s@%s:%s%s>%s ",
+			"\r(%sS%d%s) %s@%s:%s%s$%s ",
 			cyanBold,
 			session.sessionID,
 			resetColor,
