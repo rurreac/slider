@@ -55,7 +55,8 @@ func (s *server) NewConsole() string {
 			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
 		}
 	} else {
-		// If Server does not support PTY don't make terminal raw
+		// If Server does not support PTY don't make terminal raw.
+		// This is required for having a working term on Windows pre ConPTY
 		s.console.InitState, rErr = term.GetState(int(os.Stdin.Fd()))
 		if rErr != nil {
 			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
