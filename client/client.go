@@ -419,8 +419,8 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	if len(ciAnswerBytes) != 0 {
 		ciAnswer := &interpreter.Interpreter{}
 		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
-			s.Logger.Debugf("%sServer requested shell: %s", s.logID, ciAnswer.BackupShell)
-			s.interpreter.Shell = ciAnswer.BackupShell
+			s.Logger.Debugf("%sServer requested shell: %s", s.logID, ciAnswer.AltShell)
+			s.interpreter.Shell = ciAnswer.AltShell
 		}
 	}
 }

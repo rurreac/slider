@@ -19,7 +19,7 @@ type Interpreter struct {
 	HomeDir       string   `json:"HomeDir"`
 	Hostname      string   `json:"Hostname"`
 	Shell         string   `json:"Shell"`
-	BackupShell   string   `json:"BackupShell"`
+	AltShell      string   `json:"AltShell"`
 	ShellArgs     []string `json:"ShellArgs"`
 	CmdArgs       []string `json:"CmdArgs"`
 	PtyOn         bool     `json:"PtyOn"`
@@ -109,7 +109,7 @@ func NewInterpreter() (*Interpreter, error) {
 	} else if i.Shell == "" && i.PtyOn {
 		i.Shell = findNixShell()
 	}
-	i.BackupShell = findSafeShell()
+	i.AltShell = findSafeShell()
 	i.ShellArgs = []string{"-i"}
 	i.CmdArgs = []string{"-c"}
 

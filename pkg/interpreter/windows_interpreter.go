@@ -13,21 +13,24 @@ import (
 	"syscall"
 )
 
+const (
+	cmdPrompt = "Windows\\system32\\cmd.exe"
+	pShell    = "Windows\\System32\\WindowsPowershell\\v1.0\\powershell.exe"
+)
+
 type Interpreter struct {
-	Arch              string   `json:"Arch"`
-	System            string   `json:"System"`
-	User              string   `json:"User"`
-	HomeDir           string   `json:"HomeDir"`
-	Hostname          string   `json:"Hostname"`
-	Shell             string   `json:"Shell"`
-	BackupShell       string   `json:"BackupShell"`
-	ShellArgs         []string `json:"ShellArgs"`
-	CmdArgs           []string `json:"CmdArgs"`
-	PtyOn             bool     `json:"PtyOn"`
-	WinChangeCall     syscall.Signal
-	Pty               *conpty.ConPty
-	PathSeparator     string
-	PathListSeparator string
+	Arch          string   `json:"Arch"`
+	System        string   `json:"System"`
+	User          string   `json:"User"`
+	HomeDir       string   `json:"HomeDir"`
+	Hostname      string   `json:"Hostname"`
+	Shell         string   `json:"Shell"`
+	AltShell      string   `json:"AltShell"`
+	ShellArgs     []string `json:"ShellArgs"`
+	CmdArgs       []string `json:"CmdArgs"`
+	PtyOn         bool     `json:"PtyOn"`
+	WinChangeCall syscall.Signal
+	Pty           *conpty.ConPty
 }
 
 func IsPtyOn() bool {
@@ -60,7 +63,6 @@ func IsPtyOn() bool {
 }
 
 func NewInterpreter() (*Interpreter, error) {
-	// TODO: Logic to decide running "cmd" or "powershell" (default to "cmd")
 	i := &Interpreter{}
 
 	i.Arch = runtime.GOARCH
@@ -87,15 +89,15 @@ func NewInterpreter() (*Interpreter, error) {
 		i.PtyOn = true
 	}
 
-	var winCmd = "Windows\\system32\\cmd.exe"
-	var pShell = "Windows\\System32\\WindowsPowershell\\v1.0\\powershell.exe"
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {
 		// Try default if not automatically detected
 		systemDrive = "C:"
 	}
-	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, winCmd)
-	i.BackupShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
+	// We default to always using Command Prompt as it is safer when launching from Term and
+	// also some security controls do not apply to it
+	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
 	i.CmdArgs = []string{"/c"}
 
 	return i, nil
