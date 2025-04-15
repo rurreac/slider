@@ -8,54 +8,76 @@ import (
 	"path/filepath"
 	"slices"
 	"slider/pkg/sflag"
+	"slider/pkg/spath"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 )
 
-type intConsole struct {
-	console   Console
-	cliSystem string
+type sftpConsole struct {
+	console    Console
+	cliSystem  string
+	svrSystem  string
+	cliHomeDir string
+	srvHomeDir string
+	remoteCwd  *string
+	localCwd   *string
 }
 
 type sftpCommandRequest struct {
-	sftpCli    *sftp.Client
-	remoteCwd  *string
-	args       []string
-	cliHomeDir string
-	*intConsole
+	sftpCli  *sftp.Client
+	command  string
+	args     []string
+	isRemote bool
+	*sftpConsole
 }
 
 // newSftpConsole provides an interactive SFTP session
 func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
+	// Get current directory
+	localCwd, clErr := os.Getwd()
+	if clErr != nil {
+		localCwd = ""
+		s.console.PrintlnErrorStep("Unable to determine local directory: %v", clErr)
+	}
 	// Get current remote directory for prompt
-	remoteCwd, cErr := sftpClient.Getwd()
-	if cErr != nil {
+	remoteCwd, crErr := sftpClient.Getwd()
+	if crErr != nil {
 		remoteCwd = ""
-		s.console.PrintlnErrorStep("Unable to determine remote directory: %v", cErr)
+		s.console.PrintlnErrorStep("Unable to determine remote directory: %v", crErr)
 	}
 
-	// Set Client Info
+	// Set client and server info
 	cliHomeDir := session.clientInterpreter.HomeDir
+	srvHomeDir := s.serverInterpreter.HomeDir
 	cliSystem := strings.ToLower(session.clientInterpreter.System)
-	serverSystem := strings.ToLower(s.serverInterpreter.System)
+	svrSystem := strings.ToLower(s.serverInterpreter.System)
 
 	// Fixing some path inconsistencies between SFTP client and server
-	if cliSystem == "windows" && serverSystem != "windows" {
+	if cliSystem == "windows" && svrSystem != "windows" {
 		cliHomeDir = fmt.Sprintf("/%s", strings.Replace(cliHomeDir, "\\", "/", -1))
-	} else if cliSystem == "windows" {
+	}
+	if cliSystem == "windows" && svrSystem == "windows" {
 		cliHomeDir = fmt.Sprintf("%s", strings.Replace(cliHomeDir, "\\", "/", -1))
 		remoteCwd = strings.TrimPrefix(remoteCwd, "/")
+	}
+	if cliSystem != "windows" && svrSystem == "windows" {
+		remoteCwd = strings.Replace(remoteCwd, "\\", "/", -1)
 	}
 
 	cliUser := strings.ToLower(session.clientInterpreter.User)
 	cliHostname := strings.ToLower(session.clientInterpreter.Hostname)
 
 	// New console
-	ic := &intConsole{
-		console:   s.console,
-		cliSystem: cliSystem,
+	ic := &sftpConsole{
+		console:    s.console,
+		cliSystem:  cliSystem,
+		svrSystem:  svrSystem,
+		remoteCwd:  &remoteCwd,
+		localCwd:   &localCwd,
+		cliHomeDir: cliHomeDir,
+		srvHomeDir: srvHomeDir,
 	}
 
 	// Define SFTP prompt
@@ -98,6 +120,10 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 		cmdParts := make([]string, 0)
 		cmdParts = append(cmdParts, strings.Fields(input)...)
 
+		if len(cmdParts) < 1 {
+			continue
+		}
+
 		if cmdParts[0] == "" {
 			continue
 		}
@@ -107,13 +133,19 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 		// Process commands
 		switch command {
 		case helpCmd:
-			ic.printSftpConsoleHelp()
+			ic.printConsoleHelp()
 		case "pwd", "getwd":
 			if len(args) > 0 {
-				s.console.PrintlnErrorStep("Too many arguments\n")
+				s.console.PrintlnErrorStep("Too many arguments")
 				return
 			}
 			s.console.TermPrintf("%s\n\n", remoteCwd)
+		case "lpwd", "lgetwd":
+			if len(args) > 0 {
+				s.console.PrintlnErrorStep("Too many arguments")
+				return
+			}
+			s.console.TermPrintf("%s\n\n", localCwd)
 		case "exit", "quit":
 			// Exit SFTP session
 			return
@@ -131,17 +163,28 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			s.executeCommand(eArgs...)
 			continue
 		default:
+			// This is meant to be a command to execute locally
+			if strings.HasPrefix(command, "!") {
+				if len(command) > 1 {
+					fullCommand := []string{strings.TrimPrefix(command, "!")}
+					fullCommand = append(fullCommand, args...)
+					s.notConsoleCommand(fullCommand)
+					continue
+				}
+			}
+			// Look for a regular command and execute
 			cmdIndex, cmdErr := ic.isCommand(command)
 			if cmdErr != nil {
 				s.console.PrintlnErrorStep("%v\n", cmdErr)
 				continue
 			}
+
 			cmdReq := &sftpCommandRequest{
-				sftpCli:    sftpClient,
-				remoteCwd:  &remoteCwd,
-				args:       args,
-				cliHomeDir: cliHomeDir,
-				intConsole: ic,
+				sftpCli:     sftpClient,
+				command:     cmdIndex,
+				args:        args,
+				isRemote:    commands[cmdIndex].isRemote,
+				sftpConsole: ic,
 			}
 			commands[cmdIndex].cmdFunc(cmdReq)
 			s.console.Term.SetPrompt(sftpPrompt())
@@ -150,7 +193,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	}
 }
 
-func (ic *intConsole) isCommand(command string) (string, error) {
+func (ic *sftpConsole) isCommand(command string) (string, error) {
 	for c, cMap := range ic.initSftpCommands() {
 		if slices.Contains(cMap.alias, command) {
 			return c, nil
@@ -177,11 +220,135 @@ func (c *Console) setSftpConsoleAutoComplete(commands map[string]sftpCommandStru
 	}
 }
 
-func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
-	path := *c.remoteCwd
+func (c *sftpCommandRequest) readLink(entryName string) (string, error) {
+	if c.isRemote {
+		return c.sftpCli.ReadLink(entryName)
+	}
+	return os.Readlink(entryName)
+}
+
+func (c *sftpCommandRequest) readDir(entryName string) ([]os.FileInfo, error) {
+	var entries []os.FileInfo
+	if c.isRemote {
+		de, err := c.sftpCli.ReadDir(entryName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read directory \"%s\": %v", entryName, err)
+		}
+		return de, nil
+	}
+	de, err := os.ReadDir(entryName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read directory \"%s\": %v", entryName, err)
+
+	}
+	for _, e := range de {
+		entry, eErr := e.Info()
+		if eErr != nil {
+			return nil, fmt.Errorf("failed to read directory content \"%s\": %v", entryName, err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, nil
+}
+
+func (ic *sftpConsole) pathIsAbs(path string, remote bool) bool {
+	if remote {
+		return spath.IsAbs(ic.cliSystem, path)
+	}
+	return spath.IsAbs(ic.svrSystem, path)
+}
+
+func (ic *sftpConsole) pathJoin(elem []string, remote bool) string {
+	if remote {
+		return spath.Join(ic.cliSystem, elem)
+	}
+	return spath.Join(ic.svrSystem, elem)
+}
+
+func (c *sftpCommandRequest) pathStat(path string) (os.FileInfo, error) {
+	if c.isRemote {
+		return c.sftpCli.Stat(path)
+	}
+	return os.Stat(path)
+}
+
+func (c *sftpCommandRequest) getScopedPath() string {
+	if c.isRemote {
+		return *c.remoteCwd
+	}
+	return *c.localCwd
+}
+
+func (c *sftpCommandRequest) getPathIdInfo(entry os.FileInfo) (int, int) {
+	if c.isRemote {
+		return int(entry.Sys().(*sftp.FileStat).UID), int(entry.Sys().(*sftp.FileStat).GID)
+	}
+	// This syscall doesn't exist on Windows
+	var uid, gid int
+	if u, uErr := spath.GetFileInfoUid(entry); uErr == nil {
+		uid = u
+	}
+	if g, gErr := spath.GetFileInfoUid(entry); gErr == nil {
+		gid = g
+	}
+
+	return uid, gid
+}
+
+func (c *sftpCommandRequest) systemHomeDir() {
+	if c.isRemote {
+		*c.remoteCwd = c.cliHomeDir
+		return
+	}
+	*c.localCwd = c.srvHomeDir
+}
+
+func (c *sftpCommandRequest) getCwd() string {
+	if c.isRemote {
+		return *c.remoteCwd
+	}
+	return *c.localCwd
+}
+
+func (c *sftpCommandRequest) updateCwd(path string) {
+	if c.isRemote {
+		if path == "" {
+			*c.remoteCwd = path
+			return
+		}
+	}
+	*c.localCwd = path
+}
+
+func (c *sftpCommandRequest) pathDir(path string) string {
+	if c.isRemote {
+		return spath.Dir(c.cliSystem, path)
+	}
+	return spath.Dir(c.svrSystem, path)
+}
+
+func (c *sftpCommandRequest) pathMkDir(path string) error {
+	if c.isRemote {
+		return c.sftpCli.Mkdir(path)
+	}
+	// Use default permissions
+	return os.Mkdir(path, os.ModePerm)
+}
+
+func (c *sftpCommandRequest) getContextSystem() string {
+	if c.isRemote {
+		return c.cliSystem
+	}
+	// Use default permissions
+	return c.svrSystem
+}
+
+func (ic *sftpConsole) commandSftpList(c *sftpCommandRequest) {
+	path := c.getScopedPath()
 
 	if len(c.args) > 1 {
 		ic.console.PrintlnErrorStep("Too many arguments")
+		return
 	}
 
 	if len(c.args) == 1 {
@@ -189,10 +356,11 @@ func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
 	}
 
 	// If path is relative, join with current directory
-	if !filepath.IsAbs(path) && path != "." {
-		path = filepath.Join(*c.remoteCwd, path)
+	if !ic.pathIsAbs(path, c.isRemote) && path != "." {
+		path = ic.pathJoin([]string{c.getScopedPath(), path}, c.isRemote)
 	}
-	entries, err := c.sftpCli.ReadDir(path)
+
+	entries, err := c.readDir(path)
 	if err != nil {
 		ic.console.PrintlnErrorStep("Failed to list directory \"%s\": %v", path, err)
 		return
@@ -218,9 +386,9 @@ func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
 			nameField = fmt.Sprintf("%s%s%s", blueBrightBold, entry.Name(), resetColor)
 		} else if entry.Mode()&os.ModeSymlink != 0 {
 			nameField = fmt.Sprintf("%s%s%s", cyanBold, entry.Name(), resetColor)
-			target, lErr := c.sftpCli.ReadLink(entry.Name())
+			target, lErr := c.readLink(entry.Name())
 			if lErr == nil {
-				tI, tErr := c.sftpCli.Stat(target)
+				tI, tErr := c.pathStat(target)
 				if tErr != nil {
 					target = fmt.Sprintf("%s%s%s", redBold, target, resetColor)
 				} else {
@@ -252,11 +420,11 @@ func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
 			}
 		}
 
-		var uid, gid string
-		if ic.cliSystem != "windows" {
-			uid = fmt.Sprintf("%d", entry.Sys().(*sftp.FileStat).UID)
-			gid = fmt.Sprintf("%d", entry.Sys().(*sftp.FileStat).GID)
-			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t\n",
+		//var uid, gid string
+		// Do not output uid, gid on Windows as it is always 0
+		if c.getContextSystem() != "windows" {
+			uid, gid := c.getPathIdInfo(entry)
+			_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t\n",
 				entry.Mode().String(),
 				uid,
 				gid,
@@ -275,11 +443,12 @@ func (ic *intConsole) commandSftpList(c *sftpCommandRequest) {
 	_ = tw.Flush()
 }
 
-func (ic *intConsole) commandSftpCd(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpCd(c *sftpCommandRequest) {
 	if len(c.args) < 1 {
-		*c.remoteCwd = c.cliHomeDir
+		c.systemHomeDir()
 		return
 	}
+
 	if len(c.args) > 1 {
 		ic.console.PrintlnErrorStep("Too many arguments")
 		return
@@ -295,19 +464,19 @@ func (ic *intConsole) commandSftpCd(c *sftpCommandRequest) {
 	// Handle ".." (parent directory)
 	if newPath == ".." {
 		// Get parent directory
-		parentPath := filepath.Dir(*c.remoteCwd)
-		if parentPath == *c.remoteCwd {
+		parentPath := c.pathDir(c.getCwd())
+		if parentPath == c.getCwd() {
 			// Already at root
 			return
 		}
 		newPath = parentPath
-	} else if !filepath.IsAbs(newPath) {
+	} else if !c.pathIsAbs(newPath, c.isRemote) {
 		// Relative path, join with current directory
-		newPath = filepath.Join(*c.remoteCwd, newPath)
+		newPath = c.pathJoin([]string{c.getCwd(), newPath}, c.isRemote)
 	}
 
 	// Check if directory exists and is accessible
-	fi, err := c.sftpCli.Stat(newPath)
+	fi, err := c.pathStat(newPath)
 	if err != nil {
 		ic.console.PrintlnErrorStep("Failed to stat \"%s\": %v", newPath, err)
 		return
@@ -319,11 +488,21 @@ func (ic *intConsole) commandSftpCd(c *sftpCommandRequest) {
 	}
 
 	// Update the current directory
-	*c.remoteCwd = newPath
+	c.updateCwd(newPath)
+	// Notify the new path only if "lcd"
+	if !c.isRemote {
+		c.console.PrintlnOkStep("Current local path: %s", newPath)
+	}
 }
 
-func (ic *intConsole) commandSftpMkdir(c *sftpCommandRequest) {
-	mkdirFlags := sflag.NewFlagPack([]string{mkdCmd}, mkdUsage, mkdDesc, ic.console.Term)
+func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
+	commands := ic.initSftpCommands()
+	mkdirFlags := sflag.NewFlagPack(
+		[]string{c.command},
+		commands[c.command].usage,
+		commands[c.command].description,
+		ic.console.Term,
+	)
 	mkdirFlags.Set.Usage = func() {
 		mkdirFlags.PrintUsage(true)
 	}
@@ -340,19 +519,19 @@ func (ic *intConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	dirPath := flagArgs[0]
 
 	// Process directory path
-	if !filepath.IsAbs(dirPath) {
-		dirPath = filepath.Join(*c.remoteCwd, dirPath)
+	if !ic.pathIsAbs(dirPath, c.isRemote) {
+		dirPath = ic.pathJoin([]string{c.getCwd(), dirPath}, c.isRemote)
 	}
 
 	// Check if the directory already exists
-	_, err := c.sftpCli.Stat(dirPath)
+	_, err := c.pathStat(dirPath)
 	if err == nil {
 		ic.console.PrintlnErrorStep("directory or file already exists: %s", dirPath)
 		return
 	}
 
 	// Create the directory
-	err = c.sftpCli.Mkdir(dirPath)
+	err = c.pathMkDir(dirPath)
 	if err != nil {
 		ic.console.PrintlnErrorStep("failed to create directory: %v", err)
 		return
@@ -361,7 +540,7 @@ func (ic *intConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	ic.console.PrintlnOkStep("Created directory: %s", dirPath)
 }
 
-func (ic *intConsole) commandSftpRm(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 	rmFlags := sflag.NewFlagPack(ic.initSftpCommands()[rmCmd].alias, rmUsage, rmDesc, ic.console.Term)
 	recursive, _ := rmFlags.NewBoolFlag("r", "", "Remove directory and their contents recursively", false)
 	rmFlags.Set.Usage = func() {
@@ -381,8 +560,8 @@ func (ic *intConsole) commandSftpRm(c *sftpCommandRequest) {
 	// Process path
 	path := flagArgs[0]
 
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(*c.remoteCwd, path)
+	if !spath.IsAbs(ic.cliSystem, path) {
+		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
 	}
 
 	// Check if path exists
@@ -450,7 +629,7 @@ func (ic *intConsole) commandSftpRm(c *sftpCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandSftpGet(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 	getFlags := sflag.NewFlagPack(ic.initSftpCommands()[getCmd].alias, getUsage, getDesc, ic.console.Term)
 	recursive, _ := getFlags.NewBoolFlag("r", "", "Download directories recursively", false)
 	getFlags.Set.Usage = func() {
@@ -467,6 +646,11 @@ func (ic *intConsole) commandSftpGet(c *sftpCommandRequest) {
 		return
 	}
 
+	if len(flagArgs) > 1 {
+		ic.console.PrintlnErrorStep("Too many arguments")
+		return
+	}
+
 	// Process remote file path
 	remotePath := flagArgs[0]
 
@@ -476,8 +660,8 @@ func (ic *intConsole) commandSftpGet(c *sftpCommandRequest) {
 		localPath = flagArgs[1]
 	}
 
-	if !filepath.IsAbs(remotePath) {
-		remotePath = filepath.Join(*c.remoteCwd, remotePath)
+	if !spath.IsAbs(ic.cliSystem, remotePath) {
+		remotePath = spath.Join(ic.cliSystem, []string{*c.remoteCwd, remotePath})
 	}
 
 	// Get file info to check if it exists
@@ -616,7 +800,7 @@ func (ic *intConsole) commandSftpGet(c *sftpCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	putFlags := sflag.NewFlagPack(ic.initSftpCommands()[putCmd].alias, putUsage, putDesc, ic.console.Term)
 	recursive, _ := putFlags.NewBoolFlag("r", "", "Upload directory recursively", false)
 	putFlags.Set.Usage = func() {
@@ -628,8 +812,13 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 	}
 
 	flagArgs := putFlags.Set.Args()
-	if len(flagArgs) != 1 {
+	if len(flagArgs) < 1 {
 		putFlags.PrintUsage(true)
+		return
+	}
+
+	if len(flagArgs) > 1 {
+		ic.console.PrintlnErrorStep("Too many arguments")
 		return
 	}
 
@@ -637,8 +826,8 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 	localPath := flagArgs[0]
 
 	// Get local file info to check if it exists
-	localFileInfo, lsErr := os.Stat(localPath)
-	if lsErr != nil {
+	localFileInfo, ls1Err := os.Stat(localPath)
+	if ls1Err != nil {
 		ic.console.PrintlnErrorStep("Failed to access local path \"%s\"", localPath)
 		return
 	}
@@ -650,8 +839,8 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 	}
 
 	// If remote path is not absolute, join with current working directory
-	if !filepath.IsAbs(remotePath) {
-		remotePath = filepath.Join(*c.remoteCwd, remotePath)
+	if !spath.IsAbs(ic.cliSystem, remotePath) {
+		remotePath = spath.Join(ic.cliSystem, []string{*c.remoteCwd, remotePath})
 	}
 
 	// Handle differently based on whether it's a directory or file
@@ -701,7 +890,7 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 		uploadedSize := int64(0)
 
 		wl2Err := ic.walkLocalDir(localPath, "", func(localPath, remoteRelPath string, isDir bool) error {
-			remoteFullPath := filepath.Join(remotePath, remoteRelPath)
+			remoteFullPath := spath.Join(ic.cliSystem, []string{remotePath, remoteRelPath})
 
 			if isDir {
 				// Create directory
@@ -719,9 +908,9 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 				defer func() { _ = lFile.Close() }()
 
 				// Get file size
-				fi, lsErr := os.Stat(localPath)
-				if lsErr != nil {
-					return fmt.Errorf("failed to get local file info: %v", lsErr)
+				fi, ls2Err := os.Stat(localPath)
+				if ls2Err != nil {
+					return fmt.Errorf("failed to get local file info: %v", ls2Err)
 				}
 				fileSize := fi.Size()
 
@@ -784,7 +973,7 @@ func (ic *intConsole) commandSftpPut(c *sftpCommandRequest) {
 	}
 }
 
-func (ic *intConsole) commandSftpChmod(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 	chmodFlags := sflag.NewFlagPack(ic.initSftpCommands()[chmodCmd].alias, chmodUsage, chmodDesc, ic.console.Term)
 	chmodFlags.Set.Usage = func() {
 		chmodFlags.PrintUsage(true)
@@ -805,8 +994,8 @@ func (ic *intConsole) commandSftpChmod(c *sftpCommandRequest) {
 	path := flagArgs[1]
 
 	// Handle relative path
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(*c.remoteCwd, path)
+	if !spath.IsAbs(ic.cliSystem, path) {
+		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
 	}
 
 	// Parse octal mode
@@ -845,7 +1034,7 @@ func (ic *intConsole) commandSftpChmod(c *sftpCommandRequest) {
 		os.FileMode(mode).String())
 }
 
-func (ic *intConsole) commandSftpStat(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 	statFlags := sflag.NewFlagPack(ic.initSftpCommands()[statCmd].alias, statUsage, statDesc, ic.console.Term)
 	statFlags.Set.Usage = func() {
 		statFlags.PrintUsage(true)
@@ -862,8 +1051,8 @@ func (ic *intConsole) commandSftpStat(c *sftpCommandRequest) {
 	}
 
 	path := flagArgs[0]
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(*c.remoteCwd, path)
+	if !spath.IsAbs(ic.cliSystem, path) {
+		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
 	}
 
 	// Get file info
@@ -924,7 +1113,7 @@ func (ic *intConsole) commandSftpStat(c *sftpCommandRequest) {
 	_ = tw.Flush()
 }
 
-func (ic *intConsole) commandSftpMove(c *sftpCommandRequest) {
+func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
 	mvFlags := sflag.NewFlagPack(ic.initSftpCommands()[mvCmd].alias, mvUsage, mvDesc, ic.console.Term)
 	mvFlags.Set.Usage = func() {
 		mvFlags.PrintUsage(true)
@@ -945,11 +1134,11 @@ func (ic *intConsole) commandSftpMove(c *sftpCommandRequest) {
 	dstPath := flagArgs[1]
 
 	// Handle relative paths
-	if !filepath.IsAbs(srcPath) {
-		srcPath = filepath.Join(*c.remoteCwd, srcPath)
+	if !spath.IsAbs(ic.cliSystem, srcPath) {
+		srcPath = spath.Join(ic.cliSystem, []string{*c.remoteCwd, srcPath})
 	}
-	if !filepath.IsAbs(dstPath) {
-		dstPath = filepath.Join(*c.remoteCwd, dstPath)
+	if !spath.IsAbs(ic.cliSystem, dstPath) {
+		dstPath = spath.Join(ic.cliSystem, []string{*c.remoteCwd, dstPath})
 	}
 
 	// Check if source exists

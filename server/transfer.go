@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slider/pkg/spath"
 	"strings"
 	"time"
 )
@@ -184,7 +185,7 @@ func CopyWithProgress(dst io.Writer, src io.Reader, console Console, srcName, ds
 }
 
 // removeDirectoryRecursive recursively removes a directory and its contents
-func (ic *intConsole) removeDirectoryRecursive(client *sftp.Client, dirPath string) error {
+func (ic *sftpConsole) removeDirectoryRecursive(client *sftp.Client, dirPath string) error {
 	// List directory contents
 	// List directory contents
 	entries, err := client.ReadDir(dirPath)
@@ -221,7 +222,7 @@ func (ic *intConsole) removeDirectoryRecursive(client *sftp.Client, dirPath stri
 }
 
 // walkLocalDir recursively walks a local directory for upload operations
-func (ic *intConsole) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
+func (ic *sftpConsole) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
 	fullPath := filepath.Join(basePath, relativePath)
 
 	// Get file info
@@ -262,9 +263,11 @@ func (ic *intConsole) walkLocalDir(basePath, relativePath string, callback func(
 }
 
 // walkRemoteDir recursively walks a remote directory via SFTP for download operations
-func (ic *intConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath string, callback func(remotePath, localPath string, isDir bool) error) error {
+func (ic *sftpConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath string, callback func(remotePath, localPath string, isDir bool) error) error {
 	fullPath := filepath.Join(basePath, relativePath)
-
+	if ic.cliSystem != ic.svrSystem {
+		fullPath = spath.Join(ic.cliSystem, []string{basePath, relativePath})
+	}
 	// Get file info
 	fileInfo, sErr := sftpClient.Stat(fullPath)
 	if sErr != nil {
@@ -320,6 +323,6 @@ func ensureRemoteDir(sftpClient *sftp.Client, path string) error {
 }
 
 // copyFileWithProgress copies a file with progress reporting
-func (ic *intConsole) copyFileWithProgress(src io.Reader, dst io.Writer, srcName, dstName string, size int64, operation string) (int64, error) {
+func (ic *sftpConsole) copyFileWithProgress(src io.Reader, dst io.Writer, srcName, dstName string, size int64, operation string) (int64, error) {
 	return CopyWithProgress(dst, src, ic.console, srcName, dstName, size, operation)
 }
