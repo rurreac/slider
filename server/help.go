@@ -121,6 +121,8 @@ func (s *server) printConsoleHelp() {
 	for _, cmd := range cmdNames {
 		_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", cmd, commands[cmd].desc)
 	}
+	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "!command", "Execute \"command\" in local shell (non-interactive)")
+	_, _ = fmt.Fprintln(tw)
 	_, _ = fmt.Fprintln(tw)
 	_ = tw.Flush()
 }

@@ -125,12 +125,22 @@ func (s *server) NewConsole() string {
 			continue
 		default:
 			currentPrompt := getPrompt()
+			// This is meant to be a command to execute locally
+			if strings.HasPrefix(fCmd, "!") {
+				if len(fCmd) > 1 {
+					fullCommand := []string{strings.TrimPrefix(fCmd, "!")}
+					fullCommand = append(fullCommand, args[1:]...)
+					s.notConsoleCommand(fullCommand)
+					continue
+				}
+			}
 			if k, ok := commands[fCmd]; ok {
 				k.cmdFunc(args[1:]...)
+				s.console.Term.SetPrompt(currentPrompt)
 			} else {
-				s.notConsoleCommand(args)
+				s.console.PrintlnErrorStep("Unknown Command: %q", args)
 			}
-			s.console.Term.SetPrompt(currentPrompt)
+
 		}
 	}
 
@@ -182,15 +192,13 @@ func autocompleteCommand(input string, cmdList []string) (string, int) {
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
-	s.console.PrintlnWarnStep("Console does not recognize Command: %s", fCmd)
-
 	// If a Shell was not set just return
 	if s.serverInterpreter.Shell == "" {
 		return
 	}
 
 	// Else, we'll try to execute the command locally
-	s.console.PrintlnDebugStep("Will run an OS command locally instead...")
+	s.console.PrintlnWarnStep("Executing local Command: %s", fCmd)
 	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
