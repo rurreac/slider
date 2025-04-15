@@ -288,7 +288,7 @@ func (c *sftpCommandRequest) getPathIdInfo(entry os.FileInfo) (int, int) {
 	if u, uErr := spath.GetFileInfoUid(entry); uErr == nil {
 		uid = u
 	}
-	if g, gErr := spath.GetFileInfoUid(entry); gErr == nil {
+	if g, gErr := spath.GetFileInfoGid(entry); gErr == nil {
 		gid = g
 	}
 
