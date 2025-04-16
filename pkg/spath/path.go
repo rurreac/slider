@@ -31,6 +31,13 @@ func Dir(system, path string) string {
 	return unixDir(path)
 }
 
+func Base(system, path string) string {
+	if system == "windows" {
+		return winBase(path)
+	}
+	return unixBase(path)
+}
+
 /*
 	Bellow, as well as pathwin.go and pathunix.go is mostly taken from:
 	- https://go.googlesource.com/go/+/refs/tags/go1.19.2/src/path/filepath/path.go

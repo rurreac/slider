@@ -224,18 +224,16 @@ func (ic *sftpConsole) removeDirectoryRecursive(client *sftp.Client, dirPath str
 // walkLocalDir recursively walks a local directory for upload operations
 func (ic *sftpConsole) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
 	fullPath := filepath.Join(basePath, relativePath)
+	if ic.cliSystem != ic.svrSystem {
+		fullPath = spath.Join(ic.svrSystem, []string{basePath, relativePath})
+	}
 
-	// Get file info
 	fileInfo, sErr := os.Stat(fullPath)
 	if sErr != nil {
 		return fmt.Errorf("failed to access path %s: %v", fullPath, sErr)
 	}
 
-	// Calculate the remote path (preserve directory structure)
 	remotePath := relativePath
-	if remotePath == "" {
-		remotePath = filepath.Base(basePath)
-	}
 
 	// Process the current item
 	cErr := callback(fullPath, remotePath, fileInfo.IsDir())
@@ -268,6 +266,7 @@ func (ic *sftpConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relative
 	if ic.cliSystem != ic.svrSystem {
 		fullPath = spath.Join(ic.cliSystem, []string{basePath, relativePath})
 	}
+
 	// Get file info
 	fileInfo, sErr := sftpClient.Stat(fullPath)
 	if sErr != nil {
@@ -275,10 +274,9 @@ func (ic *sftpConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relative
 	}
 
 	// Calculate the local path (preserve directory structure)
+	// For the root directory (when relativePath is empty), don't add the base directory name
+	// since it will be added by the caller
 	localPath := relativePath
-	if localPath == "" {
-		localPath = filepath.Base(basePath)
-	}
 
 	// Process the current item
 	cbErr := callback(fullPath, localPath, fileInfo.IsDir())

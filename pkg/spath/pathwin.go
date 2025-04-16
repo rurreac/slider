@@ -197,6 +197,31 @@ func winFromSlash(path string) string {
 	return replaceStringByte(path, '/', WindowsSeparator)
 }
 
+func winBase(path string) string {
+	if path == "" {
+		return "."
+	}
+	// Strip trailing slashes.
+	for len(path) > 0 && winIsPathSeparator(path[len(path)-1]) {
+		path = path[0 : len(path)-1]
+	}
+	// Throw away volume name
+	path = path[len(winVolumeName(path)):]
+	// Find the last element
+	i := len(path) - 1
+	for i >= 0 && !winIsPathSeparator(path[i]) {
+		i--
+	}
+	if i >= 0 {
+		path = path[i+1:]
+	}
+	// If empty now, it had only slashes.
+	if path == "" {
+		return string(WindowsSeparator)
+	}
+	return path
+}
+
 func winClean(path string) string {
 	originalPath := path
 	volLen := winVolumeNameLen(path)

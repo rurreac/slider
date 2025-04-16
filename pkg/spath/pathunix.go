@@ -57,6 +57,31 @@ func unixFromSlash(path string) string {
 	return replaceStringByte(path, '/', UnixSeparator)
 }
 
+func unixBase(path string) string {
+	if path == "" {
+		return "."
+	}
+	// Strip trailing slashes.
+	for len(path) > 0 && unixIsPathSeparator(path[len(path)-1]) {
+		path = path[0 : len(path)-1]
+	}
+	// Throw away volume name
+	path = path[len(unixVolumeName(path)):]
+	// Find the last element
+	i := len(path) - 1
+	for i >= 0 && !unixIsPathSeparator(path[i]) {
+		i--
+	}
+	if i >= 0 {
+		path = path[i+1:]
+	}
+	// If empty now, it had only slashes.
+	if path == "" {
+		return string(UnixSeparator)
+	}
+	return path
+}
+
 func unixClean(path string) string {
 	originalPath := path
 	volLen := unixVolumeNameLen(path)
