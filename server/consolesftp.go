@@ -760,7 +760,12 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 			if localRelPath == "" {
 				localFullPath = targetDir
 			} else {
-				localRelPath = filepath.FromSlash(localRelPath)
+				// Use appropriate path for the local OS
+				if ic.svrSystem == "windows" {
+					localRelPath = spath.WinFromSlash(localRelPath)
+				} else {
+					localRelPath = spath.UnixToSlash(localRelPath)
+				}
 				localFullPath = filepath.Join(targetDir, localRelPath)
 			}
 
@@ -880,12 +885,11 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		return
 	}
 
-	remotePath := filepath.Base(localPath)
+	// Get basename of the local path for remote destination
+	baseName := ic.pathBase(localPath, false)
 
-	// If remote path is not absolute, join with current working directory
-	if !spath.IsAbs(ic.cliSystem, remotePath) {
-		remotePath = spath.Join(ic.cliSystem, []string{*c.remoteCwd, remotePath})
-	}
+	// Construct the remote path using the basename and current remote directory
+	remotePath := spath.Join(ic.cliSystem, []string{*c.remoteCwd, baseName})
 
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
@@ -933,7 +937,18 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		}
 
 		wl2Err := ic.walkLocalDir(localPath, "", func(localPath, remoteRelPath string, isDir bool) error {
-			remoteFullPath := spath.Join(ic.cliSystem, []string{remotePath, remoteRelPath})
+			var remoteFullPath string
+			if remoteRelPath == "" {
+				remoteFullPath = remotePath
+			} else {
+				// Use appropriate path for the remote OS
+				if ic.cliSystem != "windows" {
+					remoteRelPath = spath.UnixToSlash(remoteRelPath)
+				} else {
+					remoteRelPath = spath.WinFromSlash(remoteRelPath)
+				}
+				remoteFullPath = spath.Join(ic.cliSystem, []string{remotePath, remoteRelPath})
+			}
 
 			if isDir {
 				return ensureRemoteDir(c.sftpCli, remoteFullPath)
@@ -955,6 +970,13 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 				}
 				fileSize := fi.Size()
 
+				// Ensure parent remote directory exists
+				remoteDir := spath.Dir(ic.cliSystem, remoteFullPath)
+
+				if rdErr := ensureRemoteDir(c.sftpCli, remoteDir); rdErr != nil {
+					return fmt.Errorf("failed to create remote directory: %v", rdErr)
+				}
+
 				// Create remote file
 				rFile, cErr := c.sftpCli.Create(remoteFullPath)
 				if cErr != nil {
@@ -964,7 +986,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 
 				// Copy file with progress
 				bytesWritten, cpErr := ic.copyFileWithProgress(lFile, rFile, localPath, remoteFullPath, fileSize, fmt.Sprintf("Upload (%d/%d)", currentFile, fileCount))
-				if err != nil {
+				if cpErr != nil {
 					return fmt.Errorf("failed to copy file: %v", cpErr)
 				}
 
@@ -1001,7 +1023,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		// Create remote file
 		rFile, cErr := c.sftpCli.Create(remotePath)
 		if cErr != nil {
-			ic.console.PrintlnErrorStep("Failed to create remote file \"%s\": %v", localPath, cErr)
+			ic.console.PrintlnErrorStep("Failed to create remote file \"%s\": %v", remotePath, cErr)
 			return
 		}
 		defer func() { _ = rFile.Close() }()

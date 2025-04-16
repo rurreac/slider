@@ -186,8 +186,6 @@ func CopyWithProgress(dst io.Writer, src io.Reader, console Console, srcName, ds
 
 // removeDirectoryRecursive recursively removes a directory and its contents
 func (ic *sftpConsole) removeDirectoryRecursive(client *sftp.Client, dirPath string) error {
-	// List directory contents
-	// List directory contents
 	entries, err := client.ReadDir(dirPath)
 	if err != nil {
 		return fmt.Errorf("failed to read directory: %v", err)
@@ -223,16 +221,15 @@ func (ic *sftpConsole) removeDirectoryRecursive(client *sftp.Client, dirPath str
 
 // walkLocalDir recursively walks a local directory for upload operations
 func (ic *sftpConsole) walkLocalDir(basePath, relativePath string, callback func(localPath, remotePath string, isDir bool) error) error {
+	// Construct the full local path using appropriate path joining
 	fullPath := filepath.Join(basePath, relativePath)
-	if ic.cliSystem != ic.svrSystem {
-		fullPath = spath.Join(ic.svrSystem, []string{basePath, relativePath})
-	}
 
 	fileInfo, sErr := os.Stat(fullPath)
 	if sErr != nil {
 		return fmt.Errorf("failed to access path %s: %v", fullPath, sErr)
 	}
 
+	// Use the provided relative path for remote path construction
 	remotePath := relativePath
 
 	// Process the current item
@@ -249,7 +246,16 @@ func (ic *sftpConsole) walkLocalDir(basePath, relativePath string, callback func
 		}
 
 		for _, entry := range entries {
-			entryRelPath := filepath.Join(relativePath, entry.Name())
+			// Construct new relative path for this entry
+			var entryRelPath string
+
+			if relativePath == "" {
+				entryRelPath = entry.Name()
+			} else {
+				// Always use the OS-specific path joining to maintain consistency
+				entryRelPath = filepath.Join(relativePath, entry.Name())
+			}
+
 			err = ic.walkLocalDir(basePath, entryRelPath, callback)
 			if err != nil {
 				return err
@@ -262,10 +268,7 @@ func (ic *sftpConsole) walkLocalDir(basePath, relativePath string, callback func
 
 // walkRemoteDir recursively walks a remote directory via SFTP for download operations
 func (ic *sftpConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relativePath string, callback func(remotePath, localPath string, isDir bool) error) error {
-	fullPath := filepath.Join(basePath, relativePath)
-	if ic.cliSystem != ic.svrSystem {
-		fullPath = spath.Join(ic.cliSystem, []string{basePath, relativePath})
-	}
+	fullPath := spath.Join(ic.cliSystem, []string{basePath, relativePath})
 
 	// Get file info
 	fileInfo, sErr := sftpClient.Stat(fullPath)
@@ -292,7 +295,15 @@ func (ic *sftpConsole) walkRemoteDir(sftpClient *sftp.Client, basePath, relative
 		}
 
 		for _, entry := range entries {
-			entryRelPath := filepath.Join(relativePath, entry.Name())
+			// Use proper path joining for the entry name based on remote OS
+			entryName := entry.Name()
+			entryRelPath := spath.Join(ic.cliSystem, []string{relativePath, entryName})
+
+			// If relativePath is empty, adjust to avoid leading separator
+			if relativePath == "" {
+				entryRelPath = entryName
+			}
+
 			wdErr := ic.walkRemoteDir(sftpClient, basePath, entryRelPath, callback)
 			if wdErr != nil {
 				return wdErr
