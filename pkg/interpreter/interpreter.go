@@ -9,22 +9,20 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-	"syscall"
 )
 
 type Interpreter struct {
-	Arch          string   `json:"Arch"`
-	System        string   `json:"System"`
-	User          string   `json:"User"`
-	HomeDir       string   `json:"HomeDir"`
-	Hostname      string   `json:"Hostname"`
-	Shell         string   `json:"Shell"`
-	AltShell      string   `json:"AltShell"`
-	ShellArgs     []string `json:"ShellArgs"`
-	CmdArgs       []string `json:"CmdArgs"`
-	PtyOn         bool     `json:"PtyOn"`
-	WinChangeCall syscall.Signal
-	Pty           *os.File
+	Arch      string   `json:"Arch"`
+	System    string   `json:"System"`
+	User      string   `json:"User"`
+	HomeDir   string   `json:"HomeDir"`
+	Hostname  string   `json:"Hostname"`
+	Shell     string   `json:"Shell"`
+	AltShell  string   `json:"AltShell"`
+	ShellArgs []string `json:"ShellArgs"`
+	CmdArgs   []string `json:"CmdArgs"`
+	PtyOn     bool     `json:"PtyOn"`
+	Pty       *os.File
 }
 
 var (
@@ -76,11 +74,17 @@ func IsPtyOn() bool {
 	return slices.Contains(nixPty, runtime.GOOS)
 }
 
+func (i *Interpreter) EnableProcessedInputOutput() error {
+	return nil
+}
+
+func (i *Interpreter) ResetInputOutputModes() error {
+	return nil
+}
+
 func NewInterpreter() (*Interpreter, error) {
 	// TODO: We may want to let the user choose what shell to run?
-	i := &Interpreter{
-		WinChangeCall: syscall.SIGWINCH,
-	}
+	i := &Interpreter{}
 
 	i.Arch = runtime.GOARCH
 	i.System = runtime.GOOS
