@@ -36,11 +36,12 @@ type Interpreter struct {
 
 func IsPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
+	// We do this now so we can have logs with colors, and this is needed even before having an interpreter
 	if available {
 		// Even when ConPTY is available, if Slider is not running on a Windows Terminal, control
 		// character sequences are not available until an OS command is invoked within Slider.
-		// This is somehow normal Windows behavior, but breaks the character output until it happens.
-		// The reason is cause ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
+		// This is somehow normal Windows behavior but breaks the character output until it happens.
+		// The reason is that ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
 		// enabled by default.
 		// The following will enable those values if they are not, regardless of the terminal, or return false
 		outHandle := windows.Handle(os.Stdout.Fd())
@@ -136,23 +137,21 @@ func NewInterpreter() (*Interpreter, error) {
 		i.User = u.Username
 		i.HomeDir = u.HomeDir
 		fUserName := strings.Split(u.Username, string(os.PathSeparator))
-		// If the username does not identify a Domain User
+		// If the username does not identify a Domain User,
 		// remove the hostname part from the username
 		if fUserName[0] == i.Hostname {
 			i.User = fUserName[1]
 		}
 	}
 
-	if conpty.IsConPtyAvailable() {
-		i.PtyOn = true
-	}
+	i.PtyOn = conpty.IsConPtyAvailable()
 
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {
 		// Try default if not automatically detected
 		systemDrive = "C:"
 	}
-	// We default to always using Command Prompt as it is safer when launching from Term and
+	// We default to always using Command Prompt as it is safer when launching from Term, and
 	// also some security controls do not apply to it
 	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
 	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)

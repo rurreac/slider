@@ -11,7 +11,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/pkg/sftp v1.13.9
 	golang.org/x/crypto v0.37.0
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/term v0.31.0
 )

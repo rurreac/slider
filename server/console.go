@@ -855,7 +855,7 @@ func (s *server) shellCommand(args ...string) {
 			var conn net.Conn
 			var dErr error
 
-			// When Shell is interactive we want it to stop once we are done
+			// When Shell is interactive, we want it to stop once we are done
 			defer func() {
 				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
 					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
@@ -896,15 +896,13 @@ func (s *server) shellCommand(args ...string) {
 					}
 				}()
 			} else {
-				s.console.PrintlnDebugStep("Client does not support PTY, terminal not raw, echo is enabled")
-
+				s.console.PrintlnWarnStep("Client does not support PTY, terminal not raw, echo is enabled")
 				conState, _ := term.GetState(int(os.Stdin.Fd()))
 				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
 					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
 					return
 				}
 				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
-
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
 					sig := make(chan os.Signal, 1)
@@ -916,8 +914,8 @@ func (s *server) shellCommand(args ...string) {
 						if cErr := conn.Close(); cErr != nil {
 							session.Logger.Errorf("Failed to close Shell connection - %v", cErr)
 						}
+						s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
 					}
-					s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
 				}()
 			}
 
@@ -927,7 +925,7 @@ func (s *server) shellCommand(args ...string) {
 			}
 			go func() {
 				_, _ = io.Copy(os.Stdout, conn)
-				s.console.PrintlnWarn("Press ENTER twice to get back to console")
+				s.console.PrintlnWarn("Press ENTER until get back to console")
 			}()
 			_, _ = io.Copy(conn, os.Stdin)
 
