@@ -61,11 +61,11 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 
 	// Fixing some path inconsistencies between SFTP client and server
 	if cliSystem == "windows" && svrSystem != "windows" /*&& !session.clientInterpreter.PtyOn*/ {
-		cliHomeDir = fmt.Sprintf(strings.Replace(cliHomeDir, "/", "\\", -1))
+		cliHomeDir = strings.Replace(cliHomeDir, "/", "\\", -1)
 		remoteCwd = strings.Replace(strings.TrimPrefix(remoteCwd, "/"), "/", "\\", -1)
 	}
 	if cliSystem == "windows" && svrSystem == "windows" {
-		cliHomeDir = fmt.Sprintf(strings.Replace(cliHomeDir, "\\", "/", -1))
+		cliHomeDir = strings.Replace(cliHomeDir, "\\", "/", -1)
 		remoteCwd = strings.TrimPrefix(remoteCwd, "/")
 	}
 	if cliSystem != "windows" && svrSystem == "windows" {
@@ -158,7 +158,6 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			return
 		case "shell":
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), "-i"}
-			eArgs = append(eArgs)
 			s.shellCommand(eArgs...)
 		case "execute":
 			if len(args) < 1 {
