@@ -4,156 +4,176 @@ import (
 	"strings"
 )
 
-const (
-	UnixSeparator     = '/'
-	UnixListSeparator = ':'
-)
+// unixIsPathSeparator checks if the byte is a Unix path separator
+func unixIsPathSeparator(b byte) bool {
+	return b == UnixSeparator
+}
 
+// unixToSlash ensures forward slashes in a path (converts backslashes to forward slashes)
+func unixToSlash(path string) string {
+	return replaceSlashes(path, WindowsSeparator, '/')
+}
+
+// unixIsAbs reports whether a Unix path is absolute
+func unixIsAbs(path string) bool {
+	return len(path) > 0 && path[0] == UnixSeparator
+}
+
+// unixJoin joins Unix path elements
 func unixJoin(elem []string) string {
+	// Find first non-empty element
+	firstIdx := 0
 	for i, e := range elem {
 		if e != "" {
-			return unixClean(strings.Join(elem[i:], string(UnixSeparator)))
+			firstIdx = i
+			break
 		}
 	}
-	return ""
+
+	// If all elements are empty, return empty string
+	if firstIdx >= len(elem) {
+		return ""
+	}
+
+	// Join all non-empty elements and clean the path
+	var parts []string
+	for _, e := range elem[firstIdx:] {
+		if e != "" {
+			parts = append(parts, e)
+		}
+	}
+
+	return unixClean(strings.Join(parts, string(UnixSeparator)))
 }
 
-func unixVolumeNameLen(path string) int {
-	return 0
-}
-
-func unixVolumeName(path string) string {
-	return replaceStringByte(path[:unixVolumeNameLen(path)], '/', UnixSeparator)
-}
-
-func unixIsAbs(path string) bool {
-	return strings.HasPrefix(path, "/")
-}
-
-func unixIsPathSeparator(c uint8) bool {
-	return UnixSeparator == c
-}
-
+// unixDir returns the directory portion of a Unix path
 func unixDir(path string) string {
-	vol := unixVolumeName(path)
-	i := len(path) - 1
-	for i >= len(vol) && !unixIsPathSeparator(path[i]) {
-		i--
-	}
-	d := unixClean(path[len(vol) : i+1])
-	if d == "." && len(vol) > 2 {
-		// must be UNC
-		return vol
-	}
-	return vol + d
-}
-
-func unixPostClean(out *lazybuf) {}
-
-func unixFromSlash(path string) string {
-	return path
-}
-
-func unixToSlash(path string) string {
-	return replaceStringByte(path, WindowsSeparator, '/')
-}
-
-func unixBase(path string) string {
+	// Handle empty path
 	if path == "" {
 		return "."
 	}
-	// Strip trailing slashes.
-	for len(path) > 0 && unixIsPathSeparator(path[len(path)-1]) {
-		path = path[0 : len(path)-1]
-	}
-	// Throw away volume name
-	path = path[len(unixVolumeName(path)):]
-	// Find the last element
+
+	// Find the last separator
 	i := len(path) - 1
 	for i >= 0 && !unixIsPathSeparator(path[i]) {
 		i--
 	}
-	if i >= 0 {
-		path = path[i+1:]
+
+	// If no separator found, return "."
+	if i < 0 {
+		return "."
 	}
-	// If empty now, it had only slashes.
+
+	// If root directory, return "/"
+	if i == 0 {
+		return string(UnixSeparator)
+	}
+
+	// Return everything up to the last separator, cleaned
+	return unixClean(path[:i])
+}
+
+// unixBase returns the last element of a Unix path
+func unixBase(path string) string {
+	// Handle empty path
+	if path == "" {
+		return "."
+	}
+
+	// Strip trailing separators
+	end := len(path)
+	for end > 0 && unixIsPathSeparator(path[end-1]) {
+		end--
+	}
+
+	if end == 0 {
+		return string(UnixSeparator)
+	}
+
+	// Find the last separator
+	i := end - 1
+	for i >= 0 && !unixIsPathSeparator(path[i]) {
+		i--
+	}
+
+	// Extract the base name (everything after the last separator)
+	if i >= 0 {
+		path = path[i+1 : end]
+	} else {
+		path = path[:end]
+	}
+
+	// If empty (had only separators), return a single separator
 	if path == "" {
 		return string(UnixSeparator)
 	}
+
 	return path
 }
 
+// unixClean cleans a Unix path
 func unixClean(path string) string {
-	originalPath := path
-	volLen := unixVolumeNameLen(path)
-	path = path[volLen:]
+	// Handle empty path
 	if path == "" {
-		if volLen > 1 && unixIsPathSeparator(originalPath[0]) && unixIsPathSeparator(originalPath[1]) {
-			// should be UNC
-			return unixFromSlash(originalPath)
-		}
-		return originalPath + "."
+		return "."
 	}
-	rooted := unixIsPathSeparator(path[0])
 
-	// Invariants:
-	//	reading from path; r is index of next byte to process.
-	//	writing to buf; w is index of next byte to write.
-	//	dotdot is index in buf where .. must stop, either because
-	//		it is the leading slash or it is a leading ../../.. prefix.
-	n := len(path)
-	out := lazybuf{path: path, volAndPath: originalPath, volLen: volLen}
-	r, dotdot := 0, 0
+	// Check if path starts with a separator
+	rooted := len(path) > 0 && unixIsPathSeparator(path[0])
+
+	// Split path into components
+	components := []string{}
+
+	// Skip empty components and handle dots
+	start := 0
+	for i := 0; i <= len(path); i++ {
+		if i == len(path) || unixIsPathSeparator(path[i]) {
+			// Extract component
+			component := path[start:i]
+
+			// Handle empty component and . component
+			if component == "" || component == "." {
+				// Skip this component
+			} else if component == ".." {
+				// Handle .. component
+				if len(components) > 0 && components[len(components)-1] != ".." {
+					// Can go up one level, remove the last component
+					components = components[:len(components)-1]
+				} else if !rooted {
+					// Not rooted and can't go up, so keep the .. component
+					components = append(components, "..")
+				}
+				// If rooted and can't go up, simply ignore the .. component
+			} else {
+				// Add normal component
+				components = append(components, component)
+			}
+
+			// Move to next component
+			start = i + 1
+		}
+	}
+
+	// Handle special case where path becomes empty
+	if !rooted && len(components) == 0 {
+		return "."
+	}
+
+	// Build the cleaned path
+	var result strings.Builder
+
+	// Add root separator if path was rooted
 	if rooted {
-		out.append(UnixSeparator)
-		r, dotdot = 1, 1
+		result.WriteByte(UnixSeparator)
 	}
 
-	for r < n {
-		switch {
-		case unixIsPathSeparator(path[r]):
-			// empty path element
-			r++
-		case path[r] == '.' && (r+1 == n || unixIsPathSeparator(path[r+1])):
-			// . element
-			r++
-		case path[r] == '.' && path[r+1] == '.' && (r+2 == n || unixIsPathSeparator(path[r+2])):
-			// .. element: remove to last separator
-			r += 2
-			switch {
-			case out.w > dotdot:
-				// can backtrack
-				out.w--
-				for out.w > dotdot && !unixIsPathSeparator(out.index(out.w)) {
-					out.w--
-				}
-			case !rooted:
-				// cannot backtrack, but not rooted, so append .. element.
-				if out.w > 0 {
-					out.append(UnixSeparator)
-				}
-				out.append('.')
-				out.append('.')
-				dotdot = out.w
-			}
-		default:
-			// real path element.
-			// add slash if needed
-			if rooted && out.w != 1 || !rooted && out.w != 0 {
-				out.append(UnixSeparator)
-			}
-			// copy element
-			for ; r < n && !unixIsPathSeparator(path[r]); r++ {
-				out.append(path[r])
-			}
+	// Add components with separators
+	for i, component := range components {
+		if i > 0 {
+			result.WriteByte(UnixSeparator)
 		}
+		result.WriteString(component)
 	}
 
-	// Turn empty string into "."
-	if out.w == 0 {
-		out.append('.')
-	}
-
-	unixPostClean(&out) // avoid creating absolute paths on Windows
-	return unixFromSlash(out.string())
+	return result.String()
 }

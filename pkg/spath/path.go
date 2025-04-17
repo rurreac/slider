@@ -1,15 +1,19 @@
+// Package spath provides functionality for manipulating file paths
+// for different operating systems independently of the runtime OS.
 package spath
 
 import (
-	"slices"
 	"strings"
 )
 
-/*
-	Package spath is a wrapper over Go standard path package,
-	so we can resolve path independently of runtime.GOOS value.
-*/
+// Constants for path separators
+const (
+	WindowsSeparator = '\\'
+	UnixSeparator    = '/'
+)
 
+// IsAbs reports whether the path is absolute.
+// It takes a system parameter to determine which OS rules to use.
 func IsAbs(system, path string) bool {
 	if system == "windows" {
 		return winIsAbs(path)
@@ -17,6 +21,8 @@ func IsAbs(system, path string) bool {
 	return unixIsAbs(path)
 }
 
+// Join joins any number of path elements into a single path, separating
+// them with the OS-specific separator.
 func Join(system string, elem []string) string {
 	if system == "windows" {
 		return winJoin(elem)
@@ -24,6 +30,7 @@ func Join(system string, elem []string) string {
 	return unixJoin(elem)
 }
 
+// Dir returns all but the last element of path, typically the path's directory.
 func Dir(system, path string) string {
 	if system == "windows" {
 		return winDir(path)
@@ -31,6 +38,7 @@ func Dir(system, path string) string {
 	return unixDir(path)
 }
 
+// Base returns the last element of path.
 func Base(system, path string) string {
 	if system == "windows" {
 		return winBase(path)
@@ -38,6 +46,9 @@ func Base(system, path string) string {
 	return unixBase(path)
 }
 
+// FromToSlash converts a path to use the OS-specific separator.
+// On Windows, it converts forward slashes to backslashes.
+// On Unix, it ensures forward slashes are used.
 func FromToSlash(system, path string) string {
 	if system == "windows" {
 		return winFromSlash(path)
@@ -45,62 +56,20 @@ func FromToSlash(system, path string) string {
 	return unixToSlash(path)
 }
 
-/*
-	Bellow, as well as pathwin.go and pathunix.go is mostly taken from:
-	- https://go.googlesource.com/go/+/refs/tags/go1.19.2/src/path/filepath/path.go
-	- https://go.googlesource.com/go/+/refs/tags/go1.19.2/src/path/filepath/path_windows.go,
-	- https://go.googlesource.com/go/+/refs/tags/go1.19.2/src/path/filepath/path_unix.go
-*/
-
-type lazybuf struct {
-	path       string
-	buf        []byte
-	w          int
-	volAndPath string
-	volLen     int
-}
-
-func (b *lazybuf) index(i int) byte {
-	if b.buf != nil {
-		return b.buf[i]
-	}
-	return b.path[i]
-}
-
-func (b *lazybuf) append(c byte) {
-	if b.buf == nil {
-		if b.w < len(b.path) && b.path[b.w] == c {
-			b.w++
-			return
-		}
-		b.buf = make([]byte, len(b.path))
-		copy(b.buf, b.path[:b.w])
-	}
-	b.buf[b.w] = c
-	b.w++
-}
-
-func (b *lazybuf) prepend(prefix ...byte) {
-	b.buf = slices.Insert(b.buf, 0, prefix...)
-	b.w += len(prefix)
-}
-
-func (b *lazybuf) string() string {
-	if b.buf == nil {
-		return b.volAndPath[:b.volLen+b.w]
-	}
-	return b.volAndPath[:b.volLen] + string(b.buf[:b.w])
-}
-
-func replaceStringByte(s string, old, new byte) string {
-	if strings.IndexByte(s, old) == -1 {
+// replaceSlashes replaces all instances of oldChar with newChar in a string
+func replaceSlashes(s string, oldChar, newChar byte) string {
+	// If the string doesn't contain the old character, return it unchanged
+	if !strings.ContainsRune(s, rune(oldChar)) {
 		return s
 	}
-	n := []byte(s)
-	for i := range n {
-		if n[i] == old {
-			n[i] = new
+
+	// Create a new byte slice and replace the characters
+	bytes := []byte(s)
+	for i := 0; i < len(bytes); i++ {
+		if bytes[i] == oldChar {
+			bytes[i] = newChar
 		}
 	}
-	return string(n)
+
+	return string(bytes)
 }
