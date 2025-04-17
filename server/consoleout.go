@@ -19,7 +19,6 @@ var (
 	resetColor     = string(escseq.ResetColor)
 	cursorClear    = string(escseq.CursorClear)
 	cursorHome     = string(escseq.CursorHome)
-	resetScreen    = string(escseq.ResetScreen)
 )
 
 func setConsoleColors() {
@@ -34,7 +33,6 @@ func setConsoleColors() {
 		resetColor = ""
 		cursorClear = ""
 		cursorHome = "\n"
-		resetScreen = ""
 	}
 }
 
@@ -64,10 +62,6 @@ func (c *Console) PrintlnInfo(m string, args ...interface{}) {
 
 func (c *Console) clearScreen() {
 	fmt.Printf("%s%s", cursorClear, cursorHome)
-}
-
-func (c *Console) resetScreen() {
-	fmt.Printf("%s", resetScreen)
 }
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
