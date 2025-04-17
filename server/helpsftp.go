@@ -101,20 +101,6 @@ func (ic *sftpConsole) initSftpCommands() map[string]sftpCommandStruck {
 			cmdFunc:     ic.commandSftpCd,
 			isRemote:    true,
 		},
-		getCmd: {
-			alias:       []string{getCmd, "download"},
-			description: getDesc,
-			usage:       getUsage,
-			cmdFunc:     ic.commandSftpGet,
-			isRemote:    true,
-		},
-		putCmd: {
-			alias:       []string{putCmd, "upload"},
-			description: putDesc,
-			usage:       putUsage,
-			cmdFunc:     ic.commandSftpPut,
-			isRemote:    true,
-		},
 		mkdCmd: {
 			alias:       []string{mkdCmd},
 			description: mkdDesc,
@@ -122,56 +108,60 @@ func (ic *sftpConsole) initSftpCommands() map[string]sftpCommandStruck {
 			cmdFunc:     ic.commandSftpMkdir,
 			isRemote:    true,
 		},
+		getCmd: {
+			alias:       []string{getCmd, "download"},
+			description: getDesc,
+			usage:       getUsage,
+			cmdFunc:     ic.commandSftpGet,
+		},
+		putCmd: {
+			alias:       []string{putCmd, "upload"},
+			description: putDesc,
+			usage:       putUsage,
+			cmdFunc:     ic.commandSftpPut,
+		},
 		rmCmd: {
 			alias:       []string{rmCmd, "del", "delete"},
 			description: rmDesc,
 			usage:       rmUsage,
 			cmdFunc:     ic.commandSftpRm,
-			isRemote:    true,
 		},
 		statCmd: {
 			alias:       []string{statCmd, "info"},
 			description: statDesc,
 			usage:       statUsage,
 			cmdFunc:     ic.commandSftpStat,
-			isRemote:    true,
 		},
 		mvCmd: {
 			alias:       []string{mvCmd, "rename", "move"},
 			description: mvDesc,
 			usage:       mvUsage,
 			cmdFunc:     ic.commandSftpMove,
-			isRemote:    true,
 		},
 		pwdCmd: {
 			alias:       []string{pwdCmd, "getwd"},
 			description: pwdDesc,
-			isRemote:    true,
 		},
 		// Local commands
 		lPwdCmd: {
 			alias:       []string{lPwdCmd, "lgetwd"},
 			description: lPwdDesc,
-			isRemote:    true,
 		},
 		lLsCmd: {
 			alias:       []string{lLsCmd, "ldir", "llist"},
 			description: lLsDesc,
 			cmdFunc:     ic.commandSftpList,
-			isRemote:    false,
 		},
 		lCdCmd: {
 			alias:       []string{lCdCmd},
 			description: lCdDesc,
 			cmdFunc:     ic.commandSftpCd,
-			isRemote:    false,
 		},
 		lMkdCmd: {
 			alias:       []string{lMkdCmd},
 			description: lMkdDesc,
 			usage:       lMkdUsage,
 			cmdFunc:     ic.commandSftpMkdir,
-			isRemote:    false,
 		},
 	}
 

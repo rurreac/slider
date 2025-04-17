@@ -190,7 +190,7 @@ func winPostClean(out *lazybuf) {
 	}
 }
 
-func WinFromSlash(path string) string {
+func winFromSlash(path string) string {
 	return replaceStringByte(path, '/', WindowsSeparator)
 }
 
@@ -226,7 +226,7 @@ func winClean(path string) string {
 	if path == "" {
 		if volLen > 1 && winIsPathSeparator(originalPath[0]) && winIsPathSeparator(originalPath[1]) {
 			// should be UNC
-			return WinFromSlash(originalPath)
+			return winFromSlash(originalPath)
 		}
 		return originalPath + "."
 	}
@@ -291,5 +291,5 @@ func winClean(path string) string {
 	}
 
 	winPostClean(&out) // avoid creating absolute paths on Windows
-	return WinFromSlash(out.string())
+	return winFromSlash(out.string())
 }

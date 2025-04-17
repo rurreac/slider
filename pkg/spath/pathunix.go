@@ -50,11 +50,11 @@ func unixDir(path string) string {
 
 func unixPostClean(out *lazybuf) {}
 
-func UnixFromSlash(path string) string {
+func unixFromSlash(path string) string {
 	return path
 }
 
-func UnixToSlash(path string) string {
+func unixToSlash(path string) string {
 	return replaceStringByte(path, WindowsSeparator, '/')
 }
 
@@ -90,7 +90,7 @@ func unixClean(path string) string {
 	if path == "" {
 		if volLen > 1 && unixIsPathSeparator(originalPath[0]) && unixIsPathSeparator(originalPath[1]) {
 			// should be UNC
-			return UnixFromSlash(originalPath)
+			return unixFromSlash(originalPath)
 		}
 		return originalPath + "."
 	}
@@ -155,5 +155,5 @@ func unixClean(path string) string {
 	}
 
 	unixPostClean(&out) // avoid creating absolute paths on Windows
-	return UnixFromSlash(out.string())
+	return unixFromSlash(out.string())
 }

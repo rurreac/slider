@@ -294,13 +294,6 @@ func (ic *sftpConsole) pathJoin(elem []string, remote bool) string {
 	return spath.Join(ic.svrSystem, elem)
 }
 
-func (ic *sftpConsole) pathBase(path string, remote bool) string {
-	if remote {
-		return spath.Base(ic.cliSystem, path)
-	}
-	return spath.Base(ic.svrSystem, path)
-}
-
 func (c *sftpCommandRequest) pathStat(path string) (os.FileInfo, error) {
 	if *c.isRemote {
 		return c.sftpCli.Stat(path)
@@ -749,7 +742,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		downloadedSize := int64(0)
 
 		// Create the target directory for the download
-		targetDir := ic.pathJoin([]string{localPath, ic.pathBase(remotePath, *c.isRemote)}, false)
+		targetDir := spath.Join(ic.svrSystem, []string{localPath, spath.Base(ic.cliSystem, remotePath)})
 		if err := ensureLocalDir(targetDir); err != nil {
 			ic.console.PrintlnErrorStep("Failed to create target directory: %v", err)
 			return
@@ -760,12 +753,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 			if localRelPath == "" {
 				localFullPath = targetDir
 			} else {
-				// Use appropriate path for the local OS
-				if ic.svrSystem == "windows" {
-					localRelPath = spath.WinFromSlash(localRelPath)
-				} else {
-					localRelPath = spath.UnixToSlash(localRelPath)
-				}
+				localRelPath = spath.FromToSlash(ic.svrSystem, localRelPath)
 				localFullPath = filepath.Join(targetDir, localRelPath)
 			}
 
@@ -822,7 +810,13 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 				float64(downloadedSize)/(1024*1024))
 		}
 	} else {
-		localFilePath := filepath.Join(localPath, ic.pathBase(remotePath, true))
+		localFilePath := filepath.Join(
+			localPath,
+			// Format path to local format
+			spath.FromToSlash(
+				ic.svrSystem,
+				// Basedir from remote format
+				spath.Base(ic.cliSystem, remotePath)))
 
 		ic.console.TermPrintf("Downloading file %s to %s (%.2f KB)\n", remotePath, localFilePath, float64(rpFi.Size())/1024.0)
 
@@ -886,8 +880,9 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	}
 
 	// Get basename of the local path for remote destination
-	baseName := ic.pathBase(localPath, false)
-
+	baseName := spath.Base(ic.svrSystem, localPath)
+	// Ensure paths correspond to the target system
+	baseName = spath.FromToSlash(ic.cliSystem, baseName)
 	// Construct the remote path using the basename and current remote directory
 	remotePath := spath.Join(ic.cliSystem, []string{*c.remoteCwd, baseName})
 
@@ -942,11 +937,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 				remoteFullPath = remotePath
 			} else {
 				// Use appropriate path for the remote OS
-				if ic.cliSystem != "windows" {
-					remoteRelPath = spath.UnixToSlash(remoteRelPath)
-				} else {
-					remoteRelPath = spath.WinFromSlash(remoteRelPath)
-				}
+				remoteRelPath = spath.FromToSlash(ic.cliSystem, remoteRelPath)
 				remoteFullPath = spath.Join(ic.cliSystem, []string{remotePath, remoteRelPath})
 			}
 
