@@ -28,63 +28,75 @@ type Console struct {
 	FirstRun  bool
 }
 
+type screenIO struct {
+	io.Reader
+	io.Writer
+}
+
 func (s *server) consoleBanner() {
 	s.console.clearScreen()
 	s.console.Printf("%s%s%s\n\n", greyBold, conf.Banner, resetColor)
-	s.console.PrintlnDebugStep("Type \"bg\" or press CTRL^C again to return to logging.")
+	s.console.PrintlnDebugStep("Type \"bg\" to return to logging.")
 	s.console.PrintlnDebugStep("Type \"help\" to see available commands.")
 	s.console.PrintlnDebugStep("Type \"exit\" to exit the console.\n")
+}
 
+func (s *server) newTerminal(screen screenIO, commands map[string]commandStruct) error {
+	var rErr error
+
+	// Not Initializing with os.Stdin will fail on Windows
+	_, rErr = term.MakeRaw(int(os.Stdin.Fd()))
+	if rErr != nil {
+		return rErr
+	}
+
+	// Set Console
+	s.console.Term = term.NewTerminal(screen, getPrompt())
+	s.console.setConsoleAutoComplete(commands)
+	s.console.Output = log.New(s.console.Term, "", 0)
+
+	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
+	if tErr != nil {
+		return tErr
+	}
+	if sErr := s.console.Term.SetSize(width, height); sErr != nil {
+		return sErr
+	}
+	return nil
 }
 
 func (s *server) NewConsole() string {
 	var out string
 
-	// Set Console Colors
-	setConsoleColors()
+	// Only applies to Windows - Best effort to have a successful raw terminal regardless
+	// of the Windows version
+	if piErr := s.serverInterpreter.EnableProcessedInputOutput(); piErr != nil {
+		s.Logger.Errorf("Failed to enable Processed Input/Output")
+		// Sets Console Colors based on if PTY is enabled on the server.
+		// If it's not on PTY and fails to set Processed IO, disables colors
+		setConsoleColors()
+	}
+	defer func() {
+		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {
+			s.Logger.Errorf("Failed to reset Input/Output modes: %s", ioErr)
+		}
+	}()
 
 	// Get available Commands
 	commands := s.initCommands()
 
-	// Initialize Term
-	var rErr error
-	if s.serverInterpreter.PtyOn {
-		// Not Initializing with os.Stdin will fail on Windows
-		s.console.InitState, rErr = term.MakeRaw(int(os.Stdin.Fd()))
-		if rErr != nil {
-			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
-		}
-	} else {
-		// If Server does not support PTY don't make terminal raw.
-		// This is required for having a working term on Windows pre ConPTY
-		s.console.InitState, rErr = term.GetState(int(os.Stdin.Fd()))
-		if rErr != nil {
-			s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
-		}
+	// Set Console
+	var sErr error
+	s.console.InitState, sErr = term.GetState(int(os.Stdin.Fd()))
+	if sErr != nil {
+		s.Logger.Fatalf("Failed to read terminal size: %v", sErr)
 	}
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
-
-	screen := struct {
-		io.Reader
-		io.Writer
-	}{os.Stdin, os.Stdout}
-
-	// Set Console
-	s.console.Term = term.NewTerminal(screen, getPrompt())
-
-	// Disabling autocompletion if not PTY as tabs won't the handled properly
-	if s.serverInterpreter.PtyOn {
-		s.console.setConsoleAutoComplete(commands)
-	}
-
-	s.console.Output = log.New(s.console.Term, "", 0)
-
-	// Set Console
-	if width, height, tErr := term.GetSize(int(os.Stdout.Fd())); tErr == nil {
-		// Disregard the error if fails setting Console size
-		_ = s.console.Term.SetSize(width, height)
+	screen := screenIO{os.Stdin, os.Stdout}
+	if ntErr := s.newTerminal(screen, commands); ntErr != nil {
+		s.Logger.Fatalf("Failed to initialize terminal: %s", ntErr)
 	}
 
 	if s.console.FirstRun {
@@ -100,10 +112,14 @@ func (s *server) NewConsole() string {
 				s.console.TermPrintf("\rFailed to read input: %s\r\n", err)
 			}
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
-			// line, error = "", io.EOF
-			// We will background gracefully when this happens
-			s.console.PrintlnInfo("\n\rLogging...\n")
-			return bgCmd
+			// line, error = "", io.EOF and kills the terminal.
+			// To avoid an unexpected behavior, we will silently create a new terminal
+			// and continue
+			if ntErr := s.newTerminal(screen, commands); ntErr != nil {
+				s.Logger.Fatalf("Failed to recover terminal: %s", ntErr)
+			}
+			_, _ = s.console.Term.Write([]byte{'\n'})
+			continue
 		}
 		args := make([]string, 0)
 		args = append(args, strings.Fields(input)...)
@@ -156,7 +172,7 @@ func (c *Console) setConsoleAutoComplete(commands map[string]commandStruct) {
 	slices.Sort(cmdList)
 	// Simple autocompletion
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
-		// If TAB key is pressed and text was written
+		// If a TAB key is pressed and a text was written
 		if key == 9 && len(line) > 0 {
 			newLine, newPos := autocompleteCommand(line, cmdList)
 			return newLine, newPos, true
@@ -192,8 +208,9 @@ func autocompleteCommand(input string, cmdList []string) (string, int) {
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
-	// If a Shell was not set just return
+	// If a Shell was not set, just return
 	if s.serverInterpreter.Shell == "" {
+		s.console.PrintlnErrorStep("No Shell set")
 		return
 	}
 
@@ -669,7 +686,7 @@ func (s *server) connectCommand(args ...string) {
 
 func (s *server) sshCommand(args ...string) {
 	sshFlags := sflag.NewFlagPack([]string{sshCmd}, sshUsage, sshDesc, s.console.Term)
-	sSession, _ := sshFlags.NewIntFlag("s", "sesssion", "Session ID to establish SSH connection with", 0)
+	sSession, _ := sshFlags.NewIntFlag("s", "session", "Session ID to establish SSH connection with", 0)
 	sPort, _ := sshFlags.NewIntFlag("p", "port", "Local port to forward SSH connection to", 0)
 	sKill, _ := sshFlags.NewIntFlag("k", "kill", "Kill SSH port forwarding to a Session ID", 0)
 	sExpose, _ := sshFlags.NewBoolFlag("e", "expose", "Expose port to all interfaces", false)

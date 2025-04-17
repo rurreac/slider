@@ -33,6 +33,11 @@ type sftpCommandRequest struct {
 	*sftpConsole
 }
 
+func (s *server) newSftpTerminal(sftpPrompt string, commands map[string]sftpCommandStruck) {
+	s.console.Term.SetPrompt(sftpPrompt)
+	s.console.setSftpConsoleAutoComplete(commands)
+}
+
 // newSftpConsole provides an interactive SFTP session
 func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	// Get current directory
@@ -103,20 +108,21 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 
 	// Print welcome message and help info
 	s.console.PrintlnDebugStep("Starting interactive session")
-	s.console.PrintlnDebugStep("Type \"help\" for available commands, \"exit\" to quit")
+	s.console.PrintlnDebugStep("Type \"help\" for available commands")
+	s.console.PrintlnDebugStep("Type \"exit\" or press \"CTRL^C\" to return to Console")
 
 	// Set the terminal prompt
-	s.console.Term.SetPrompt(sftpPrompt())
 	commands := ic.initSftpCommands()
-	s.console.setSftpConsoleAutoComplete(commands)
+	s.newSftpTerminal(sftpPrompt(), commands)
 
 	var isRemote bool
-
 	for {
 		input, rErr := s.console.Term.ReadLine()
 		if rErr != nil {
-			s.console.PrintlnErrorStep("Error reading command: %v", rErr)
-			break
+			// From 'term' documentation, CTRL^C as well as CTR^D return:
+			// line, error = "", io.EOF and kills the terminal.
+			// When this happens, we will return to the main Console
+			return
 		}
 
 		cmdParts := fieldsWithQuotes(input)
@@ -147,7 +153,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 				return
 			}
 			s.console.TermPrintf("%s\n\n", localCwd)
-		case "exit", "quit":
+		case "exit":
 			// Exit SFTP session
 			return
 		case "shell":

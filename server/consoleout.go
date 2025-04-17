@@ -91,7 +91,7 @@ func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
 func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
 	msg := fmt.Sprintf(m, args...)
 	c.Output.Printf(
-		"\r[%s*%s] %s\r\n",
+		"\r[%s!%s] %s\r\n",
 		yellowBright,
 		resetColor,
 		msg,
