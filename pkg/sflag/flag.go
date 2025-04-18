@@ -35,74 +35,74 @@ func NewFlagPack(commands []string, usage string, description string, writerOut 
 }
 
 func (fsp *FlagSetPack) newFlag(shortFlag string, longFlag string, usage string, value any) (any, error) {
-	switch value.(type) {
+	switch typedValue := value.(type) {
 	case bool:
 		holder := new(bool)
-		*holder = value.(bool)
+		*holder = typedValue
 		if shortFlag == "" && longFlag == "" {
 			return nil, fmt.Errorf("one of short flag or long flag is required")
 		}
 		if shortFlag != "" {
-			fsp.Set.BoolVar(holder, shortFlag, value.(bool), usage)
+			fsp.Set.BoolVar(holder, shortFlag, typedValue, usage)
 		}
 		if longFlag != "" {
-			fsp.Set.BoolVar(holder, longFlag, value.(bool), usage)
+			fsp.Set.BoolVar(holder, longFlag, typedValue, usage)
 		}
 		fsp.flgInfo = append(fsp.flgInfo, flagInfo{shortFlag, longFlag, fmt.Sprintf("%v", value), usage})
 		return holder, nil
 	case string:
 		holder := new(string)
-		*holder = value.(string)
+		*holder = typedValue
 		if shortFlag == "" && longFlag == "" {
 			return nil, fmt.Errorf("one of short flag or long flag is required")
 		}
 		if shortFlag != "" {
-			fsp.Set.StringVar(holder, shortFlag, value.(string), usage)
+			fsp.Set.StringVar(holder, shortFlag, typedValue, usage)
 		}
 		if longFlag != "" {
-			fsp.Set.StringVar(holder, longFlag, value.(string), usage)
+			fsp.Set.StringVar(holder, longFlag, typedValue, usage)
 		}
 		fsp.flgInfo = append(fsp.flgInfo, flagInfo{shortFlag, longFlag, fmt.Sprintf("%v", value), usage})
 		return holder, nil
 	case int:
 		holder := new(int)
-		*holder = value.(int)
+		*holder = typedValue
 		if shortFlag == "" && longFlag == "" {
 			return nil, fmt.Errorf("one of short flag or long flag is required")
 		}
 		if shortFlag != "" {
-			fsp.Set.IntVar(holder, shortFlag, value.(int), usage)
+			fsp.Set.IntVar(holder, shortFlag, typedValue, usage)
 		}
 		if longFlag != "" {
-			fsp.Set.IntVar(holder, longFlag, value.(int), usage)
+			fsp.Set.IntVar(holder, longFlag, typedValue, usage)
 		}
 		fsp.flgInfo = append(fsp.flgInfo, flagInfo{shortFlag, longFlag, fmt.Sprintf("%v", value), usage})
 		return holder, nil
 	case int64:
 		holder := new(int64)
-		*holder = value.(int64)
+		*holder = typedValue
 		if shortFlag == "" && longFlag == "" {
 			return nil, fmt.Errorf("one of short flag or long flag is required")
 		}
 		if shortFlag != "" {
-			fsp.Set.Int64Var(holder, shortFlag, value.(int64), usage)
+			fsp.Set.Int64Var(holder, shortFlag, typedValue, usage)
 		}
 		if longFlag != "" {
-			fsp.Set.Int64Var(holder, longFlag, value.(int64), usage)
+			fsp.Set.Int64Var(holder, longFlag, typedValue, usage)
 		}
 		fsp.flgInfo = append(fsp.flgInfo, flagInfo{shortFlag, longFlag, fmt.Sprintf("%v", value), usage})
 		return holder, nil
 	case float64:
 		holder := new(float64)
-		*holder = value.(float64)
+		*holder = typedValue
 		if shortFlag == "" && longFlag == "" {
 			return nil, fmt.Errorf("one of short flag or long flag is required")
 		}
 		if shortFlag != "" {
-			fsp.Set.Float64Var(holder, shortFlag, value.(float64), usage)
+			fsp.Set.Float64Var(holder, shortFlag, typedValue, usage)
 		}
 		if longFlag != "" {
-			fsp.Set.Float64Var(holder, longFlag, value.(float64), usage)
+			fsp.Set.Float64Var(holder, longFlag, typedValue, usage)
 		}
 		fsp.flgInfo = append(fsp.flgInfo, flagInfo{shortFlag, longFlag, fmt.Sprintf("%v", value), usage})
 		return holder, nil
