@@ -5,7 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"slider/pkg/colors"
+	"slider/pkg/escseq"
 	"strings"
 	"sync"
 )
@@ -69,11 +69,11 @@ func NewDummyLog() *log.Logger {
 func (l *Logger) WithColors() {
 	l.colorOn = true
 	// Log Level
-	DEBUG = string(colors.Log.Debug) + DEBUG + string(colors.Reset)
-	INFO = string(colors.Log.Info) + INFO + string(colors.Reset)
-	WARN = string(colors.Log.Warn) + WARN + string(colors.Reset)
-	ERROR = string(colors.Log.Error) + ERROR + string(colors.Reset)
-	FATAL = string(colors.Log.Fatal) + FATAL + string(colors.Reset)
+	DEBUG = string(escseq.Log.Debug) + DEBUG + string(escseq.ResetColor)
+	INFO = string(escseq.Log.Info) + INFO + string(escseq.ResetColor)
+	WARN = string(escseq.Log.Warn) + WARN + string(escseq.ResetColor)
+	ERROR = string(escseq.Log.Error) + ERROR + string(escseq.ResetColor)
+	FATAL = string(escseq.Log.Fatal) + FATAL + string(escseq.ResetColor)
 }
 
 func (l *Logger) LogToBuffer() {

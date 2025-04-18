@@ -12,7 +12,6 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
-	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"sync"
 	"syscall"
@@ -21,8 +20,17 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const clientCertsFile = "client-certs.json"
-const serverCertFile = "server-cert.json"
+const (
+	serverHelp = "\n\rSlider Server" +
+		"\n\n\r  Creates a new Slider Server instance and waits for" +
+		"\n\rincoming Slider Client connections on the defined port." +
+		"\n\n\r  Interaction with Slider Clients can be performed through" +
+		"\n\rits integrated Console by pressing CTR^C at any time." +
+		"\n\n\rUsage: <slider_server> [flags]\n\r"
+
+	clientCertsFile = "client-certs.json"
+	serverCertFile  = "server-cert.json"
+)
 
 // sessionTrack keeps track of sessions and clients
 type sessionTrack struct {
@@ -154,7 +162,7 @@ func NewServer(args []string) {
 	var serverKeyPair *scrypt.ServerKeyPair
 	var privateKeySigner ssh.Signer
 	if *keyStore || *keyPath != "" {
-		kp := sio.GetSliderHome() + serverCertFile
+		kp := conf.GetSliderHome() + serverCertFile
 
 		if *keyPath != "" {
 			kp = *keyPath
@@ -201,7 +209,7 @@ func NewServer(args []string) {
 		s.Logger.Warnf("Client Authentication enabled, a valid certificate will be required")
 
 		if s.certJarFile == "" {
-			s.certJarFile = sio.GetSliderHome() + clientCertsFile
+			s.certJarFile = conf.GetSliderHome() + clientCertsFile
 		}
 		if lcErr := s.loadCertJar(); lcErr != nil {
 			s.Logger.Fatalf("%v", lcErr)

@@ -141,7 +141,19 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			}
 			session.setInterpreter(ci.Interpreter)
 
-			_ = session.replyConnRequest(r, true, nil)
+			interpreterPayload := make([]byte, 0)
+			if !s.serverInterpreter.PtyOn {
+				cliInterpreter := ci.Interpreter
+				cliInterpreter.Shell = cliInterpreter.AltShell
+
+				// Best effort, is server doesn't support PTY, use simple client Shell
+				var jErr error
+				interpreterPayload, jErr = json.Marshal(ci.Interpreter)
+				if jErr != nil {
+					s.Logger.Errorf("Session ID %d - Error marshaling Client Info", session.sessionID)
+				}
+			}
+			_ = session.replyConnRequest(r, true, interpreterPayload)
 		default:
 			ssh.DiscardRequests(connReq)
 		}

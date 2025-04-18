@@ -460,11 +460,11 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 			}
 		}
 	}()
-	state, _ := term.GetState(int(os.Stdout.Fd()))
-	if rErr := term.Restore(int(os.Stdout.Fd()), initState); rErr != nil {
+	state, _ := term.GetState(int(os.Stdin.Fd()))
+	if rErr := term.Restore(int(os.Stdin.Fd()), initState); rErr != nil {
 		return rErr
 	}
-	defer func() { _ = term.Restore(int(os.Stdout.Fd()), state) }()
+	defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 
 	// Capture interrupt signal once to simulate that we can actually interact with a CTR^C
 	go func() {
@@ -474,7 +474,6 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 			// Stop capture
 			signal.Stop(sig)
 			close(sig)
-			fmt.Printf("\n\n\rInterrupting execute...\n\r")
 			// Manually write SIGQUIT to the channel to stop the process
 			_, _ = sliderClientChannel.Write([]byte{0x03})
 		}
