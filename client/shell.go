@@ -79,6 +79,13 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 
 	} else {
 		s.Logger.Debugf("Running SHELL on NON PTY")
+
+		// Handle window-change events
+		go func() {
+			for range winChange {
+			}
+		}()
+
 		outRC, oErr := cmd.StdoutPipe()
 		if oErr != nil {
 			s.Logger.Errorf("Failed to get stdout pipe %v", oErr)
@@ -94,20 +101,6 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			s.Logger.Errorf("Failed to execute command error - %v", runErr)
 			return
 		}
-
-		// Handle window-change events
-		go func() {
-			for sizeBytes := range winChange {
-				cols, rows := instance.ParseSizePayload(sizeBytes)
-				size := []string{
-					fmt.Sprintf("LINES=%d", int(cols)),
-					fmt.Sprintf("COLUMNS=%d", int(rows)),
-				}
-				for _, envVar := range size {
-					cmd.Env = append(cmd.Environ(), envVar)
-				}
-			}
-		}()
 
 		go func() { _, _ = io.Copy(sshChan, outRC) }()
 		go func() { _, _ = io.Copy(sshChan, errRC) }()
@@ -191,6 +184,12 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	} else {
 		s.Logger.Debugf("Running EXEC on NON PTY")
+		// Handle window-change events
+		go func() {
+			for range winChange {
+			}
+		}()
+
 		outRC, oErr := cmd.StdoutPipe()
 		if oErr != nil {
 			s.Logger.Errorf("Failed to get stdout pipe %v", oErr)
@@ -206,20 +205,6 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			s.Logger.Errorf("Failed to execute command error - %v", runErr)
 			return
 		}
-
-		// Handle window-change events
-		go func() {
-			for sizeBytes := range winChange {
-				cols, rows := instance.ParseSizePayload(sizeBytes)
-				size := []string{
-					fmt.Sprintf("LINES=%d", int(cols)),
-					fmt.Sprintf("COLUMNS=%d", int(rows)),
-				}
-				for _, envVar := range size {
-					cmd.Env = append(cmd.Environ(), envVar)
-				}
-			}
-		}()
 
 		go func() { _, _ = io.Copy(sshChan, outRC) }()
 		go func() { _, _ = io.Copy(sshChan, errRC) }()
