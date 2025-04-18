@@ -897,7 +897,7 @@ func (s *server) shellCommand(args ...string) {
 
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
-					sig := make(chan os.Signal)
+					sig := make(chan os.Signal, 1)
 					signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 					for range sig {
 						// Stop capture
