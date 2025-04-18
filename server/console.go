@@ -62,6 +62,12 @@ func (s *server) newTerminal(screen screenIO, commands map[string]commandStruct)
 	if sErr := s.console.Term.SetSize(width, height); sErr != nil {
 		return sErr
 	}
+
+	if s.console.FirstRun {
+		s.consoleBanner()
+		s.console.FirstRun = false
+	}
+
 	return nil
 }
 
@@ -97,11 +103,6 @@ func (s *server) NewConsole() string {
 	screen := screenIO{os.Stdin, os.Stdout}
 	if ntErr := s.newTerminal(screen, commands); ntErr != nil {
 		s.Logger.Fatalf("Failed to initialize terminal: %s", ntErr)
-	}
-
-	if s.console.FirstRun {
-		s.consoleBanner()
-		s.console.FirstRun = false
 	}
 
 	for consoleInput := true; consoleInput; {
@@ -882,30 +883,21 @@ func (s *server) shellCommand(args ...string) {
 			}
 			s.console.PrintlnOkStep("Authenticated with mTLS")
 
-			// Set up the terminal according to the client
-			if session.IsPtyOn() {
-				s.console.PrintlnOkStep("Shell has PTY, switching to raw terminal")
-				tState, tErr := term.MakeRaw(int(os.Stdin.Fd()))
-				if tErr != nil {
-					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
-					return
-				}
-				defer func() {
-					if rErr := term.Restore(int(os.Stdin.Fd()), tState); rErr != nil {
-						session.Logger.Errorf("Failed to restore terminal state - %v", rErr)
-					}
-				}()
-			} else {
-				s.console.PrintlnWarnStep("Client does not support PTY, terminal not raw, echo is enabled")
+			// If session doesn't support PTY revert Raw Terminal
+			if !session.IsPtyOn() {
+				s.console.PrintlnWarnStep("Client does not support PTY")
+				s.console.PrintlnWarnStep("Pressing CTR^C will interrupt the shell")
+
 				conState, _ := term.GetState(int(os.Stdin.Fd()))
 				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
 					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
 					return
 				}
 				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
+
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
-					sig := make(chan os.Signal, 1)
+					sig := make(chan os.Signal)
 					signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 					for range sig {
 						// Stop capture
@@ -914,7 +906,6 @@ func (s *server) shellCommand(args ...string) {
 						if cErr := conn.Close(); cErr != nil {
 							session.Logger.Errorf("Failed to close Shell connection - %v", cErr)
 						}
-						s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
 					}
 				}()
 			}
@@ -923,6 +914,9 @@ func (s *server) shellCommand(args ...string) {
 			if string(session.clientInterpreter.System) != "windows" {
 				s.console.clearScreen()
 			}
+			// os.StdIn is blocking and will be waiting for any input even if the connection is closed.
+			// After pressing a key, io.Copy will fail due to the attempt of copying to a closed writer,
+			// which will do the unlocking
 			go func() {
 				_, _ = io.Copy(os.Stdout, conn)
 				s.console.PrintlnWarn("Press ENTER until get back to console")
