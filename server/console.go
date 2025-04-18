@@ -2,7 +2,6 @@ package server
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -10,10 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"slices"
 	"slider/pkg/conf"
-	"slider/pkg/sio"
+	"slider/pkg/sflag"
 	"sort"
 	"strings"
 	"syscall"
@@ -30,70 +28,81 @@ type Console struct {
 	FirstRun  bool
 }
 
+type screenIO struct {
+	io.Reader
+	io.Writer
+}
+
+func (s *server) consoleBanner() {
+	s.console.clearScreen()
+	s.console.Printf("%s%s%s\n\n", greyBold, conf.Banner, resetColor)
+	s.console.PrintlnDebugStep("Type \"bg\" to return to logging.")
+	s.console.PrintlnDebugStep("Type \"help\" to see available commands.")
+	s.console.PrintlnDebugStep("Type \"exit\" to exit the console.\n")
+}
+
+func (s *server) newTerminal(screen screenIO, commands map[string]commandStruct) error {
+	var rErr error
+
+	// Not Initializing with os.Stdin will fail on Windows
+	_, rErr = term.MakeRaw(int(os.Stdin.Fd()))
+	if rErr != nil {
+		return rErr
+	}
+
+	// Set Console
+	s.console.Term = term.NewTerminal(screen, getPrompt())
+	s.console.setConsoleAutoComplete(commands)
+	s.console.Output = log.New(s.console.Term, "", 0)
+
+	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
+	if tErr != nil {
+		return tErr
+	}
+	if sErr := s.console.Term.SetSize(width, height); sErr != nil {
+		return sErr
+	}
+
+	if s.console.FirstRun {
+		s.consoleBanner()
+		s.console.FirstRun = false
+	}
+
+	return nil
+}
+
 func (s *server) NewConsole() string {
 	var out string
 
-	// Set Console Colors
-	setConsoleColors()
+	// Only applies to Windows - Best effort to have a successful raw terminal regardless
+	// of the Windows version
+	if piErr := s.serverInterpreter.EnableProcessedInputOutput(); piErr != nil {
+		s.Logger.Errorf("Failed to enable Processed Input/Output")
+		// Sets Console Colors based on if PTY is enabled on the server.
+		// If it's not on PTY and fails to set Processed IO, disables colors
+		setConsoleColors()
+	}
+	defer func() {
+		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {
+			s.Logger.Errorf("Failed to reset Input/Output modes: %s", ioErr)
+		}
+	}()
 
 	// Get available Commands
 	commands := s.initCommands()
 
-	// Initialize Term
-	var rErr error
-	s.console.InitState, rErr = term.MakeRaw(int(os.Stdout.Fd()))
-	if rErr != nil {
-		s.Logger.Fatalf("Failed to initialize terminal: %s", rErr)
-		return exitCmd
+	// Set Console
+	var sErr error
+	s.console.InitState, sErr = term.GetState(int(os.Stdin.Fd()))
+	if sErr != nil {
+		s.Logger.Fatalf("Failed to read terminal size: %v", sErr)
 	}
 	defer func() {
-		_ = term.Restore(int(os.Stdout.Fd()), s.console.InitState)
+		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
-
-	screen := struct {
-		io.Reader
-		io.Writer
-	}{os.Stdin, os.Stdout}
-
-	// Set Console
-	s.console.Term = term.NewTerminal(screen, getPrompt())
-
-	// Disabling autocompletion if not PTY as tabs won't the handled properly
-	if s.serverInterpreter.PtyOn {
-		// List of the Ordered the commands for autocompletion
-		var cmdList []string
-		for k := range commands {
-			cmdList = append(cmdList, k)
-		}
-		slices.Sort(cmdList)
-		// Simple autocompletion
-		s.console.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
-			// If TAB key is pressed and text was written
-			if key == 9 && len(line) > 0 {
-				newLine, newPos := s.autocompleteCommand(line, cmdList)
-				return newLine, newPos, true
-			}
-			return line, pos, false
-		}
-	}
-
-	s.console.Output = log.New(s.console.Term, "", 0)
-
-	// Set Console
-	if width, height, tErr := term.GetSize(int(os.Stdout.Fd())); tErr == nil {
-		// Disregard the error if fails setting Console size
-		_ = s.console.Term.SetSize(width, height)
-	}
-
-	if s.console.FirstRun {
-		s.console.PrintlnWarn(
-			"\r\n" +
-				"\r\n* Type \"bg\" or press CTRL^C again to return to logging" +
-				"\r\n* Type \"help\" to see available commands." +
-				"\r\n* Type \"exit\" to terminate the server." +
-				"\r\n",
-		)
-		s.console.FirstRun = false
+	screen := screenIO{os.Stdin, os.Stdout}
+	if ntErr := s.newTerminal(screen, commands); ntErr != nil {
+		s.Logger.Fatalf("Failed to initialize terminal: %s", ntErr)
 	}
 
 	for consoleInput := true; consoleInput; {
@@ -101,13 +110,17 @@ func (s *server) NewConsole() string {
 		input, err := s.console.Term.ReadLine()
 		if err != nil {
 			if err != io.EOF {
-				s.console.Printf("\rFailed to read input: %s\r\n", err)
+				s.console.TermPrintf("\rFailed to read input: %s\r\n", err)
 			}
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
-			// line, error = "", io.EOF
-			// We will background gracefully when this happens
-			s.console.PrintlnWarn("\n\rLogging...")
-			return bgCmd
+			// line, error = "", io.EOF and kills the terminal.
+			// To avoid an unexpected behavior, we will silently create a new terminal
+			// and continue
+			if ntErr := s.newTerminal(screen, commands); ntErr != nil {
+				s.Logger.Fatalf("Failed to recover terminal: %s", ntErr)
+			}
+			_, _ = s.console.Term.Write([]byte{'\n'})
+			continue
 		}
 		args := make([]string, 0)
 		args = append(args, strings.Fields(input)...)
@@ -118,27 +131,58 @@ func (s *server) NewConsole() string {
 
 		switch fCmd {
 		case exitCmd, bgCmd:
-			consoleInput = false
 			out = fCmd
+			if out == bgCmd {
+				s.console.PrintlnInfo("Logging...\n\r")
+			}
+			consoleInput = false
 		case helpCmd:
 			s.printConsoleHelp()
 		case "":
 			continue
 		default:
 			currentPrompt := getPrompt()
+			// This is meant to be a command to execute locally
+			if strings.HasPrefix(fCmd, "!") {
+				if len(fCmd) > 1 {
+					fullCommand := []string{strings.TrimPrefix(fCmd, "!")}
+					fullCommand = append(fullCommand, args[1:]...)
+					s.notConsoleCommand(fullCommand)
+					continue
+				}
+			}
 			if k, ok := commands[fCmd]; ok {
 				k.cmdFunc(args[1:]...)
+				s.console.Term.SetPrompt(currentPrompt)
 			} else {
-				s.notConsoleCommand(args)
+				s.console.PrintlnErrorStep("Unknown Command: %q", args)
 			}
-			s.console.Term.SetPrompt(currentPrompt)
+
 		}
 	}
 
 	return out
 }
 
-func (s *server) autocompleteCommand(input string, cmdList []string) (string, int) {
+func (c *Console) setConsoleAutoComplete(commands map[string]commandStruct) {
+	// List of the Ordered the commands for autocompletion
+	var cmdList []string
+	for k := range commands {
+		cmdList = append(cmdList, k)
+	}
+	slices.Sort(cmdList)
+	// Simple autocompletion
+	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// If a TAB key is pressed and a text was written
+		if key == 9 && len(line) > 0 {
+			newLine, newPos := autocompleteCommand(line, cmdList)
+			return newLine, newPos, true
+		}
+		return line, pos, false
+	}
+}
+
+func autocompleteCommand(input string, cmdList []string) (string, int) {
 	var cmd string
 	var substring string
 	var count int
@@ -165,15 +209,14 @@ func (s *server) autocompleteCommand(input string, cmdList []string) (string, in
 }
 
 func (s *server) notConsoleCommand(fCmd []string) {
-	s.console.PrintWarnSelect("Console does not recognize Command: ", fCmd...)
-
-	// If a Shell was not set just return
+	// If a Shell was not set, just return
 	if s.serverInterpreter.Shell == "" {
+		s.console.PrintlnErrorStep("No Shell set")
 		return
 	}
 
 	// Else, we'll try to execute the command locally
-	s.console.PrintlnWarn("Will run an OS command locally instead...")
+	s.console.PrintlnWarnStep("Executing local Command: %s", fCmd)
 	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
@@ -187,24 +230,23 @@ func (s *server) notConsoleCommand(fCmd []string) {
 }
 
 func (s *server) executeCommand(args ...string) {
-	executeFlags := flag.NewFlagSet(executeCmd, flag.ContinueOnError)
-	executeFlags.SetOutput(s.console.Term)
-	eSession := executeFlags.Int("s", 0, "Runs given command on a Session ID")
-	eAll := executeFlags.Bool("a", false, "Runs given command on every Session")
-	executeFlags.Usage = func() {
-		s.console.PrintCommandUsage(executeFlags, executeDesc+executeUsage)
+	executeFlags := sflag.NewFlagPack([]string{executeCmd}, executeUsage, executeDesc, s.console.Term)
+	eSession, _ := executeFlags.NewIntFlag("s", "session", "Run command passed as an argument on a session id", 0)
+	eAll, _ := executeFlags.NewBoolFlag("a", "all", "Run command passed as an argument on all sessions", false)
+	executeFlags.Set.Usage = func() {
+		executeFlags.PrintUsage(true)
 	}
 
-	if pErr := executeFlags.Parse(args); pErr != nil {
+	if pErr := executeFlags.Set.Parse(args); pErr != nil {
 		return
 	}
 
 	if len(args) == 0 || (*eAll && *eSession > 0) || (!*eAll && *eSession == 0) {
-		executeFlags.Usage()
+		executeFlags.Set.Usage()
 		return
 	}
 
-	if len(executeFlags.Args()) == 0 {
+	if len(executeFlags.Set.Args()) == 0 {
 		s.console.PrintlnErrorStep("Nothing to execute")
 		return
 	}
@@ -233,7 +275,7 @@ func (s *server) executeCommand(args ...string) {
 			)
 		}
 
-		command := strings.Join(executeFlags.Args(), " ")
+		command := strings.Join(executeFlags.Set.Args(), " ")
 		var envVarList []struct{ Key, Value string }
 
 		instance := session.newExecInstance(envVarList)
@@ -247,17 +289,15 @@ func (s *server) executeCommand(args ...string) {
 
 func (s *server) sessionsCommand(args ...string) {
 	var list bool
-	sessionsFlags := flag.NewFlagSet(sessionsCmd, flag.ContinueOnError)
-	sessionsFlags.SetOutput(s.console.Term)
-
-	sInteract := sessionsFlags.Int("i", 0, "Starts Interactive Shell on a Session ID")
-	sDisconnect := sessionsFlags.Int("d", 0, "Disconnect Session ID")
-	sKill := sessionsFlags.Int("k", 0, "Kills Session ID")
-	sessionsFlags.Usage = func() {
-		s.console.PrintCommandUsage(sessionsFlags, sessionsDesc+sessionsUsage)
+	sessionsFlags := sflag.NewFlagPack([]string{sessionsCmd}, sessionsUsage, executeDesc, s.console.Term)
+	sInteract, _ := sessionsFlags.NewIntFlag("i", "interactive", "Start Interactive Slider Shell on a Session ID", 0)
+	sDisconnect, _ := sessionsFlags.NewIntFlag("d", "disconnect", "Disconnect Session ID", 0)
+	sKill, _ := sessionsFlags.NewIntFlag("k", "kill", "Kill Session ID", 0)
+	sessionsFlags.Set.Usage = func() {
+		sessionsFlags.PrintUsage(true)
 	}
 
-	if pErr := sessionsFlags.Parse(args); pErr != nil {
+	if pErr := sessionsFlags.Set.Parse(args); pErr != nil {
 		return
 	}
 
@@ -266,13 +306,13 @@ func (s *server) sessionsCommand(args ...string) {
 	}
 
 	if !list && ((*sInteract > 0 && *sKill > 0 && *sDisconnect > 0) || (*sInteract == 0 && *sKill == 0 && *sDisconnect == 0)) {
-		s.console.Printf("Flags '-i', '-d' and '-k' are mutually exclusive, nor can have 0 value.")
+		s.console.Output.Printf("Flags '-i', '-d' and '-k' are mutually exclusive, nor can have 0 value.")
 		return
 	}
 
-	if sessionsFlags.NArg() > 0 {
-		s.console.Printf("Unexpected arguments: %s", sessionsFlags.Args())
-		sessionsFlags.Usage()
+	if sessionsFlags.Set.NArg() > 0 {
+		s.console.TermPrintf("Unexpected arguments: %s", sessionsFlags.Set.Args())
+		sessionsFlags.PrintUsage(true)
 		return
 	}
 
@@ -288,7 +328,8 @@ func (s *server) sessionsCommand(args ...string) {
 
 			tw := new(tabwriter.Writer)
 			tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t")
+			_, _ = fmt.Fprintf(tw, "\n\t--\t------\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
 
 			for _, i := range keys {
 				session := s.sessionTrack.Sessions[int64(i)]
@@ -352,7 +393,7 @@ func (s *server) sessionsCommand(args ...string) {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		s.console.Printf("Active sessions: %d\n\n", s.sessionTrack.SessionActive)
+		s.console.PrintlnDebugStep("Active sessions: %d\n", s.sessionTrack.SessionActive)
 		return
 	}
 
@@ -362,15 +403,18 @@ func (s *server) sessionsCommand(args ...string) {
 			s.console.PrintlnDebugStep("Unknown Session ID %d", *sInteract)
 			return
 		}
-		if _, _, err = session.sendRequest(
-			"session-shell",
-			true,
-			nil,
-		); err != nil {
-			s.console.Printf("%s", err)
-			return
+
+		sftpCli, sErr := session.newSftpClient()
+		if sErr != nil {
+			s.console.PrintlnDebugStep("Failed to create SFTP Client: %v", sErr)
 		}
-		session.sessionInteractive(s.console.InitState, s.serverInterpreter.WinChangeCall)
+		defer func() { _ = sftpCli.Close() }()
+		s.newSftpConsole(session, sftpCli)
+
+		// Reset autocomplete commands
+		commands := s.initCommands()
+		s.console.setConsoleAutoComplete(commands)
+
 		return
 	}
 
@@ -409,24 +453,23 @@ func (s *server) sessionsCommand(args ...string) {
 }
 
 func (s *server) socksCommand(args ...string) {
-	socksFlags := flag.NewFlagSet(socksCmd, flag.ContinueOnError)
-	socksFlags.SetOutput(s.console.Term)
-	sSession := socksFlags.Int("s", 0, "Runs a Socks5 server over an SSH Channel on a Session ID")
-	sPort := socksFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
-	sKill := socksFlags.Int("k", 0, "Kills Socks5 Listener and Server on a Session ID")
-	sExpose := socksFlags.Bool("e", false, "Expose port to all interfaces")
-	socksFlags.Usage = func() {
-		s.console.PrintCommandUsage(socksFlags, socksDesc+socksUsage)
+	socksFlags := sflag.NewFlagPack([]string{socksCmd}, socksUsage, socksDesc, s.console.Term)
+	sSession, _ := socksFlags.NewIntFlag("s", "session", "Run a Socks5 server over an SSH Channel on a Session ID", 0)
+	sPort, _ := socksFlags.NewIntFlag("p", "port", "Use this port number as local Listener, otherwise randomly selected", 0)
+	sKill, _ := socksFlags.NewIntFlag("k", "kill", "Kill Socks5 Listener and Server on a Session ID", 0)
+	sExpose, _ := socksFlags.NewBoolFlag("e", "expose", "Expose port to all interfaces", false)
+	socksFlags.Set.Usage = func() {
+		socksFlags.PrintUsage(true)
 	}
 
-	if pErr := socksFlags.Parse(args); pErr != nil {
+	if pErr := socksFlags.Set.Parse(args); pErr != nil {
 		return
 	}
 
 	var session *Session
 	var sessErr error
 	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
-		socksFlags.Usage()
+		socksFlags.PrintUsage(true)
 		return
 	} else {
 		sessionID := *sSession + *sKill
@@ -439,7 +482,7 @@ func (s *server) socksCommand(args ...string) {
 
 	if *sExpose && *sKill != 0 {
 		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
-		socksFlags.Usage()
+		socksFlags.PrintUsage(true)
 		return
 	}
 
@@ -485,24 +528,23 @@ func (s *server) socksCommand(args ...string) {
 		}
 	}
 
-	socksFlags.Usage()
+	socksFlags.PrintUsage(true)
 }
 
 func (s *server) certsCommand(args ...string) {
-	certsFlags := flag.NewFlagSet(certsCmd, flag.ContinueOnError)
-	certsFlags.SetOutput(s.console.Term)
-	cNew := certsFlags.Bool("n", false, "Generate a new Key Pair")
-	cRemove := certsFlags.Int("r", 0, "Remove matching index from the Certificate Jar")
-	cSSH := certsFlags.Int("d", 0, "Dump CertID SSH keys")
-	certsFlags.Usage = func() {
-		s.console.PrintCommandUsage(certsFlags, certsDesc+certsUsage)
+	certsFlags := sflag.NewFlagPack([]string{certsCmd}, certsUsage, certsDesc, s.console.Term)
+	cNew, _ := certsFlags.NewBoolFlag("n", "new", "Generate a new Key Pair", false)
+	cRemove, _ := certsFlags.NewIntFlag("r", "remove", "Remove matching index from the Certificate Jar", 0)
+	cSSH, _ := certsFlags.NewIntFlag("d", "dump", "Dump CertID SSH keys", 0)
+	certsFlags.Set.Usage = func() {
+		certsFlags.PrintUsage(true)
 	}
-	if err := certsFlags.Parse(args); err != nil {
+	if err := certsFlags.Set.Parse(args); err != nil {
 		return
 	}
 
 	if (*cNew && *cRemove != 0) || (*cNew && *cSSH != 0) || (*cRemove != 0 && *cSSH != 0) {
-		s.console.Printf("Flags '-n', '-k' and '-s' are mutually exclusive.")
+		s.console.TermPrintf("Flags '-n', '-k' and '-s' are mutually exclusive\n")
 		return
 	}
 
@@ -528,14 +570,19 @@ func (s *server) certsCommand(args ...string) {
 				_, _ = fmt.Fprintf(twl, "\tFingerprint:\t%s\t\n", s.certTrack.Certs[int64(k)].FingerPrint)
 				sessionList := "None"
 				if sl := s.getSessionsByCertID(int64(k)); len(sl) > 0 {
-					sessionList = strings.Trim(strings.Replace(fmt.Sprint(sl), " ", ",", -1), "[]")
+					sessionListStr := make([]string, 0)
+					for i := range sl {
+						sStr := fmt.Sprintf("%d", sl[i])
+						sessionListStr = append(sessionListStr, sStr)
+					}
+					sessionList = strings.Join(sessionListStr, ", ")
 				}
 				_, _ = fmt.Fprintf(twl, "\tUsed by Session:\t%s\t\n", sessionList)
 			}
 			_, _ = fmt.Fprintln(twl)
 			_ = twl.Flush()
 		}
-		s.console.Printf("Certificates in Jar: %d\n\n", s.certTrack.CertActive)
+		s.console.PrintlnDebugStep("Certificates in Jar: %d\n", s.certTrack.CertActive)
 		return
 	}
 
@@ -588,21 +635,20 @@ func (s *server) certsCommand(args ...string) {
 }
 
 func (s *server) connectCommand(args ...string) {
-	connectFlags := flag.NewFlagSet(connectCmd, flag.ContinueOnError)
-	connectFlags.SetOutput(s.console.Term)
-	cCert := connectFlags.Int64("c", 0, "Specify certID for key authentication")
-	cDNS := connectFlags.String("d", "", "Use custom DNS resolver")
-	connectFlags.Usage = func() {
-		s.console.PrintCommandUsage(connectFlags, connectDesc+connectUsage)
+	connectFlags := sflag.NewFlagPack([]string{connectCmd}, connectUsage, connectDesc, s.console.Term)
+	cCert, _ := connectFlags.NewInt64Flag("c", "cert", "Specify certID for key authentication", 0)
+	cDNS, _ := connectFlags.NewStringFlag("d", "dns", "Use custom DNS resolver", "")
+	connectFlags.Set.Usage = func() {
+		connectFlags.PrintUsage(true)
 	}
-	if err := connectFlags.Parse(args); err != nil {
+	if err := connectFlags.Set.Parse(args); err != nil {
 		return
 	}
-	if len(connectFlags.Args()) == 0 || len(connectFlags.Args()) > 1 {
-		connectFlags.Usage()
+	if len(connectFlags.Set.Args()) == 0 || len(connectFlags.Set.Args()) > 1 {
+		connectFlags.PrintUsage(true)
 		return
 	}
-	clientURL := connectFlags.Args()[0]
+	clientURL := connectFlags.Set.Args()[0]
 	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
 		s.console.PrintlnErrorStep("Failed to resolve URL: %v", uErr)
@@ -640,18 +686,16 @@ func (s *server) connectCommand(args ...string) {
 }
 
 func (s *server) sshCommand(args ...string) {
-	// Set up command flags
-	sshFlags := flag.NewFlagSet(sshCmd, flag.ContinueOnError)
-	sshFlags.SetOutput(s.console.Term)
-	sSession := sshFlags.Int("s", 0, "Session ID to establish SSH connection with")
-	sPort := sshFlags.Int("p", 0, "Local port to forward SSH connection to")
-	sKill := sshFlags.Int("k", 0, "Kill SSH port forwarding to a Session ID")
-	sExpose := sshFlags.Bool("e", false, "Expose port to all interfaces")
-	sshFlags.Usage = func() {
-		s.console.PrintCommandUsage(sshFlags, sshDesc+sshUsage)
+	sshFlags := sflag.NewFlagPack([]string{sshCmd}, sshUsage, sshDesc, s.console.Term)
+	sSession, _ := sshFlags.NewIntFlag("s", "session", "Session ID to establish SSH connection with", 0)
+	sPort, _ := sshFlags.NewIntFlag("p", "port", "Local port to forward SSH connection to", 0)
+	sKill, _ := sshFlags.NewIntFlag("k", "kill", "Kill SSH port forwarding to a Session ID", 0)
+	sExpose, _ := sshFlags.NewBoolFlag("e", "expose", "Expose port to all interfaces", false)
+	sshFlags.Set.Usage = func() {
+		sshFlags.PrintUsage(true)
 	}
 
-	if pErr := sshFlags.Parse(args); pErr != nil {
+	if pErr := sshFlags.Set.Parse(args); pErr != nil {
 		return
 	}
 
@@ -659,7 +703,7 @@ func (s *server) sshCommand(args ...string) {
 	var sessErr error
 	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
 		s.console.PrintlnDebugStep("Session ID is required")
-		sshFlags.Usage()
+		sshFlags.PrintUsage(true)
 		return
 	} else {
 		sessionID := *sSession + *sKill
@@ -672,7 +716,7 @@ func (s *server) sshCommand(args ...string) {
 
 	if *sExpose && *sKill != 0 {
 		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
-		sshFlags.Usage()
+		sshFlags.PrintUsage(true)
 		return
 	}
 
@@ -718,142 +762,28 @@ func (s *server) sshCommand(args ...string) {
 		}
 	}
 
-	sshFlags.Usage()
-}
-
-func (s *server) uploadCommand(args ...string) {
-	uploadFlags := flag.NewFlagSet(uploadCmd, flag.ContinueOnError)
-	uploadFlags.SetOutput(s.console.Term)
-	uSession := uploadFlags.Int("s", 0, "Uploads file to selected Session ID")
-
-	uploadFlags.Usage = func() {
-		s.console.PrintCommandUsage(uploadFlags, uploadDesc+uploadUsage)
-	}
-
-	if pErr := uploadFlags.Parse(args); pErr != nil {
-		return
-	}
-
-	if len(uploadFlags.Args()) > 2 || len(uploadFlags.Args()) < 1 {
-		uploadFlags.Usage()
-		return
-	}
-
-	if *uSession > 0 {
-		session, sessErr := s.getSession(*uSession)
-		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *uSession)
-			return
-		}
-
-		src := uploadFlags.Args()[0]
-		dst := filepath.Base(src)
-		if len(uploadFlags.Args()) == 2 {
-			dst = uploadFlags.Args()[1]
-		}
-
-		for statusChan := range session.uploadFile(src, dst) {
-			if statusChan.Success {
-				s.console.PrintlnOkStep("Uploaded \"%s\" -> \"%s\"",
-					src,
-					statusChan.FileName,
-				)
-			} else {
-				s.console.PrintlnErrorStep("Failed to Upload \"%s\": %v", src, statusChan.Err)
-			}
-		}
-	}
-}
-
-func (s *server) downloadCommand(args ...string) {
-	downloadFlags := flag.NewFlagSet(downloadCmd, flag.ContinueOnError)
-	downloadFlags.SetOutput(s.console.Term)
-	dSession := downloadFlags.Int("s", 0, "Downloads file from a given a Session ID")
-	dFile := downloadFlags.String("f", "", "Receives a file list with items to download")
-
-	downloadFlags.Usage = func() {
-		s.console.PrintCommandUsage(downloadFlags, downloadDesc+downloadUsage)
-	}
-
-	if pErr := downloadFlags.Parse(args); pErr != nil {
-		return
-	}
-
-	if *dSession == 0 {
-		downloadFlags.Usage()
-		return
-	}
-
-	if *dSession > 0 {
-		session, sessErr := s.getSession(*dSession)
-		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *dSession)
-			return
-		}
-
-		if *dFile == "" && downloadFlags.NFlag() >= 2 {
-			s.console.PrintlnDebugStep("Need to provide a file list")
-			return
-		} else if *dFile != "" {
-			s.console.PrintlnDebugStep("Output Dir: \"%s\"", sio.GetSliderHome())
-
-			for statusChan := range session.downloadFileBatch(*dFile) {
-				if statusChan.Success {
-					s.console.PrintlnOkStep("Downloaded \"%s\"",
-						statusChan.FileName,
-					)
-				} else {
-					s.console.PrintlnErrorStep("Failed to Download \"%v\"", statusChan.Err)
-				}
-			}
-			return
-		}
-
-		if len(downloadFlags.Args()) > 2 || len(downloadFlags.Args()) < 1 {
-			s.console.PrintlnDebugStep("Incorrect number of arguments")
-			return
-		}
-
-		src := downloadFlags.Args()[0]
-		dst := filepath.Base(src)
-		if len(downloadFlags.Args()) == 2 {
-			dst = downloadFlags.Args()[1]
-		}
-
-		for statusChan := range session.downloadFile(src, dst) {
-			if statusChan.Success {
-				s.console.PrintlnOkStep("Downloaded \"%s\" -> \"%s\"",
-					src,
-					statusChan.FileName,
-				)
-			} else {
-				s.console.PrintlnErrorStep("Failed to Download \"%s\": %v", src, statusChan.Err)
-			}
-		}
-	}
+	sshFlags.PrintUsage(true)
 }
 
 func (s *server) shellCommand(args ...string) {
-	shellFlags := flag.NewFlagSet(shellCmd, flag.ContinueOnError)
-	shellFlags.SetOutput(s.console.Term)
-	sSession := shellFlags.Int("s", 0, "Runs a Shell server over an SSH Channel on a Session ID")
-	sPort := shellFlags.Int("p", 0, "Uses this port number as local Listener, otherwise randomly selected")
-	sKill := shellFlags.Int("k", 0, "Kills Shell Listener and Server on a Session ID")
-	sInteractive := shellFlags.Bool("i", false, "Interactive mode, enters shell directly (always TLS)")
-	sTls := shellFlags.Bool("t", false, "Enable TLS for the Shell")
-	sExpose := shellFlags.Bool("e", false, "Expose port to all interfaces")
-	shellFlags.Usage = func() {
-		s.console.PrintCommandUsage(shellFlags, shellDesc+shellUsage)
+	flagPack := sflag.NewFlagPack([]string{shellCmd}, shellUsage, shellDesc, s.console.Term)
+	sSession, _ := flagPack.NewIntFlag("s", "session", "Run a Shell server over an SSH Channel on a Session ID", 0)
+	sPort, _ := flagPack.NewIntFlag("p", "port", "Use this port number as local Listener, otherwise randomly selected", 0)
+	sKill, _ := flagPack.NewIntFlag("k", "kill", "Kill Shell Listener and Server on a Session ID", 0)
+	sInteractive, _ := flagPack.NewBoolFlag("i", "interactive", "Interactive mode, enters shell directly. Always TLS", false)
+	sTls, _ := flagPack.NewBoolFlag("t", "tls", "Enable TLS for the Shell", false)
+	sExpose, _ := flagPack.NewBoolFlag("e", "expose", "Expose port to all interfaces", false)
+	flagPack.Set.Usage = func() {
+		flagPack.PrintUsage(true)
 	}
-
-	if pErr := shellFlags.Parse(args); pErr != nil {
+	if pErr := flagPack.Set.Parse(args); pErr != nil {
 		return
 	}
 
 	var session *Session
 	var sessErr error
 	if (*sSession == 0 && *sKill == 0) || (*sSession > 0 && *sKill > 0) {
-		shellFlags.Usage()
+		flagPack.PrintUsage(true)
 		return
 	} else {
 		sessionID := *sSession + *sKill
@@ -866,7 +796,7 @@ func (s *server) shellCommand(args ...string) {
 
 	if *sExpose && *sKill != 0 {
 		s.console.PrintlnDebugStep("Flag '-e' is not compatible with '-k'")
-		shellFlags.Usage()
+		flagPack.PrintUsage(true)
 		return
 	}
 
@@ -926,12 +856,12 @@ func (s *server) shellCommand(args ...string) {
 			var conn net.Conn
 			var dErr error
 
-			// When Shell is interactive we want it to stop once we are done
+			// When Shell is interactive, we want it to stop once we are done
 			defer func() {
 				if ssErr := session.ShellInstance.Stop(); ssErr != nil {
 					session.Logger.Errorf("Failed to stop shell session: %v", ssErr)
 				}
-				s.console.PrintlnOkStep("Shell Endpoint gracefully stopped")
+				s.console.PrintlnOkStep("Shell Endpoint gracefully stopped\n")
 			}()
 
 			// Generate certificate and establish connection
@@ -953,28 +883,17 @@ func (s *server) shellCommand(args ...string) {
 			}
 			s.console.PrintlnOkStep("Authenticated with mTLS")
 
-			// Set up the terminal according to the client
-			if session.IsPtyOn() {
-				s.console.PrintlnOkStep("Shell has PTY, switching to raw terminal")
-				tState, tErr := term.MakeRaw(int(os.Stdout.Fd()))
-				if tErr != nil {
-					s.console.PrintlnErrorStep("Failed to get terminal state, aborting to avoid inconsistent shell")
-					return
-				}
-				defer func() {
-					if rErr := term.Restore(int(os.Stdout.Fd()), tState); rErr != nil {
-						session.Logger.Errorf("Failed to restore terminal state - %v", rErr)
-					}
-				}()
-			} else {
-				s.console.PrintlnDebugStep("Client does not support PTY, terminal not raw, echo is enabled")
+			// If session doesn't support PTY revert Raw Terminal
+			if !session.IsPtyOn() {
+				s.console.PrintlnWarnStep("Client does not support PTY")
+				s.console.PrintlnWarnStep("Pressing CTR^C will interrupt the shell")
 
-				conState, _ := term.GetState(int(os.Stdout.Fd()))
-				if rErr := term.Restore(int(os.Stdout.Fd()), s.console.InitState); rErr != nil {
+				conState, _ := term.GetState(int(os.Stdin.Fd()))
+				if rErr := term.Restore(int(os.Stdin.Fd()), s.console.InitState); rErr != nil {
 					s.console.PrintlnErrorStep("Failed to revert console state, aborting to avoid inconsistent shell")
 					return
 				}
-				defer func() { _ = term.Restore(int(os.Stdout.Fd()), conState) }()
+				defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 
 				// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 				go func() {
@@ -988,22 +907,27 @@ func (s *server) shellCommand(args ...string) {
 							session.Logger.Errorf("Failed to close Shell connection - %v", cErr)
 						}
 					}
-					s.console.PrintlnWarn("Forcing connection close, press ENTER to continue...")
 				}()
 			}
 
+			// Clear screen (Windows Command Prompt already does that)
+			if string(session.clientInterpreter.System) != "windows" {
+				s.console.clearScreen()
+			}
+			// os.StdIn is blocking and will be waiting for any input even if the connection is closed.
+			// After pressing a key, io.Copy will fail due to the attempt of copying to a closed writer,
+			// which will do the unlocking
 			go func() {
 				_, _ = io.Copy(os.Stdout, conn)
-				s.console.PrintlnWarn("Press ENTER twice to get back to console")
+				s.console.PrintlnWarn("Press ENTER until get back to console")
 			}()
-			_, _ = io.Copy(conn, os.Stdout)
+			_, _ = io.Copy(conn, os.Stdin)
 
 			return
 		} else {
 			return
-
 		}
 	}
 
-	shellFlags.Usage()
+	flagPack.PrintUsage(true)
 }

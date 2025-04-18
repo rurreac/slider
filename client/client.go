@@ -18,7 +18,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
-	"slider/pkg/sio"
+	"slider/pkg/sflag"
 	"slider/pkg/slog"
 	"strings"
 	"sync"
@@ -238,15 +238,15 @@ func NewClient(args []string) {
 func flagSanityCheck(clientFlags *flag.FlagSet) error {
 	var flagExclusion []string
 	var clientType string
-	if conf.FlagIsDefined(clientFlags, "listener") {
+	if sflag.FlagIsDefined(clientFlags, "listener") {
 		clientType = "listener"
-		if conf.FlagIsDefined(clientFlags, "key") {
+		if sflag.FlagIsDefined(clientFlags, "key") {
 			flagExclusion = append(flagExclusion, "-key")
 		}
-		if conf.FlagIsDefined(clientFlags, "retry") {
+		if sflag.FlagIsDefined(clientFlags, "retry") {
 			flagExclusion = append(flagExclusion, "-retry")
 		}
-		if conf.FlagIsDefined(clientFlags, "dns") {
+		if sflag.FlagIsDefined(clientFlags, "dns") {
 			flagExclusion = append(flagExclusion, "-dns")
 		}
 		if len(clientFlags.Args()) > 0 {
@@ -254,31 +254,31 @@ func flagSanityCheck(clientFlags *flag.FlagSet) error {
 		}
 	} else {
 		clientType = "reverse"
-		if conf.FlagIsDefined(clientFlags, "fingerprint") {
+		if sflag.FlagIsDefined(clientFlags, "fingerprint") {
 			flagExclusion = append(flagExclusion, "-fingerprint")
 		}
-		if conf.FlagIsDefined(clientFlags, "address") {
+		if sflag.FlagIsDefined(clientFlags, "address") {
 			flagExclusion = append(flagExclusion, "-address")
 		}
-		if conf.FlagIsDefined(clientFlags, "port") {
+		if sflag.FlagIsDefined(clientFlags, "port") {
 			flagExclusion = append(flagExclusion, "-port")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-template") {
+		if sflag.FlagIsDefined(clientFlags, "html-template") {
 			flagExclusion = append(flagExclusion, "-html-template")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-server-header") {
+		if sflag.FlagIsDefined(clientFlags, "html-server-header") {
 			flagExclusion = append(flagExclusion, "-html-server-header")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-status-code") {
+		if sflag.FlagIsDefined(clientFlags, "html-status-code") {
 			flagExclusion = append(flagExclusion, "-html-status-code")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-redirect") {
+		if sflag.FlagIsDefined(clientFlags, "html-redirect") {
 			flagExclusion = append(flagExclusion, "-html-redirect")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-version") {
+		if sflag.FlagIsDefined(clientFlags, "html-version") {
 			flagExclusion = append(flagExclusion, "-html-version")
 		}
-		if conf.FlagIsDefined(clientFlags, "html-health") {
+		if sflag.FlagIsDefined(clientFlags, "html-health") {
 			flagExclusion = append(flagExclusion, "-html-health")
 		}
 		argNumber := len(clientFlags.Args())
@@ -411,9 +411,17 @@ func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) e
 
 func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	clientInfoBytes, _ := json.Marshal(ci)
-	ok, _, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
+	ok, ciAnswerBytes, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
 	if sErr != nil || !ok {
 		s.Logger.Errorf("%sclient information was not sent to server - %v", s.logID, sErr)
+		return
+	}
+	if len(ciAnswerBytes) != 0 {
+		ciAnswer := &interpreter.Interpreter{}
+		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
+			s.Logger.Debugf("%sServer requested shell: %s", s.logID, ciAnswer.AltShell)
+			s.interpreter.Shell = ciAnswer.AltShell
+		}
 	}
 }
 
@@ -423,12 +431,6 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 		case "socks5":
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSocksChannel(nc)
-		case "file-upload":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
-			go s.handleFileUploadChannel(nc)
-		case "file-download":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
-			go s.handleFileDownloadChannel(nc)
 		case "sftp":
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSFTPChannel(nc)
@@ -462,20 +464,6 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			if err := s.replyConnRequest(req, true, []byte("pong")); err != nil {
 				s.Logger.Errorf("%sError sending \"%s\" reply to Server - %v", s.logID, req.Type, err)
 			}
-		case "session-shell":
-			s.Logger.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
-			go s.sendReverseShell(req)
-		case "window-change":
-			// Server only sends this Request if Interpreter is PTY
-			// after Reverse Shell is sent, ergo PTY File has been created
-			s.Logger.Debugf("%sServer Requested window change: %s\n", s.logID, req.Payload)
-			var termSize conf.TermDimensions
-			if err := json.Unmarshal(req.Payload, &termSize); err != nil {
-				s.Logger.Fatalf("%s", err)
-			}
-			s.updatePtySize(termSize)
-		case "checksum-verify":
-			go s.verifyFileCheckSum(req)
 		case "shutdown":
 			s.Logger.Warnf("%sServer requested Client shutdown", s.logID)
 			_ = s.replyConnRequest(req, true, nil)
@@ -561,75 +549,6 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	}
 
 	s.Logger.Debugf("%sSOCKS5 server connection closed", s.logID)
-}
-
-func (s *Session) handleFileUploadChannel(channel ssh.NewChannel) {
-	uploadChan, requests, aErr := channel.Accept()
-	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
-		)
-		return
-	}
-	defer func() { _ = uploadChan.Close() }()
-
-	go ssh.DiscardRequests(requests)
-
-	filePath := string(channel.ExtraData())
-
-	file, fErr := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
-	defer func() { _ = file.Close() }()
-	if fErr == nil {
-		_, _ = io.Copy(file, uploadChan)
-	}
-}
-
-func (s *Session) verifyFileCheckSum(req *ssh.Request) {
-	var fileInfo sio.FileInfo
-	s.Logger.Debugf("%sReceived \"%s\" Connection Request", s.logID, req.Type)
-	if err := json.Unmarshal(req.Payload, &fileInfo); err != nil {
-		_ = req.Reply(false, []byte("failed to unmarshal file info"))
-	}
-
-	_, checkSum, cErr := sio.ReadFile(fileInfo.FileName)
-	if cErr != nil {
-		_ = req.Reply(false, []byte(fmt.Sprintf("could not read file %s", fileInfo.FileName)))
-	}
-
-	if checkSum != fileInfo.CheckSum {
-		_ = req.Reply(false, []byte(fmt.Sprintf(
-			"checksum of src (%s) differs from dst (%s)",
-			fileInfo.CheckSum, checkSum)))
-	}
-	_ = req.Reply(true, nil)
-}
-
-func (s *Session) handleFileDownloadChannel(channel ssh.NewChannel) {
-	downloadChan, _, aErr := channel.Accept()
-	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
-		)
-		return
-	}
-	defer func() { _ = downloadChan.Close() }()
-
-	srcFile := string(channel.ExtraData())
-	file, checkSum, fErr := sio.ReadFile(srcFile)
-	if fErr != nil {
-		// Rejecting the Reply will tell the server the payload is an error
-		_, _ = downloadChan.SendRequest("checksum", false, []byte(fmt.Sprintf("%s", fErr)))
-	}
-	// If the File was read Successfully we will send its CheckSum as Payload
-	_, _ = downloadChan.SendRequest("checksum", true, []byte(checkSum))
-	// Copy file over channel
-	_, _ = downloadChan.Write(file)
 }
 
 func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {

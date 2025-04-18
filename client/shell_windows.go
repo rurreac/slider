@@ -8,6 +8,8 @@ import (
 	"github.com/UserExistsError/conpty"
 	"golang.org/x/crypto/ssh"
 	"io"
+	"log"
+	"os"
 	"os/exec"
 	"slider/pkg/instance"
 )
@@ -24,7 +26,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		return
 	}
 	defer func() {
-		s.Logger.Debugf("%sClosing SSH channel", s.logID)
+		s.Logger.Debugf(s.logID+"Closing \"%s\" channel", channel.ChannelType())
 		_ = sshChan.Close()
 	}()
 
@@ -84,11 +86,15 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	} else {
 		// - You are here cause the System is likely Windows < 2018 and does not support ConPTY
 		// - Command Prompt Buffer Size can be set running: `mode con:cols=X lines=Y`,
-		//   unfortunately there's no equivalent variable to set that up,
+		//   unfortunately, there's no equivalent variable to set that up,
 		//   so size won't be set or updated
 		s.Logger.Debugf("Running SHELL on NON PTY")
-		pr, pw := io.Pipe()
-		cmd := exec.Command(s.interpreter.Shell, s.interpreter.ShellArgs...) //nolint:gosec
+
+		// Discard window-change events
+		go func() {
+			for range winChange {
+			}
+		}()
 
 		// Handle environment variable events
 		var envVars []string
@@ -105,21 +111,22 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			}
 		}
 
-		cmd.Env = append(cmd.Environ(), envVars...)
-		cmd.Stdin = sshChan
-		cmd.Stdout = pw
-		cmd.Stderr = pw
+		cmd := &exec.Cmd{
+			Path:   s.interpreter.Shell,
+			Args:   []string{"/qa"},
+			Env:    envVars,
+			Stdin:  sshChan,
+			Stdout: sshChan,
+			Stderr: sshChan,
+		}
 
-		// Discard window-change events
-		go func() {
-			for range envChange {
-			}
-		}()
+		if err := cmd.Start(); err != nil {
+			s.Logger.Fatalf(s.logID+"Failed to start process: %v", err)
+			return
+		}
 
-		go func() { _, _ = io.Copy(sshChan, pr) }()
-
-		if runErr := cmd.Run(); runErr != nil {
-			s.Logger.Errorf("%v", runErr)
+		if err := cmd.Wait(); err != nil {
+			s.Logger.Fatalf(s.logID+"Command exited: %v", err)
 		}
 	}
 
@@ -147,13 +154,19 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	// This channel will be a blocker and closed by the server request
 	envChange := make(chan []byte, 10)
 
-	// First 4 elements of Channel.Extradata() are 3 null bytes plus the size of the payload
+	// The first 4 elements of Channel.Extradata() are 3 null bytes plus the size of the payload
 	// The rest of the payload is the command to be executed
 	s.Logger.Debugf("ExtraData: %v", channel.ExtraData())
 
 	rcvCmd := string(channel.ExtraData()[4:])
 
 	go s.handleSSHRequests(requests, winChange, envChange)
+
+	// Discard window-change events
+	go func() {
+		for range winChange {
+		}
+	}()
 
 	// Handle environment variable events
 	var envVars []string
@@ -171,36 +184,20 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	}
 
 	s.Logger.Debugf("Running EXEC on NON PTY")
-	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
-	cmd.Env = append(cmd.Environ(), envVars...)
 
-	outRC, oErr := cmd.StdoutPipe()
-	if oErr != nil {
-		s.Logger.Errorf("Failed to get stdout pipe - %v", oErr)
-		return
-	}
-	errRC, eErr := cmd.StderrPipe()
-	if eErr != nil {
-		s.Logger.Errorf("Failed to get stderr pipe - %v", eErr)
-		return
+	cmd := &exec.Cmd{
+		Path:   s.interpreter.Shell,
+		Args:   append(s.interpreter.CmdArgs, rcvCmd),
+		Env:    append(os.Environ(), envVars...),
+		Stdout: sshChan,
+		Stderr: sshChan,
 	}
 
-	if runErr := cmd.Start(); runErr != nil {
-		s.Logger.Errorf("Failed to execute command - %v", runErr)
-		return
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("Failed to start process: %v", err)
 	}
 
-	// Discard window-change events
-	go func() {
-		for range envChange {
-		}
-	}()
-
-	go func() { _, _ = io.Copy(sshChan, outRC) }()
-	go func() { _, _ = io.Copy(sshChan, errRC) }()
-
-	if wErr := cmd.Wait(); wErr != nil {
-		s.Logger.Errorf("Failed to wait for command - %v", wErr)
+	if err := cmd.Wait(); err != nil {
+		log.Printf("Command exited: %v", err)
 	}
-
 }

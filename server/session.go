@@ -1,24 +1,15 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"os/signal"
-	"slider/pkg/colors"
-	"slider/pkg/conf"
+	"github.com/pkg/sftp"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
-	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
-
-	"golang.org/x/term"
 
 	"golang.org/x/crypto/ssh"
 
@@ -40,7 +31,6 @@ type Session struct {
 	wsConn            *websocket.Conn
 	sshConn           *ssh.ServerConn
 	sshChannel        ssh.Channel
-	shellOpened       bool
 	rawTerm           bool
 	KeepAliveChan     chan bool
 	keepAliveOn       bool
@@ -216,126 +206,6 @@ func (session *Session) addSessionNotifier(notifier chan bool) {
 	session.sessionMutex.Unlock()
 }
 
-func (session *Session) closeSessionChannel() {
-	session.sessionMutex.Lock()
-	_ = session.sshChannel.Close()
-	session.sessionMutex.Unlock()
-}
-
-func (session *Session) sessionInteractive(initTermState *term.State, winChangeCall syscall.Signal) {
-	// Consider Reverse Shell is opened
-	session.shellOpened = true
-
-	defer func() {
-		// Ensure Session Channel is closed
-		session.closeSessionChannel()
-		// Reverse Shell is closed
-		session.shellOpened = false
-	}()
-	var msgOut string
-	if !session.rawTerm {
-		// - Console terminal is RAW as this Remote Shell is not PTY,
-		// 		terminal state must be reverted to its original state, NOT RAW
-		_ = term.Restore(int(os.Stdin.Fd()), initTermState)
-
-		// - This Terminal in Reverse Shell has ECHO, it could be fixed (if not Windows not ConPTY)
-		// 		creating your own Terminal with ECHO disabled.
-		fmt.Printf(
-			"\r%sCurrent Terminal is NOT RAW.\r\n"+
-				"An extra intro is required to recover control of Slider Console after exit.%s\r\n\n",
-			string(colors.Console.Warn),
-			string(colors.Reset))
-
-		// - Once Reverse Shell is closed and extra intro is required to recover the control of the terminal.
-		msgOut = fmt.Sprintf("\r%s%sPress INTRO to return to Console.\r\n%s",
-			string(colors.Reset),
-			string(colors.Console.Warn),
-			string(colors.Reset))
-	} else {
-		// - This Reverse-Shell is PTY and can be RAW, since Slider Console is RAW there is nothing to set.
-		// - This session shell has PTY which allow us to update the PTY size at the Client Origin
-		//		according to window-change events on the Server Terminal, sending Connection Requests.
-		if winChangeCall != 0 {
-			winChange := make(chan os.Signal, 1)
-			signal.Notify(winChange, winChangeCall)
-
-			go session.captureWindowChange(winChange)
-		}
-
-		fmt.Printf(
-			"\r%sEntering fully interactive Shell...%s\r\n",
-			string(colors.Console.Warn),
-			string(colors.Reset))
-
-		msgOut = fmt.Sprintf("\r%s%sPress any key to return to Console.\r\n%s",
-			string(colors.Reset),
-			string(colors.Console.Warn),
-			string(colors.Reset))
-	}
-
-	go func() {
-		// Copy ssh channel to stdout. Copy will stop on exit.
-		_, _ = io.Copy(os.Stdout, session.sshChannel)
-
-		// Remote Shell is closed, print out message
-		fmt.Printf("%s", msgOut)
-	}()
-
-	// TODO: Terminate Copy if Shell is closed otherwise forcing an EOF error is required, is it possible?
-	// This io.Copy always requires input as os.Stdin is blocker
-	// Copy all stdin to ssh channel.
-	_, _ = io.Copy(session.sshChannel, os.Stdin)
-
-	session.Logger.Debugf(
-		session.LogPrefix+"Closed Reverse Shell (%s)",
-		session.wsConn.RemoteAddr().String(),
-	)
-}
-
-// captureWindowChange captures windows size changes and send them to the Client PTY
-func (session *Session) captureWindowChange(winChange chan os.Signal) {
-	// Packing Window Change events together so only the latest event of the ones collected
-	// is sent drastically reduces the number of messages sent from Server to Client.
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-	sizeEvent := make([]*conf.TermDimensions, 0)
-	for session.shellOpened {
-		select {
-		case <-winChange:
-			// Could be checking size from os.Stdin Fd
-			//  but os.Stdout Fd is the one that works with Windows as well
-			if height, width, sizeErr := term.GetSize(int(os.Stdout.Fd())); sizeErr == nil {
-				newTermSize := &conf.TermDimensions{
-					Width:  uint32(width),
-					Height: uint32(height),
-				}
-				sizeEvent = append(sizeEvent, newTermSize)
-			}
-		case <-ticker.C:
-			eventSize := len(sizeEvent)
-			if eventSize > 0 {
-				lastEvent := sizeEvent[eventSize-1]
-				session.Logger.Debugf(
-					session.LogPrefix+"Terminal size changed: rows %d cols %d.\n",
-					lastEvent.Height,
-					lastEvent.Width,
-				)
-				if newTermSizeBytes, mErr := json.Marshal(lastEvent); mErr == nil {
-					// Send window-change event without expecting confirmation or answer
-					if _, _, err := session.sendRequest(
-						"window-change",
-						false,
-						newTermSizeBytes,
-					); err != nil {
-						session.Logger.Errorf("%v", err)
-					}
-				}
-				sizeEvent = make([]*conf.TermDimensions, 0)
-			}
-		}
-	}
-}
-
 func (session *Session) keepAlive(keepalive time.Duration) {
 	session.setKeepAliveOn(true)
 	ticker := time.NewTicker(keepalive)
@@ -386,54 +256,6 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 		pMsg,
 	)
 	return request.Reply(ok, payload)
-}
-
-func (session *Session) uploadFile(src, dst string) <-chan sio.Status {
-	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
-	go func() {
-		for s := range action.UploadToClient(fileList) {
-			status <- s
-		}
-		close(status)
-	}()
-
-	return status
-}
-
-func (session *Session) downloadFile(src, dst string) <-chan sio.Status {
-	status := make(chan sio.Status)
-	fileList, action := sio.NewFileAction(session.sshConn, src, dst)
-	go func() {
-		for s := range action.DownloadFromClient(fileList) {
-			status <- s
-		}
-		close(status)
-	}()
-
-	return status
-}
-
-func (session *Session) downloadFileBatch(fileListPath string) <-chan sio.Status {
-	status := make(chan sio.Status)
-	fileList, action, err := sio.NewBatchAction(session.sshConn, fileListPath)
-	if err != nil {
-		status <- sio.Status{
-			FileInfo: sio.FileInfo{},
-			Success:  false,
-			Err:      fmt.Errorf("failed to create batch action"),
-		}
-		close(status)
-		return status
-	}
-	go func() {
-		for s := range action.DownloadFromClient(fileList) {
-			status <- s
-		}
-		close(status)
-	}()
-
-	return status
 }
 
 func (session *Session) socksEnable(port int, exposePort bool) {
@@ -491,4 +313,41 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 	config.SetEnvVarList(envVarList)
 
 	return config
+}
+
+// newSFTPClient establishes an SFTP connection to a client session
+func (session *Session) newSftpClient() (*sftp.Client, error) {
+	session.Logger.Debugf("Opening SFTP channel to client")
+
+	// Open an SFTP channel to the client
+	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open SFTP channel: %v", err)
+	}
+
+	// Make sure to handle requests appropriately
+	go ssh.DiscardRequests(requests)
+
+	// Create cleanup function for use on error
+	cleanup := func() {
+		session.Logger.Debugf("Closing SFTP channel due to error")
+		_ = sftpChan.Close()
+	}
+
+	// Create the SFTP client using the established channel
+	session.Logger.Debugf("Initializing SFTP client")
+	client, err := sftp.NewClientPipe(sftpChan, sftpChan)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to create SFTP client: %v", err)
+	}
+
+	// Monitor client status in the background
+	go func() {
+		_ = client.Wait()
+		session.Logger.Debugf("SFTP client connection closed")
+	}()
+
+	session.Logger.Infof("SFTP client connected successfully")
+	return client, nil
 }

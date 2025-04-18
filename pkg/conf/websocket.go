@@ -13,9 +13,10 @@ var DefaultWebSocketDialer = &websocket.Dialer{
 	HandshakeTimeout: Timeout,
 	Subprotocols:     nil,
 	// Use Default Buffer Size
-	ReadBufferSize:  0,
-	WriteBufferSize: 0,
-	TLSClientConfig: &tls.Config{},
+	ReadBufferSize:    0,
+	WriteBufferSize:   0,
+	EnableCompression: true,
+	TLSClientConfig:   &tls.Config{},
 }
 
 var DefaultWebSocketUpgrader = &websocket.Upgrader{
