@@ -5,7 +5,6 @@ package interpreter
 import (
 	"fmt"
 	"github.com/UserExistsError/conpty"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/windows"
 	"os"
 	"os/user"
@@ -105,20 +104,18 @@ func (i *Interpreter) EnableProcessedInputOutput() error {
 }
 
 func (i *Interpreter) ResetInputOutputModes() error {
-	var e errgroup.Group
-	e.Go(func() error {
-		inHandle := windows.Handle(os.Stdin.Fd())
-		return windows.SetConsoleMode(inHandle, i.inputModes)
-	})
-	e.Go(func() error {
-		outHandle := windows.Handle(os.Stdout.Fd())
-		return windows.SetConsoleMode(outHandle, i.outputModes)
-	})
-	e.Go(func() error {
-		errHandle := windows.Handle(os.Stderr.Fd())
-		return windows.SetConsoleMode(errHandle, i.outputModes)
-	})
-	return e.Wait()
+	inHandle := windows.Handle(os.Stdin.Fd())
+	if err := windows.SetConsoleMode(inHandle, i.inputModes); err != nil {
+		return err
+	}
+
+	outHandle := windows.Handle(os.Stdout.Fd())
+	if err := windows.SetConsoleMode(outHandle, i.outputModes); err != nil {
+		return err
+	}
+
+	errHandle := windows.Handle(os.Stderr.Fd())
+	return windows.SetConsoleMode(errHandle, i.outputModes)
 }
 
 func NewInterpreter() (*Interpreter, error) {
