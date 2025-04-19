@@ -52,30 +52,22 @@ func NewFlagPack(commands []string, usage string, description string, writerOut 
 	}
 }
 
-// SetMinArgs sets the minimum number of non-flag arguments required.
-// Returns the FlagSetPack to allow method chaining.
 func (fsp *FlagSetPack) SetMinArgs(min int) *FlagSetPack {
 	fsp.minArgs = min
 	return fsp
 }
 
-// SetMaxArgs sets the maximum number of non-flag arguments allowed.
-// A value of 0 means unlimited.
-// Returns the FlagSetPack to allow method chaining.
 func (fsp *FlagSetPack) SetMaxArgs(max int) *FlagSetPack {
 	fsp.maxArgs = max
 	return fsp
 }
 
-// SetExactArgs sets both minimum and maximum to the same value,
-// requiring exactly that number of arguments.
 func (fsp *FlagSetPack) SetExactArgs(count int) {
 	fsp.minArgs = count
 	fsp.maxArgs = count
 }
 
 func (fsp *FlagSetPack) newFlag(shortFlag string, longFlag string, usage string, value any) (any, error) {
-	// Assign the result of type assertion to a variable
 	switch typedValue := value.(type) {
 	case bool:
 		holder := new(bool)
@@ -211,9 +203,6 @@ func (fsp *FlagSetPack) NewInt64Flag(shortFlag string, longFlag string, value in
 	return result.(*int64), nil
 }
 
-// MarkFlagsMutuallyExclusive marks a group of flags as mutually exclusive.
-// If more than one flag in this group is set, validation will fail.
-// Panics if validation fails (e.g., if a flag doesn't exist), as this indicates a programming error.
 func (fsp *FlagSetPack) MarkFlagsMutuallyExclusive(flagNames ...string) {
 	if len(flagNames) < 2 {
 		panic("At least two flags are required to form a mutually exclusive group")
@@ -233,13 +222,9 @@ func (fsp *FlagSetPack) MarkFlagsMutuallyExclusive(flagNames ...string) {
 		}
 	}
 
-	// Add the flags to the mutex groups
 	fsp.exclusionGrp = append(fsp.exclusionGrp, flagNames)
 }
 
-// MarkFlagsOneRequired marks a group of flags where exactly one flag must be set.
-// If none of the flags in this group is set, validation will fail.
-// Panics if validation fails (e.g., if a flag doesn't exist), as this indicates a programming error.
 func (fsp *FlagSetPack) MarkFlagsOneRequired(flagNames ...string) {
 	if len(flagNames) < 2 {
 		panic("at least two flags are required to form a required-one group")
@@ -259,7 +244,6 @@ func (fsp *FlagSetPack) MarkFlagsOneRequired(flagNames ...string) {
 		}
 	}
 
-	// Add the flags to the required-one groups
 	fsp.requiredOneGrp = append(fsp.requiredOneGrp, flagNames)
 }
 
@@ -287,31 +271,22 @@ func (fsp *FlagSetPack) MarkFlagsConditionExclusive(conditionFlag string, isEnab
 		excludeFlags:  excludeFlags,
 	}
 
-	// Add the flags to the mutex groups
 	fsp.conditionGrp = append(fsp.conditionGrp, condition)
 }
 
-// validateMutualExclusion checks if any mutually exclusive constraints are violated.
-// It returns an error if multiple flags from the same mutex group are set.
 func (fsp *FlagSetPack) validateMutualExclusion() error {
 	for _, flagNames := range fsp.exclusionGrp {
-		// Track which logical flags are set (by index in the flagNames slice)
 		setFlagIndices := make(map[int]bool)
 		formattedNames := make([]string, 0)
 
-		// For each flag in the mutex group
 		for i, name := range flagNames {
-			// Find the corresponding flagInfo
 			for _, info := range fsp.flagList {
-				// If this info matches our flag name (either short or long form)
 				if info.shortFlag == name || info.longFlag == name {
-					// Check if either the short or long form is set
 					if (info.shortFlag != "" && flagIsDefined(fsp.Set, info.shortFlag)) ||
 						(info.longFlag != "" && flagIsDefined(fsp.Set, info.longFlag)) {
 
 						setFlagIndices[i] = true
 
-						// Format the flag name for error messages
 						var formatted string
 						if info.shortFlag != "" && info.longFlag != "" {
 							formatted = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
@@ -327,7 +302,6 @@ func (fsp *FlagSetPack) validateMutualExclusion() error {
 			}
 		}
 
-		// If more than one logical flag is set
 		if len(setFlagIndices) > 1 {
 			return fmt.Errorf("flags %s cannot be used together",
 				strings.Join(formattedNames, ", "))
@@ -337,27 +311,20 @@ func (fsp *FlagSetPack) validateMutualExclusion() error {
 	return nil
 }
 
-// validateRequiredOne checks if any required-one flag constraints are violated.
-// It returns an error if none of the flags from a required-one group is set.
 func (fsp *FlagSetPack) validateRequiredOne() error {
 	for _, flagNames := range fsp.requiredOneGrp {
 		anyFlagSet := false
 		formattedNames := make([]string, 0)
 
-		// For each flag in the required-one group
 		for _, name := range flagNames {
-			// Find the corresponding flagInfo
 			for _, info := range fsp.flagList {
-				// If this info matches our flag name (either short or long form)
 				if info.shortFlag == name || info.longFlag == name {
-					// Check if either the short or long form is set
 					if (info.shortFlag != "" && flagIsDefined(fsp.Set, info.shortFlag)) ||
 						(info.longFlag != "" && flagIsDefined(fsp.Set, info.longFlag)) {
 						anyFlagSet = true
 						break
 					}
 
-					// Format the flag name for error messages
 					var formatted string
 					if info.shortFlag != "" && info.longFlag != "" {
 						formatted = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
@@ -376,7 +343,6 @@ func (fsp *FlagSetPack) validateRequiredOne() error {
 			}
 		}
 
-		// If no flag from this group is set
 		if !anyFlagSet {
 			return fmt.Errorf("one of the flags %s must be set",
 				strings.Join(formattedNames, ", "))
@@ -391,19 +357,14 @@ func (fsp *FlagSetPack) validateConditionExclusion() error {
 		setFlagIndices := make(map[int]bool)
 		formattedNames := make([]string, 0)
 
-		// For each flag in the exclusion
 		for i, name := range condition.excludeFlags {
-			// Find the corresponding flagInfo
 			for _, info := range fsp.flagList {
-				// If this info matches our flag name (either short or long form)
 				if info.shortFlag == name || info.longFlag == name {
-					// Check if either the short or long form is set
 					if (info.shortFlag != "" && flagIsDefined(fsp.Set, info.shortFlag)) ||
 						(info.longFlag != "" && flagIsDefined(fsp.Set, info.longFlag)) {
 
 						setFlagIndices[i] = true
 
-						// Format the flag name for error messages
 						var formatted string
 						if info.shortFlag != "" && info.longFlag != "" {
 							formatted = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
@@ -435,13 +396,9 @@ func (fsp *FlagSetPack) validateConditionExclusion() error {
 	return nil
 }
 
-// Parse wraps the standard flag.Parse method and validates mutually exclusive flag constraints.
-// Returns:
-// - (true, nil) if help is requested (-h or --help)
-// - (false, error) if there's a parsing error, mutual exclusion violation, or argument count constraint violation
-// - (false, nil) if parsing succeeded without any issues
+// Parse wraps the standard flag.Parse method and check custom validation.
 func (fsp *FlagSetPack) Parse(arguments []string) error {
-	// Parse the arguments
+	// Standard Parse
 	if err := fsp.Set.Parse(arguments); err != nil {
 		return err
 	}
@@ -456,11 +413,11 @@ func (fsp *FlagSetPack) Parse(arguments []string) error {
 		return err
 	}
 
+	// Check for condition-exclusion violations
 	if err := fsp.validateConditionExclusion(); err != nil {
 		return err
 	}
 
-	// Validate argument count
 	argsCount := len(fsp.Set.Args())
 	if fsp.minArgs > 0 && argsCount < fsp.minArgs {
 		return fmt.Errorf("at least %d argument(s) required, got %d", fsp.minArgs, argsCount)
@@ -511,7 +468,7 @@ func (fsp *FlagSetPack) PrintUsage(compact bool) {
 	_ = tw.Flush()
 	fmt.Println()
 
-	// Print argument count requirements if any
+	// Print argument count requirements
 	if fsp.minArgs > 0 || fsp.maxArgs > 0 {
 		if fsp.minArgs == fsp.maxArgs && fsp.minArgs > 0 {
 			fmt.Printf("\rRequires exactly %d argument(s)\n\n", fsp.minArgs)
@@ -524,7 +481,7 @@ func (fsp *FlagSetPack) PrintUsage(compact bool) {
 		}
 	}
 
-	// Print required-one flags information
+	// Print required-one flags
 	if len(fsp.requiredOneGrp) > 0 {
 		fmt.Printf("\rOne flag required from each group:\n\n")
 
@@ -550,7 +507,7 @@ func (fsp *FlagSetPack) PrintUsage(compact bool) {
 		fmt.Println()
 	}
 
-	// Print mutually exclusive flags information
+	// Print mutually exclusive flags
 	if len(fsp.exclusionGrp) > 0 {
 		fmt.Printf("\rMutually exclusive flags:\n\n")
 
