@@ -17,12 +17,12 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 			proto = s.customProto
 		}
 		secProto := r.Header.Get("Sec-WebSocket-Protocol")
-		secExtension := r.Header.Get("Sec-WebSocket-Operation")
-		if secProto == proto && secExtension == "client" {
+		secOperation := r.Header.Get("Sec-WebSocket-Operation")
+		if secProto == proto && secOperation == "client" {
 			s.handleWebSocket(w, r)
 			return
 		}
-		s.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secExtension)
+		s.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secOperation)
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
