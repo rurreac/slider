@@ -534,25 +534,20 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 		commands[c.command].description,
 		ic.console.Term,
 	)
+	mkdirFlags.SetExactArgs(1)
 	mkdirFlags.Set.Usage = func() {
 		mkdirFlags.PrintUsage(true)
 	}
 
-	if pErr := mkdirFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := mkdirFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := mkdirFlags.Set.Args()
-	if len(flagArgs) < 1 {
-		mkdirFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
 	dirPath := flagArgs[0]
 
 	// Process directory path
@@ -579,27 +574,21 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 	rmFlags := sflag.NewFlagPack(ic.initSftpCommands()[rmCmd].alias, rmUsage, rmDesc, ic.console.Term)
-	recursive, _ := rmFlags.NewBoolFlag("r", "", "Remove directory and their contents recursively", false)
+	recursive, _ := rmFlags.NewBoolFlag("r", "", false, "Remove directory and their contents recursively")
+	rmFlags.SetExactArgs(1)
 	rmFlags.Set.Usage = func() {
 		rmFlags.PrintUsage(true)
 	}
 
-	if pErr := rmFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := rmFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := rmFlags.Set.Args()
-	if len(flagArgs) < 1 {
-		rmFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
-	// Process path
 	path := flagArgs[0]
 
 	if !spath.IsAbs(ic.cliSystem, path) {
@@ -673,26 +662,21 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 	getFlags := sflag.NewFlagPack(ic.initSftpCommands()[getCmd].alias, getUsage, getDesc, ic.console.Term)
-	recursive, _ := getFlags.NewBoolFlag("r", "", "Download directories recursively", false)
+	recursive, _ := getFlags.NewBoolFlag("r", "", false, "Download directories recursively")
+	getFlags.SetExactArgs(1)
 	getFlags.Set.Usage = func() {
 		getFlags.PrintUsage(true)
 	}
 
-	if pErr := getFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := getFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := getFlags.Set.Args()
-	if len(flagArgs) < 1 {
-		getFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
 	remotePath := flagArgs[0]
 	localPath := *c.localCwd
 
@@ -851,28 +835,23 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	putFlags := sflag.NewFlagPack(ic.initSftpCommands()[putCmd].alias, putUsage, putDesc, ic.console.Term)
-	recursive, _ := putFlags.NewBoolFlag("r", "", "Upload directory recursively", false)
+	recursive, _ := putFlags.NewBoolFlag("r", "", false, "Upload directory recursively")
+	putFlags.SetExactArgs(1)
 	putFlags.Set.Usage = func() {
 		putFlags.PrintUsage(true)
 	}
 
-	if pErr := putFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := putFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := putFlags.Set.Args()
-	if len(flagArgs) < 1 {
-		putFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
-	// Process local path
 	localPath := flagArgs[0]
+
 	if !spath.IsAbs(c.svrSystem, localPath) {
 		localPath = spath.Join(c.svrSystem, []string{*c.localCwd, localPath})
 	}
@@ -1034,26 +1013,20 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 	chmodFlags := sflag.NewFlagPack(ic.initSftpCommands()[chmodCmd].alias, chmodUsage, chmodDesc, ic.console.Term)
+	chmodFlags.SetExactArgs(2)
 	chmodFlags.Set.Usage = func() {
 		chmodFlags.PrintUsage(true)
 	}
 
-	if pErr := chmodFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := chmodFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := chmodFlags.Set.Args()
-	if len(flagArgs) < 2 {
-		chmodFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 2 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
-	// Parse permissions
 	modeStr := flagArgs[0]
 	path := flagArgs[1]
 
@@ -1100,26 +1073,22 @@ func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 	statFlags := sflag.NewFlagPack(ic.initSftpCommands()[statCmd].alias, statUsage, statDesc, ic.console.Term)
+	statFlags.SetExactArgs(1)
 	statFlags.Set.Usage = func() {
 		statFlags.PrintUsage(true)
 	}
 
-	if pErr := statFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := statFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := statFlags.Set.Args()
-	if len(flagArgs) < 1 {
-		statFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
 	path := flagArgs[0]
+
 	if !spath.IsAbs(ic.cliSystem, path) {
 		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
 	}
@@ -1184,26 +1153,20 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
 	mvFlags := sflag.NewFlagPack(ic.initSftpCommands()[mvCmd].alias, mvUsage, mvDesc, ic.console.Term)
+	mvFlags.SetExactArgs(2)
 	mvFlags.Set.Usage = func() {
 		mvFlags.PrintUsage(true)
 	}
 
-	if pErr := mvFlags.Set.Parse(c.args); pErr != nil {
+	if pErr := mvFlags.Parse(c.args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
 	flagArgs := mvFlags.Set.Args()
-	if len(flagArgs) < 2 {
-		mvFlags.PrintUsage(true)
-		return
-	}
-
-	if len(flagArgs) > 2 {
-		ic.console.PrintlnErrorStep("Too many arguments")
-		return
-	}
-
-	// Process paths
 	srcPath := flagArgs[0]
 	dstPath := flagArgs[1]
 

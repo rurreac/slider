@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/armon/go-socks5"
 	"io"
@@ -60,51 +59,59 @@ type listenerConf struct {
 	statusCode   int
 }
 
-const clientHelp = `
-Slider Client
-
-  Creates a new Slider Client instance and connects 
-to the defined Slider Server.
-
-Usage: <slider_client> [flags] [<[server_address]:port>]
-
-Flags:`
+const (
+	clientUsage = "\r\nSlider Client" +
+		"\r\n\nCreates a new Slider Client instance and connects" +
+		"\nto the defined Slider Server." +
+		"\r\n\nUsage: <slider_client> [flags] [<[server_address]:port>]"
+)
 
 var shutdown = make(chan bool, 1)
 
 func NewClient(args []string) {
 	defer close(shutdown)
-	clientFlags := flag.NewFlagSet("client", flag.ContinueOnError)
-	verbose := clientFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	keepalive := clientFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
-	colorless := clientFlags.Bool("colorless", false, "Disables logging colors")
-	fingerprint := clientFlags.String("fingerprint", "", "Server fingerprint for host verification (listener)")
-	key := clientFlags.String("key", "", "Private key for authenticating to a Server")
-	listener := clientFlags.Bool("listener", false, "Client will listen for incoming Server connections")
-	port := clientFlags.Int("port", 8081, "Listener port")
-	address := clientFlags.String("address", "0.0.0.0", "Address the Listener will bind to")
-	retry := clientFlags.Bool("retry", false, "Retries reconnection indefinitely")
-	templatePath := clientFlags.String("http-template", "", "Path of a default file to serve (listener)")
-	serverHeader := clientFlags.String("http-server-header", "", "Sets a server header value (listener)")
-	httpRedirect := clientFlags.String("http-redirect", "", "Redirects incoming HTTP to given URL (listener)")
-	statusCode := clientFlags.Int("http-status-code", 200, "Template Status code [200|301|302|400|401|403|500|502|503] (listener)")
-	httpVersion := clientFlags.Bool("http-version", false, "Enables /version HTTP path")
-	httpHealth := clientFlags.Bool("http-health", false, "Enables /health HTTP path")
-	customDNS := clientFlags.String("dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
-	clientFlags.Usage = func() {
-		fmt.Println(clientHelp)
-		clientFlags.PrintDefaults()
-		fmt.Println()
+	clientFlags := sflag.NewFlagPack([]string{"client"}, clientUsage, "", os.Stdout)
+	verbose, _ := clientFlags.NewStringFlag("", "verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
+	keepalive, _ := clientFlags.NewDurationFlag("", "keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
+	colorless, _ := clientFlags.NewBoolFlag("", "colorless", false, "Disables logging colors")
+	fingerprint, _ := clientFlags.NewStringFlag("", "fingerprint", "", "Server fingerprint for host verification (listener)")
+	key, _ := clientFlags.NewStringFlag("", "key", "", "Private key for authenticating to a Server")
+	listener, _ := clientFlags.NewBoolFlag("", "listener", false, "Client will listen for incoming Server connections")
+	port, _ := clientFlags.NewIntFlag("", "port", 8081, "Listener port")
+	address, _ := clientFlags.NewStringFlag("", "address", "0.0.0.0", "Address the Listener will bind to")
+	retry, _ := clientFlags.NewBoolFlag("", "retry", false, "Retries reconnection indefinitely")
+	templatePath, _ := clientFlags.NewStringFlag("", "http-template", "", "Path of a default file to serve (listener)")
+	serverHeader, _ := clientFlags.NewStringFlag("", "http-server-header", "", "Sets a server header value (listener)")
+	httpRedirect, _ := clientFlags.NewStringFlag("", "http-redirect", "", "Redirects incoming HTTP to given URL (listener)")
+	statusCode, _ := clientFlags.NewIntFlag("", "http-status-code", 200, "Template Status code [200|301|302|400|401|403|500|502|503] (listener)")
+	httpVersion, _ := clientFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
+	httpHealth, _ := clientFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
+	customDNS, _ := clientFlags.NewStringFlag("", "dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
+	clientFlags.MarkFlagsMutuallyExclusive("listener", "key")
+	clientFlags.MarkFlagsMutuallyExclusive("listener", "dns")
+	clientFlags.MarkFlagsMutuallyExclusive("listener", "retry")
+	clientFlags.MarkFlagsConditionExclusive(
+		"listener",
+		false,
+		"fingerprint",
+		"port",
+		"address",
+		"http-template",
+		"http-server-header",
+		"http-redirect",
+		"http-status-code",
+		"http-version",
+		"http-health",
+	)
+	clientFlags.Set.Usage = func() {
+		clientFlags.PrintUsage(false)
 	}
 
-	if fErr := clientFlags.Parse(args); fErr != nil {
-		return
-	}
-
-	// Flag sanity check
-	if fErr := flagSanityCheck(clientFlags); fErr != nil {
-		fmt.Println(fErr)
-		clientFlags.Usage()
+	if pErr := clientFlags.Parse(args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		fmt.Printf("Flag error: %v\n", pErr)
 		return
 	}
 
@@ -205,7 +212,12 @@ func NewClient(args []string) {
 		c.Logger.Infof("Listening on %s://%s", clientAddr.Network(), clientAddr.String())
 		<-shutdown
 	} else {
-		serverURL := clientFlags.Args()[0]
+		argNumber := len(clientFlags.Set.Args())
+		if argNumber != 1 {
+			fmt.Println("Client requires exactly one valid server address as an argument")
+			return
+		}
+		serverURL := clientFlags.Set.Args()[0]
 		su, uErr := conf.ResolveURL(serverURL)
 		if uErr != nil {
 			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", serverURL)
@@ -233,64 +245,6 @@ func NewClient(args []string) {
 	}
 
 	c.Logger.Printf("Client down...")
-}
-
-func flagSanityCheck(clientFlags *flag.FlagSet) error {
-	var flagExclusion []string
-	var clientType string
-	if sflag.FlagIsDefined(clientFlags, "listener") {
-		clientType = "listener"
-		if sflag.FlagIsDefined(clientFlags, "key") {
-			flagExclusion = append(flagExclusion, "-key")
-		}
-		if sflag.FlagIsDefined(clientFlags, "retry") {
-			flagExclusion = append(flagExclusion, "-retry")
-		}
-		if sflag.FlagIsDefined(clientFlags, "dns") {
-			flagExclusion = append(flagExclusion, "-dns")
-		}
-		if len(clientFlags.Args()) > 0 {
-			flagExclusion = append(flagExclusion, clientFlags.Args()...)
-		}
-	} else {
-		clientType = "reverse"
-		if sflag.FlagIsDefined(clientFlags, "fingerprint") {
-			flagExclusion = append(flagExclusion, "-fingerprint")
-		}
-		if sflag.FlagIsDefined(clientFlags, "address") {
-			flagExclusion = append(flagExclusion, "-address")
-		}
-		if sflag.FlagIsDefined(clientFlags, "port") {
-			flagExclusion = append(flagExclusion, "-port")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-template") {
-			flagExclusion = append(flagExclusion, "-html-template")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-server-header") {
-			flagExclusion = append(flagExclusion, "-html-server-header")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-status-code") {
-			flagExclusion = append(flagExclusion, "-html-status-code")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-redirect") {
-			flagExclusion = append(flagExclusion, "-html-redirect")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-version") {
-			flagExclusion = append(flagExclusion, "-html-version")
-		}
-		if sflag.FlagIsDefined(clientFlags, "html-health") {
-			flagExclusion = append(flagExclusion, "-html-health")
-		}
-		argNumber := len(clientFlags.Args())
-		if argNumber != 1 {
-			return fmt.Errorf("%s client requires exactly one valid server address as an argument", clientType)
-		}
-	}
-	if len(flagExclusion) > 0 {
-		return fmt.Errorf("%s client incompatible in order or definition with: %v", clientType, flagExclusion)
-	}
-
-	return nil
 }
 
 func (c *client) startConnection(customDNS string) {
