@@ -623,6 +623,7 @@ func (s *server) connectCommand(args ...string) {
 	connectFlags := sflag.NewFlagPack([]string{connectCmd}, connectUsage, connectDesc, s.console.Term)
 	cCert, _ := connectFlags.NewInt64Flag("c", "cert", 0, "Specify certID for key authentication")
 	cDNS, _ := connectFlags.NewStringFlag("d", "dns", "", "Use custom DNS resolver")
+	cProto, _ := connectFlags.NewStringFlag("p", "proto", conf.Proto, "Use custom proto")
 	connectFlags.SetExactArgs(1)
 	connectFlags.Set.Usage = func() {
 		connectFlags.PrintUsage(true)
@@ -649,7 +650,7 @@ func (s *server) connectCommand(args ...string) {
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(cu, notifier, *cCert, *cDNS)
+	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto)
 
 	for {
 		select {

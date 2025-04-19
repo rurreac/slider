@@ -12,10 +12,17 @@ import (
 func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		if r.Header.Get("Sec-WebSocket-Protocol") == conf.HttpVersionResponse.ProtoVersion {
+		proto := conf.HttpVersionResponse.ProtoVersion
+		if proto != s.customProto {
+			proto = s.customProto
+		}
+		secProto := r.Header.Get("Sec-WebSocket-Protocol")
+		secExtension := r.Header.Get("Sec-WebSocket-Operation")
+		if secProto == proto && secExtension == "client" {
 			s.handleWebSocket(w, r)
 			return
 		}
+		s.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secExtension)
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
@@ -50,7 +57,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string) {
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string, customProto string) {
 	wsURL, wErr := conf.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.Logger.Errorf("Failed to convert %s to WebSocket URL: %v", clientUrl.String(), wErr)
@@ -72,7 +79,10 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 	if wsURL.Scheme == "wss" {
 		wsConfig.TLSClientConfig.InsecureSkipVerify = true
 	}
-	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{})
+	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
+		"Sec-WebSocket-Protocol":  {customProto},
+		"Sec-WebSocket-Operation": {"server"},
+	})
 	if err != nil {
 		s.Logger.Errorf(
 			"Failed to open a WebSocket connection to \"%s\": %v", wsURL, err)
