@@ -1,17 +1,16 @@
 package server
 
 import (
-	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
-	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
+	"slider/pkg/sflag"
 	"slider/pkg/slog"
 	"sync"
 	"syscall"
@@ -21,12 +20,12 @@ import (
 )
 
 const (
-	serverHelp = "\n\rSlider Server" +
+	serverUsage = "\n\rSlider Server" +
 		"\n\n\r  Creates a new Slider Server instance and waits for" +
 		"\n\rincoming Slider Client connections on the defined port." +
 		"\n\n\r  Interaction with Slider Clients can be performed through" +
 		"\n\rits integrated Console by pressing CTR^C at any time." +
-		"\n\n\rUsage: <slider_server> [flags]\n\r"
+		"\r\n\nUsage: <slider_server> [flags]"
 
 	clientCertsFile = "client-certs.json"
 	serverCertFile  = "server-cert.json"
@@ -63,34 +62,31 @@ type server struct {
 }
 
 func NewServer(args []string) {
-	serverFlags := flag.NewFlagSet("server", flag.ContinueOnError)
-	verbose := serverFlags.String("verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	address := serverFlags.String("address", "0.0.0.0", "Server will bind to this address")
-	port := serverFlags.Int("port", 8080, "port where Server will listen")
-	keepalive := serverFlags.Duration("keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
-	colorless := serverFlags.Bool("colorless", false, "Disables logging colors")
-	auth := serverFlags.Bool("auth", false, "Enables Key authentication of Clients")
-	certJarFile := serverFlags.String("certs", "", "Path of a valid slider-certs json file")
-	keyStore := serverFlags.Bool("keystore", false, "Store Server key for later use")
-	keyPath := serverFlags.String("keypath", "", "Path for reading and/or storing a Server key")
-	templatePath := serverFlags.String("http-template", "", "Path of a default file to serve")
-	serverHeader := serverFlags.String("http-server-header", "", "Sets a server header value")
-	httpRedirect := serverFlags.String("http-redirect", "", "Redirects incoming HTTP to given URL")
-	statusCode := serverFlags.Int("http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
-	httpVersion := serverFlags.Bool("http-version", false, "Enables /version HTTP path")
-	httpHealth := serverFlags.Bool("http-health", false, "Enables /health HTTP path")
-	serverFlags.Usage = func() {
-		fmt.Println(serverHelp)
-		serverFlags.PrintDefaults()
-		fmt.Println()
+	serverFlags := sflag.NewFlagPack([]string{"server"}, serverUsage, "", os.Stdout)
+	verbose, _ := serverFlags.NewStringFlag("", "verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
+	address, _ := serverFlags.NewStringFlag("", "address", "0.0.0.0", "Server will bind to this address")
+	port, _ := serverFlags.NewIntFlag("", "port", 8080, "port where Server will listen")
+	keepalive, _ := serverFlags.NewDurationFlag("", "keepalive", conf.Keepalive, "Sets keepalive interval vs Clients")
+	colorless, _ := serverFlags.NewBoolFlag("", "colorless", false, "Disables logging colors")
+	auth, _ := serverFlags.NewBoolFlag("", "auth", false, "Enables Key authentication of Clients")
+	certJarFile, _ := serverFlags.NewStringFlag("", "certs", "", "Path of a valid slider-certs json file")
+	keyStore, _ := serverFlags.NewBoolFlag("", "keystore", false, "Store Server key for later use")
+	keyPath, _ := serverFlags.NewStringFlag("", "keypath", "", "Path for reading and/or storing a Server key")
+	templatePath, _ := serverFlags.NewStringFlag("", "http-template", "", "Path of a default file to serve")
+	serverHeader, _ := serverFlags.NewStringFlag("", "http-server-header", "", "Sets a server header value")
+	httpRedirect, _ := serverFlags.NewStringFlag("", "http-redirect", "", "Redirects incoming HTTP to given URL")
+	statusCode, _ := serverFlags.NewIntFlag("", "http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
+	httpVersion, _ := serverFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
+	httpHealth, _ := serverFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
+	serverFlags.Set.Usage = func() {
+		serverFlags.PrintUsage(false)
 	}
 
-	if fErr := serverFlags.Parse(args); fErr != nil {
-		return
-	}
-
-	if slices.Contains(args, "help") {
-		serverFlags.Usage()
+	if pErr := serverFlags.Parse(args); pErr != nil {
+		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+			return
+		}
+		fmt.Printf("Flag error: %v\n", pErr)
 		return
 	}
 
