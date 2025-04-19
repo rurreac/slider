@@ -30,9 +30,9 @@ type flagInfo struct {
 }
 
 type flagCondition struct {
-	flagName     string
-	isEnabled    bool
-	excludeFlags []string
+	conditionFlag string
+	isEnabled     bool
+	excludeFlags  []string
 }
 
 func NewFlagPack(commands []string, usage string, description string, writerOut io.Writer) *FlagSetPack {
@@ -263,7 +263,7 @@ func (fsp *FlagSetPack) MarkFlagsOneRequired(flagNames ...string) {
 	fsp.requiredOneGrp = append(fsp.requiredOneGrp, flagNames)
 }
 
-func (fsp *FlagSetPack) MarkFlagsConditionExclusive(flagCheck string, isEnabled bool, excludeFlags ...string) {
+func (fsp *FlagSetPack) MarkFlagsConditionExclusive(conditionFlag string, isEnabled bool, excludeFlags ...string) {
 	if len(excludeFlags) < 1 {
 		panic("At least one flag is required to form a condition exclusive group")
 	}
@@ -282,9 +282,9 @@ func (fsp *FlagSetPack) MarkFlagsConditionExclusive(flagCheck string, isEnabled 
 		}
 	}
 	condition := flagCondition{
-		flagName:     flagCheck,
-		isEnabled:    isEnabled,
-		excludeFlags: excludeFlags,
+		conditionFlag: conditionFlag,
+		isEnabled:     isEnabled,
+		excludeFlags:  excludeFlags,
 	}
 
 	// Add the flags to the mutex groups
@@ -425,10 +425,10 @@ func (fsp *FlagSetPack) validateConditionExclusion() error {
 
 		if condition.isEnabled {
 			return fmt.Errorf("flag(s) %s require flag %s enabled",
-				strings.Join(formattedNames, ", "), condition.flagName)
+				strings.Join(formattedNames, ", "), condition.conditionFlag)
 		} else {
 			return fmt.Errorf("flag(s) %s require flag %s disabled",
-				strings.Join(formattedNames, ", "), condition.flagName)
+				strings.Join(formattedNames, ", "), condition.conditionFlag)
 		}
 	}
 
@@ -580,7 +580,7 @@ func (fsp *FlagSetPack) PrintUsage(compact bool) {
 		for _, condition := range fsp.conditionGrp {
 			var flagsCondStr string
 			for _, info := range fsp.flagList {
-				if info.shortFlag == condition.flagName || info.longFlag == condition.flagName {
+				if info.shortFlag == condition.conditionFlag || info.longFlag == condition.conditionFlag {
 					if info.shortFlag != "" && info.longFlag != "" {
 						flagsCondStr = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
 					} else if info.shortFlag != "" {
