@@ -9,10 +9,17 @@ import (
 func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) == "websocket" {
-		if r.Header.Get("Sec-WebSocket-Protocol") == conf.HttpVersionResponse.ProtoVersion {
+		proto := conf.HttpVersionResponse.ProtoVersion
+		if c.customProto != conf.HttpVersionResponse.ProtoVersion {
+			proto = c.customProto
+		}
+		secProto := r.Header.Get("Sec-WebSocket-Protocol")
+		secOperation := r.Header.Get("Sec-WebSocket-Operation")
+		if secProto == proto && secOperation == "server" {
 			c.handleWebSocket(w, r)
 			return
 		}
+		c.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secOperation)
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{

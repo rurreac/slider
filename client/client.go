@@ -47,6 +47,7 @@ type client struct {
 	sessionTrackMutex sync.Mutex
 	isListener        bool
 	firstRun          bool
+	customProto       string
 	*listenerConf
 }
 
@@ -87,6 +88,7 @@ func NewClient(args []string) {
 	httpVersion, _ := clientFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
 	httpHealth, _ := clientFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
 	customDNS, _ := clientFlags.NewStringFlag("", "dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
+	customProto, _ := clientFlags.NewStringFlag("", "proto", conf.Proto, "Set your own proto string")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "key")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "dns")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "retry")
@@ -133,7 +135,8 @@ func NewClient(args []string) {
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
-		firstRun: true,
+		firstRun:    true,
+		customProto: *customProto,
 		listenerConf: &listenerConf{
 			urlRedirect: &url.URL{},
 			httpVersion: *httpVersion,
@@ -168,7 +171,10 @@ func NewClient(args []string) {
 
 	// Check the use of extra headers for added functionality
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
-	c.httpHeaders = http.Header{"Sec-WebSocket-Protocol": {conf.HttpVersionResponse.ProtoVersion}}
+	c.httpHeaders = http.Header{
+		"Sec-WebSocket-Protocol":  {*customProto},
+		"Sec-WebSocket-Operation": {"client"},
+	}
 
 	if *listener {
 		c.isListener = *listener
