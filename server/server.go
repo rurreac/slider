@@ -59,6 +59,7 @@ type server struct {
 	httpVersion          bool
 	httpHealth           bool
 	CertificateAuthority *scrypt.CertificateAuthority
+	customProto          string
 }
 
 func NewServer(args []string) {
@@ -78,6 +79,7 @@ func NewServer(args []string) {
 	statusCode, _ := serverFlags.NewIntFlag("", "http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
 	httpVersion, _ := serverFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
 	httpHealth, _ := serverFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
+	customProto, _ := serverFlags.NewStringFlag("", "proto", conf.Proto, "Set your own proto string")
 	serverFlags.Set.Usage = func() {
 		serverFlags.PrintUsage(false)
 	}
@@ -123,6 +125,7 @@ func NewServer(args []string) {
 		serverHeader: *serverHeader,
 		httpVersion:  *httpVersion,
 		httpHealth:   *httpHealth,
+		customProto:  *customProto,
 	}
 
 	if *templatePath != "" {

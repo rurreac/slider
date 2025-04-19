@@ -27,7 +27,7 @@ type HttpHandler struct {
 const maxTemplateSize = 2
 
 var HttpVersionResponse = &VersionHolder{
-	ProtoVersion: proto,
+	ProtoVersion: Proto,
 	Version:      version,
 }
 
