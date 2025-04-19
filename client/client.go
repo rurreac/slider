@@ -93,9 +93,9 @@ func NewClient(args []string) {
 	clientFlags.MarkFlagsConditionExclusive(
 		"listener",
 		false,
-		"fingerprint",
-		"port",
 		"address",
+		"port",
+		"fingerprint",
 		"http-template",
 		"http-server-header",
 		"http-redirect",
