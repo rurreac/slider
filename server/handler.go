@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"slider/pkg/conf"
 	"slider/pkg/scrypt"
+	"slider/pkg/types"
 	"strings"
 )
 
@@ -25,7 +26,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		s.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secOperation)
 	}
 
-	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
+	if hErr := conf.HandleHttpRequest(w, r, &types.HttpHandler{
 		TemplatePath: s.templatePath,
 		ServerHeader: s.serverHeader,
 		StatusCode:   s.statusCode,

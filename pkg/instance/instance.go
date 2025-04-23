@@ -10,10 +10,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"slider/pkg/conf"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 	"sync"
 	"syscall"
 )
@@ -38,7 +38,7 @@ type Config struct {
 	enabled              bool
 	stopSignal           chan bool
 	done                 chan bool
-	sshMutex             sync.Mutex
+	instanceMutex        sync.Mutex
 	sshServerConn        *ssh.ServerConn
 	sshSessionConn       ssh.Conn
 	sshClientChannel     <-chan ssh.NewChannel
@@ -49,93 +49,83 @@ type Config struct {
 	certExists           bool
 	serverCertificate    *scrypt.GeneratedCertificate
 	envVarList           []struct{ Key, Value string }
+	portFwdMap           map[int]PortForwardControl
+	ForwardedSshChannel  ssh.Channel
 }
 
-// PTYRequest is the structure of a message for
-// a "pty-req" as described in RFC4254
-type PTYRequest struct {
-	TermEnvVar       string
-	TermWidthCols    uint32
-	TermHeightRows   uint32
-	TermWidthPixels  uint32
-	TermHeightPixels uint32
-	TerminalModes    string
-}
-
-// DirectTCPIP is the structure of a message for
-// a "direct-tcpip" as described in RFC4254
-type DirectTCPIP struct {
-	DstHost string
-	DstPort uint32
-	SrcHost string
-	SrcPort uint32
+type PortForwardControl struct {
+	RcvChan  chan *types.TcpIpChannelMsg
+	DoneChan chan bool
+	*types.CustomTcpIpChannelMsg
 }
 
 func New(config *Config) *Config {
-	return config
+	c := config
+	c.envVarList = make([]struct{ Key, Value string }, 0)
+	return c
 }
 
 func (si *Config) SetExpose(expose bool) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.exposePort = expose
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetPtyOn(ptyOn bool) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.ptyOn = ptyOn
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) setControls() {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.stopSignal = make(chan bool, 1)
 	si.done = make(chan bool, 1)
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetSSHConn(conn ssh.Conn) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.sshSessionConn = conn
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) setPort(port int) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.port = port
 	si.enabled = true
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) setServerCertificate(cert *scrypt.GeneratedCertificate) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.certExists = true
 	si.serverCertificate = cert
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetTLSOn(tlsOn bool) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.tlsOn = tlsOn
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetInteractiveOn(interactiveOn bool) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.interactiveOn = interactiveOn
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetAllowedFingerprint(fp string) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.allowedFingerprint = fp
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) SetEnvVarList(evl []struct{ Key, Value string }) {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.envVarList = evl
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 }
 
 func (si *Config) StartEndpoint(port int) error {
@@ -204,7 +194,10 @@ func (si *Config) runComm(conn net.Conn) {
 		si.Logger.Errorf(si.LogPrefix+"Failed SSH handshake - %v", cErr)
 		return
 	}
-	defer func() { _ = si.sshServerConn.Close() }()
+	defer func() {
+		_ = si.sshServerConn.Close()
+		si.cancelSshReverseFwd()
+	}()
 
 	// Service incoming SSH Request channel
 	go si.handleRequests(nil, reqChan, sshClientScope)
@@ -219,7 +212,7 @@ func (si *Config) runComm(conn net.Conn) {
 			go si.handleRequests(sessionClientChannel, request, sshSessionScope)
 		case "direct-tcpip":
 			go func() {
-				if hErr := si.handleSocksChannel(nc); hErr != nil {
+				if hErr := si.handleDirectTcpIpChannel(nc); hErr != nil {
 					si.Logger.Errorf(si.LogPrefix+"%v", hErr)
 				}
 			}()
@@ -251,7 +244,7 @@ func (si *Config) runShellComm(conn net.Conn) {
 	}
 
 	initSize, uErr := json.Marshal(
-		&conf.TermDimensions{
+		&types.TermDimensions{
 			Width:  uint32(width),
 			Height: uint32(height),
 		},
@@ -347,6 +340,8 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
+		case "tcpip-forward":
+			go si.handleTcpIpForwardRequest(req)
 		default:
 			si.Logger.Debugf(si.LogPrefix+"Request status: %v - type: %s - payload: %s", ok, req.Type, req.Payload)
 			if req.WantReply {
@@ -356,7 +351,256 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	}
 }
 
-func (si *Config) handleSocksChannel(nc ssh.NewChannel) error {
+func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
+	forwardReq := types.CustomTcpIpFwdRequest{
+		IsSshConn: false,
+		TcpIpFwdRequest: &types.TcpIpFwdRequest{
+			BindAddress: msg.SrcHost,
+			BindPort:    msg.SrcPort,
+		},
+	}
+
+	forwardReqBytes, mErr := json.Marshal(forwardReq)
+	if mErr != nil {
+		si.Logger.Errorf(si.LogPrefix+"Failed to marshal TcpIpFwdRequest request - %v", mErr)
+		return
+	}
+
+	ok, respData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", true, forwardReqBytes)
+	if rErr != nil || !ok {
+		si.Logger.Errorf(si.LogPrefix+"Failed to send \"tcpip-forward\" request - %v", rErr)
+		return
+	}
+	if len(respData) > 0 {
+		respPort := &types.TcpIpReqSuccess{}
+		if uErr := ssh.Unmarshal(respData, respPort); uErr != nil {
+			msg.SrcPort = respPort.BoundPort
+		}
+	}
+
+	si.addReverseMapping(&types.TcpIpChannelMsg{
+		DstHost: msg.DstHost,
+		DstPort: msg.DstPort,
+		SrcHost: msg.SrcHost,
+		SrcPort: msg.SrcPort,
+	}, false)
+
+	bindPort := int(msg.SrcPort)
+	control := si.portFwdMap[bindPort]
+
+	for range control.RcvChan {
+		conn, cErr := net.Dial("tcp", fmt.Sprintf("%s:%d", msg.DstHost, msg.DstPort))
+		if cErr != nil {
+			si.Logger.Errorf(si.LogPrefix+"Failed to connect to %s:%d - %v", msg.DstHost, msg.DstPort, cErr)
+			si.portFwdMap[bindPort].DoneChan <- true
+			continue
+		}
+
+		// Connect the two channels
+		go func() {
+			defer func() {
+				_ = conn.Close()
+			}()
+			_, _ = sio.PipeWithCancel(conn, si.ForwardedSshChannel)
+			si.Logger.Debugf(si.LogPrefix+"Completed MSG TCPIP Forwarded channel %s:%d -> %s:%d",
+				msg.SrcHost, msg.SrcPort,
+				msg.DstHost, msg.DstPort,
+			)
+			control.DoneChan <- true
+		}()
+	}
+}
+
+func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
+	// Just making sure that data received is what it should be
+	srcReqPayload := &types.TcpIpFwdRequest{}
+	if uErr := ssh.Unmarshal(req.Payload, srcReqPayload); uErr != nil {
+		si.Logger.Errorf(si.LogPrefix+"Failed to unmarshal TcpIpFwdRequest request - %v", uErr)
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	// Send the request to the Slider client as it is
+	customReqPayload := &types.CustomTcpIpFwdRequest{
+		IsSshConn:       true,
+		TcpIpFwdRequest: srcReqPayload,
+	}
+	reqPayload, mErr := json.Marshal(customReqPayload)
+	if mErr != nil {
+		si.Logger.Errorf(si.LogPrefix+"Failed to marshal TcpIpFwdRequest request - %v", mErr)
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+	rOk, sliderRespData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", req.WantReply, reqPayload)
+	if rErr != nil || !rOk {
+		si.Logger.Errorf(si.LogPrefix+"Failed to send slider \"tcpip-forward\" request - %v", rErr)
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	sshRespPayload := &types.TcpIpReqSuccess{}
+	if req.WantReply {
+		// If the request was to bind to port 0, there should be data in the Slider response
+		if sliderRespData == nil && srcReqPayload.BindPort == 0 {
+			si.Logger.Errorf(si.LogPrefix+"Failed to bind to port %d", srcReqPayload.BindPort)
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			return
+		}
+
+		// If the request was to bind to port != 0, no data response is expected
+		respPayload := make([]byte, 0)
+		// If the request was to bind to port 0, we need to respond with the bound port
+		if srcReqPayload.BindPort == 0 {
+			if uErr := ssh.Unmarshal(sliderRespData, sshRespPayload); uErr != nil {
+				si.Logger.Errorf(si.LogPrefix+"Failed to unmarshal TcpIpReqSuccess request - %v", uErr)
+				if req.WantReply {
+					_ = req.Reply(false, nil)
+				}
+				return
+			}
+
+			// Override the 0 port with the bound port for tracking
+			respPayload = ssh.Marshal(sshRespPayload)
+			srcReqPayload.BindPort = sshRespPayload.BoundPort
+		}
+
+		if wErr := req.Reply(true, respPayload); wErr != nil {
+			si.Logger.Errorf(si.LogPrefix+"Failed to reply to original \"tcpip-forward\" request - %v", wErr)
+			return
+		}
+
+		si.addReverseMapping(&types.TcpIpChannelMsg{
+			// Destination here corresponds to the SSH channel,
+			// the SSH client handles the forwarding to the actual destination
+			DstHost: "",
+			DstPort: 0,
+			SrcHost: srcReqPayload.BindAddress,
+			SrcPort: srcReqPayload.BindPort,
+		}, true)
+	}
+
+	control := si.portFwdMap[int(srcReqPayload.BindPort)]
+
+	for channelMsg := range control.RcvChan {
+
+		channel, tcpIpFwdReq, oErr := si.sshServerConn.OpenChannel("forwarded-tcpip", ssh.Marshal(channelMsg))
+		if oErr != nil {
+			si.Logger.Errorf(si.LogPrefix+"Failed to open \"forwarded-tcpip\" channel to client - %v", oErr)
+			control.DoneChan <- true
+			continue
+		}
+		go ssh.DiscardRequests(tcpIpFwdReq)
+
+		// Connect the two channels
+		go func() {
+			defer func() {
+				_ = channel.Close()
+			}()
+			_, _ = sio.PipeWithCancel(channel, si.ForwardedSshChannel)
+			control.DoneChan <- true
+			si.Logger.Debugf(si.LogPrefix+"Completed SSH Port Forward channel from remote %s:%d",
+				srcReqPayload.BindAddress, srcReqPayload.BindPort,
+			)
+		}()
+	}
+}
+
+func (si *Config) addReverseMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
+	si.instanceMutex.Lock()
+	if si.portFwdMap == nil {
+		si.portFwdMap = make(map[int]PortForwardControl)
+	}
+	si.portFwdMap[int(t.SrcPort)] = PortForwardControl{
+		RcvChan:  make(chan *types.TcpIpChannelMsg, 5),
+		DoneChan: make(chan bool, 5),
+		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
+			IsSshConn:       isSshConn,
+			TcpIpChannelMsg: t,
+		},
+	}
+	si.instanceMutex.Unlock()
+}
+
+func (si *Config) GetReverseMappings() map[int]PortForwardControl {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	return si.portFwdMap
+}
+
+func (si *Config) GetReversePortMapping(port int) (PortForwardControl, error) {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	mapping, ok := si.portFwdMap[port]
+	if !ok {
+		return PortForwardControl{}, fmt.Errorf("no mapping found for port %d", port)
+	}
+	return mapping, nil
+}
+
+func (si *Config) cancelSshReverseFwd() {
+	if len(si.portFwdMap) > 0 {
+		for _, portFwd := range si.portFwdMap {
+			if portFwd.IsSshConn {
+
+				payload := ssh.Marshal(&types.TcpIpFwdRequest{
+					BindAddress: portFwd.SrcHost,
+					BindPort:    portFwd.SrcPort,
+				})
+				ok, _, cErr := si.sshSessionConn.SendRequest("cancel-tcpip-forward", true, payload)
+				if cErr != nil || !ok {
+					si.Logger.Errorf(si.LogPrefix+"Failed to cancel reverse tcp forwarding - %v - %v", cErr, ok)
+					continue
+				}
+				si.Logger.Debugf(si.LogPrefix+"Cancelled reverse tcp forwarding for port %d", portFwd.SrcPort)
+				delete(si.portFwdMap, int(portFwd.SrcPort))
+			}
+		}
+	}
+}
+
+func (si *Config) CancelMsgReverseFwd(port int) error {
+	si.instanceMutex.Lock()
+	control, ok := si.portFwdMap[port]
+	if !ok {
+		si.instanceMutex.Unlock()
+		return fmt.Errorf("port %d not found", port)
+	}
+	si.instanceMutex.Unlock()
+
+	if control.IsSshConn {
+		return fmt.Errorf("refusing to terminate ssh port forwarding, kill ssh endpoint instead")
+	}
+
+	payload := ssh.Marshal(&types.TcpIpFwdRequest{
+		BindAddress: control.SrcHost,
+		BindPort:    control.SrcPort,
+	})
+	rOk, _, cErr := si.sshSessionConn.SendRequest("cancel-tcpip-forward", true, payload)
+	if cErr != nil || !rOk {
+		return fmt.Errorf("failed to cancel reverse tcp forwarding - %v", cErr)
+	}
+
+	si.Logger.Debugf(si.LogPrefix+"Cancelled reverse tcp forwarding for port %d", control.SrcPort)
+	close(control.RcvChan)
+	close(control.DoneChan)
+
+	// Remove from map after successfully closing the port forward
+	si.instanceMutex.Lock()
+	delete(si.portFwdMap, port)
+	si.instanceMutex.Unlock()
+
+	return nil
+}
+
+func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 	sessionClientChannel, request, aErr := nc.Accept()
 	if aErr != nil {
 		return fmt.Errorf("could not accept channel - %v", aErr)
@@ -364,7 +608,7 @@ func (si *Config) handleSocksChannel(nc ssh.NewChannel) error {
 	defer func() { _ = sessionClientChannel.Close() }()
 	go ssh.DiscardRequests(request)
 
-	var dti DirectTCPIP
+	var dti types.TcpIpChannelMsg
 	if uErr := ssh.Unmarshal(nc.ExtraData(), &dti); uErr != nil {
 		return fmt.Errorf("could not parse direct TCPIP - %v", uErr)
 	}
@@ -402,14 +646,14 @@ func (si *Config) handleSocksChannel(nc ssh.NewChannel) error {
 func (si *Config) sendInitTermSize(payload []byte) {
 	// Do not panic if payload happens to be empty
 	if len(payload) > 0 {
-		var ptyReq PTYRequest
+		var ptyReq types.PtyRequest
 		if uErr := ssh.Unmarshal(payload, &ptyReq); uErr != nil {
 			si.Logger.Debugf(si.LogPrefix + "Failed to unmarshall \"pty-req\" request")
 		}
 		si.Logger.Debugf(si.LogPrefix+"Init Terminal size: %dx%d", ptyReq.TermWidthCols, ptyReq.TermHeightRows)
 
 		initSize, uErr := json.Marshal(
-			&conf.TermDimensions{
+			&types.TermDimensions{
 				Width:  ptyReq.TermWidthCols,
 				Height: ptyReq.TermHeightRows,
 				X:      ptyReq.TermWidthPixels,
@@ -571,23 +815,23 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 }
 
 func (si *Config) IsEnabled() bool {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	enabled := si.enabled
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 	return enabled
 }
 
 func (si *Config) isExposed() bool {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	exposed := si.exposePort
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 	return exposed
 }
 
 func (si *Config) IsTLSOn() bool {
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	tlsOn := si.tlsOn
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 	return tlsOn
 }
 
@@ -609,13 +853,13 @@ func (si *Config) Stop() error {
 	<-si.done
 	close(si.done)
 
-	si.sshMutex.Lock()
+	si.instanceMutex.Lock()
 	si.port = 0
 	si.enabled = false
 	if si.interactiveOn {
 		si.interactiveOn = false
 	}
-	si.sshMutex.Unlock()
+	si.instanceMutex.Unlock()
 
 	si.Logger.Debugf(si.LogPrefix + "Endpoint down")
 
