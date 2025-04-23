@@ -4,12 +4,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"golang.org/x/crypto/ssh"
+	"slider/pkg/types"
 )
 
 type socksConfig struct {
 	sessionClientChannel ssh.Channel
 	socksChannel         ssh.Channel
-	directTCPIP          DirectTCPIP
+	directTCPIP          types.TcpIpChannelMsg
 }
 
 // handshake performs a SOCKS 5 handshake following the RFC1928
