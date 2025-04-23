@@ -57,16 +57,6 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		host = "localhost"
 	}
 
-	session := &Session{
-		sessionID:     sc,
-		hostIP:        host,
-		wsConn:        wsConn,
-		KeepAliveChan: make(chan bool, 1),
-		Logger:        s.Logger,
-		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
-		sshConf:       s.sshConf,
-	}
-
 	shellInstance := instance.New(
 		&instance.Config{
 			Logger:               s.Logger,
@@ -93,9 +83,18 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		},
 	)
 
-	session.SocksInstance = socksInstance
-	session.ShellInstance = shellInstance
-	session.SSHInstance = sshInstance
+	session := &Session{
+		sessionID:     sc,
+		hostIP:        host,
+		wsConn:        wsConn,
+		KeepAliveChan: make(chan bool, 1),
+		Logger:        s.Logger,
+		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
+		sshConf:       s.sshConf,
+		SocksInstance: socksInstance,
+		SSHInstance:   sshInstance,
+		ShellInstance: shellInstance,
+	}
 
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
@@ -155,6 +154,9 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 	session.sessionMutex.Lock()
 	session.sshConn = sshConn
+	session.SocksInstance.SetSSHConn(sshConn)
+	session.ShellInstance.SetSSHConn(sshConn)
+	session.SSHInstance.SetSSHConn(sshConn)
 	session.sessionMutex.Unlock()
 }
 
