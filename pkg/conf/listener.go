@@ -4,29 +4,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"slices"
+	"slider/pkg/types"
 )
-
-type VersionHolder struct {
-	ProtoVersion string `json:"ProtoVersion"`
-	Version      string `json:"Version"`
-}
-
-type HttpHandler struct {
-	TemplatePath string
-	ServerHeader string
-	StatusCode   int
-	UrlRedirect  *url.URL
-	VersionOn    bool
-	HealthOn     bool
-}
 
 // 2MB is a lot for an HTML template, but just in case want to embed images
 const maxTemplateSize = 2
 
-var HttpVersionResponse = &VersionHolder{
+var HttpVersionResponse = &types.VersionHolder{
 	ProtoVersion: Proto,
 	Version:      version,
 }
@@ -63,7 +49,7 @@ func CheckTemplate(filePath string) error {
 	return nil
 }
 
-func HandleHttpRequest(w http.ResponseWriter, r *http.Request, handler *HttpHandler) error {
+func HandleHttpRequest(w http.ResponseWriter, r *http.Request, handler *types.HttpHandler) error {
 	w.Header().Add("server", handler.ServerHeader)
 
 	if handler.UrlRedirect.String() != "" {
