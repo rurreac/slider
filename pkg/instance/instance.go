@@ -50,7 +50,12 @@ type Config struct {
 	serverCertificate    *scrypt.GeneratedCertificate
 	envVarList           []struct{ Key, Value string }
 	portFwdMap           map[int]PortForwardControl
-	ForwardedSshChannel  ssh.Channel
+	FTx                  ForwardedTx
+}
+
+type ForwardedTx struct {
+	ForwardedSshChannel ssh.Channel
+	ForwardingMutex     sync.Mutex
 }
 
 type PortForwardControl struct {
@@ -401,7 +406,7 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
 			defer func() {
 				_ = conn.Close()
 			}()
-			_, _ = sio.PipeWithCancel(conn, si.ForwardedSshChannel)
+			_, _ = sio.PipeWithCancel(conn, si.FTx.ForwardedSshChannel)
 			si.Logger.Debugf(si.LogPrefix+"Completed MSG TCPIP Forwarded channel %s:%d -> %s:%d",
 				msg.SrcHost, msg.SrcPort,
 				msg.DstHost, msg.DstPort,
@@ -504,7 +509,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 			defer func() {
 				_ = channel.Close()
 			}()
-			_, _ = sio.PipeWithCancel(channel, si.ForwardedSshChannel)
+			_, _ = sio.PipeWithCancel(channel, si.FTx.ForwardedSshChannel)
 			control.DoneChan <- true
 			si.Logger.Debugf(si.LogPrefix+"Completed SSH Port Forward channel from remote %s:%d",
 				srcReqPayload.BindAddress, srcReqPayload.BindPort,

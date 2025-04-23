@@ -185,10 +185,15 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 }
 
 func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
+	// Prevent another go routine to smash session.SSHInstance.ForwardedSshChannel
+	// by locking the session until the content has been processed
+	session.SSHInstance.FTx.ForwardingMutex.Lock()
+	defer session.SSHInstance.FTx.ForwardingMutex.Unlock()
+
 	var err error
 	var requests <-chan *ssh.Request
 	session.Logger.Debugf("Session ID %d - Forwarded TCP IP Channel", session.sessionID)
-	session.SSHInstance.ForwardedSshChannel, requests, err = nc.Accept()
+	session.SSHInstance.FTx.ForwardedSshChannel, requests, err = nc.Accept()
 	if err != nil {
 		session.Logger.Errorf(
 			"%sFailed to accept \"%s\" channel\n%v",
@@ -198,7 +203,7 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 		)
 		return
 	}
-	defer func() { _ = session.SSHInstance.ForwardedSshChannel.Close() }()
+	defer func() { _ = session.SSHInstance.FTx.ForwardedSshChannel.Close() }()
 	go ssh.DiscardRequests(requests)
 
 	payload := &types.CustomTcpIpChannelMsg{}
