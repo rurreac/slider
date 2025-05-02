@@ -10,20 +10,23 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"slider/pkg/conf"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"sync"
 	"syscall"
+	"time"
 )
 
 const (
 	sshClientScope     = "ssh-client"
 	sshSessionScope    = "ssh-session"
 	sliderChannelScope = "slider-channel"
-	SocksOnly          = "socks"
-	ShellOnly          = "shell"
+	SocksEndpoint      = "socks-endpoint"
+	ShellEndpoint      = "shell-endpoint"
+	SshEndpoint        = "ssh-endpoint"
 )
 
 type Config struct {
@@ -50,6 +53,7 @@ type Config struct {
 	serverCertificate    *scrypt.GeneratedCertificate
 	envVarList           []struct{ Key, Value string }
 	portFwdMap           map[int]PortForwardControl
+	directTcpIpMap       map[int]DirectTcpIpControl
 	FTx                  ForwardedTx
 }
 
@@ -61,6 +65,13 @@ type ForwardedTx struct {
 type PortForwardControl struct {
 	RcvChan  chan *types.TcpIpChannelMsg
 	DoneChan chan bool
+	*types.CustomTcpIpChannelMsg
+}
+
+type DirectTcpIpControl struct {
+	RcvChan   chan *types.TcpIpChannelMsg
+	DoneChan  chan bool
+	isForward bool
 	*types.CustomTcpIpChannelMsg
 }
 
@@ -168,21 +179,22 @@ func (si *Config) StartEndpoint(port int) error {
 			break
 		}
 		switch si.EndpointType {
-		case SocksOnly:
+		case SocksEndpoint:
 			go si.runSocksComm(conn)
-		case ShellOnly:
+		case ShellEndpoint:
 			go si.runShellComm(conn)
+		case SshEndpoint:
+			go si.runSshComm(conn)
 		default:
-			go si.runComm(conn)
+			return fmt.Errorf(si.LogPrefix+"Unknown endpoint type \"%s\"", si.EndpointType)
 		}
-
 	}
 
 	si.done <- true
 	return nil
 }
 
-func (si *Config) runComm(conn net.Conn) {
+func (si *Config) runSshComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
 	sshConf := &ssh.ServerConfig{NoClientAuth: true}
@@ -201,7 +213,7 @@ func (si *Config) runComm(conn net.Conn) {
 	}
 	defer func() {
 		_ = si.sshServerConn.Close()
-		si.cancelSshReverseFwd()
+		si.cancelSshRemoteFwd()
 	}()
 
 	// Service incoming SSH Request channel
@@ -383,7 +395,7 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
 		}
 	}
 
-	si.addReverseMapping(&types.TcpIpChannelMsg{
+	si.addRemoteMapping(&types.TcpIpChannelMsg{
 		DstHost: msg.DstHost,
 		DstPort: msg.DstPort,
 		SrcHost: msg.SrcHost,
@@ -414,6 +426,79 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
 			control.DoneChan <- true
 		}()
 	}
+}
+
+func (si *Config) addLocalMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
+	si.instanceMutex.Lock()
+	if si.directTcpIpMap == nil {
+		si.directTcpIpMap = make(map[int]DirectTcpIpControl)
+	}
+	si.directTcpIpMap[int(t.SrcPort)] = DirectTcpIpControl{
+		DoneChan: make(chan bool, 1),
+		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
+			IsSshConn:       isSshConn,
+			TcpIpChannelMsg: t,
+		},
+	}
+	si.instanceMutex.Unlock()
+}
+
+func (si *Config) GetLocalMappings() map[int]DirectTcpIpControl {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	return si.directTcpIpMap
+}
+
+func (si *Config) GetLocalPortMapping(port int) (DirectTcpIpControl, error) {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	mapping, ok := si.directTcpIpMap[port]
+	if !ok {
+		return DirectTcpIpControl{}, fmt.Errorf("no mapping found for port %d", port)
+	}
+	return mapping, nil
+}
+
+func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg) {
+	listener, lErr := net.Listen("tcp", fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
+	if lErr != nil {
+		si.Logger.Errorf("failed to listen on %s:%d - %v", msg.SrcHost, msg.SrcPort, lErr)
+		return
+	}
+	defer func() { _ = listener.Close() }()
+	si.Logger.Debugf(si.LogPrefix+"Listening on %s:%d", msg.SrcHost, msg.SrcPort)
+
+	si.addLocalMapping(&msg, false)
+	mapping, mErr := si.GetLocalPortMapping(int(msg.SrcPort))
+	if mErr != nil {
+		si.Logger.Errorf(si.LogPrefix+"Failed to get local port mapping - %v", mErr)
+		return
+	}
+
+	for {
+		select {
+		case <-mapping.DoneChan:
+			si.Logger.Debugf(si.LogPrefix+"Stopping listener on %s:%d", msg.SrcHost, msg.SrcPort)
+			delete(si.directTcpIpMap, int(msg.SrcPort))
+			return
+		default:
+			// Proceed
+		}
+		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
+		conn, cErr := listener.Accept()
+		if cErr != nil {
+			continue
+		}
+		oChan, oReq, oErr := si.sshSessionConn.OpenChannel("direct-tcpip", ssh.Marshal(msg))
+		if oErr != nil {
+			si.Logger.Errorf(si.LogPrefix+"Failed to open \"socks5\" channel - %v", oErr)
+			_ = conn.Close()
+			continue
+		}
+		go ssh.DiscardRequests(oReq)
+		_, _ = sio.PipeWithCancel(conn, oChan)
+	}
+
 }
 
 func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
@@ -482,7 +567,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 			return
 		}
 
-		si.addReverseMapping(&types.TcpIpChannelMsg{
+		si.addRemoteMapping(&types.TcpIpChannelMsg{
 			// Destination here corresponds to the SSH channel,
 			// the SSH client handles the forwarding to the actual destination
 			DstHost: "",
@@ -518,7 +603,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 	}
 }
 
-func (si *Config) addReverseMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
+func (si *Config) addRemoteMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
 	si.instanceMutex.Lock()
 	if si.portFwdMap == nil {
 		si.portFwdMap = make(map[int]PortForwardControl)
@@ -534,13 +619,13 @@ func (si *Config) addReverseMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
 	si.instanceMutex.Unlock()
 }
 
-func (si *Config) GetReverseMappings() map[int]PortForwardControl {
+func (si *Config) GetRemoteMappings() map[int]PortForwardControl {
 	si.instanceMutex.Lock()
 	defer si.instanceMutex.Unlock()
 	return si.portFwdMap
 }
 
-func (si *Config) GetReversePortMapping(port int) (PortForwardControl, error) {
+func (si *Config) GetRemotePortMapping(port int) (PortForwardControl, error) {
 	si.instanceMutex.Lock()
 	defer si.instanceMutex.Unlock()
 	mapping, ok := si.portFwdMap[port]
@@ -550,7 +635,7 @@ func (si *Config) GetReversePortMapping(port int) (PortForwardControl, error) {
 	return mapping, nil
 }
 
-func (si *Config) cancelSshReverseFwd() {
+func (si *Config) cancelSshRemoteFwd() {
 	if len(si.portFwdMap) > 0 {
 		for _, portFwd := range si.portFwdMap {
 			if portFwd.IsSshConn {
@@ -571,7 +656,7 @@ func (si *Config) cancelSshReverseFwd() {
 	}
 }
 
-func (si *Config) CancelMsgReverseFwd(port int) error {
+func (si *Config) CancelMsgRemoteFwd(port int) error {
 	si.instanceMutex.Lock()
 	control, ok := si.portFwdMap[port]
 	if !ok {
@@ -630,6 +715,8 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 	// Discard the SSH requests from the socks channel
 	go ssh.DiscardRequests(socksRequests)
 
+	// Because SOCKS comes from SSH, we need to perform the negotiation handshake first
+	// https://datatracker.ietf.org/doc/html/rfc1928#section-3
 	socks := socksConfig{
 		sessionClientChannel: sessionClientChannel,
 		socksChannel:         socksChannel,

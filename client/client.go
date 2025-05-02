@@ -407,6 +407,9 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			// Blocking here to ensure is serviced before another channel is opened
 			s.handleInitSizeChannel(nc)
+		case "direct-tcpip":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleTcpIpChannel(nc)
 		default:
 			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -418,6 +421,30 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 			}
 		}
 	}
+}
+
+func (s *Session) handleTcpIpChannel(nc ssh.NewChannel) {
+	tcpIpMsg := &types.TcpIpChannelMsg{}
+	if uErr := ssh.Unmarshal(nc.ExtraData(), tcpIpMsg); uErr != nil {
+		s.Logger.Errorf("%sFailed to unmarshal \"%s\" channel data - %v", s.logID, nc.ChannelType(), uErr)
+		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode direct-tcpip data")
+		return
+	}
+	s.Logger.Debugf("%sDirect TCPIP channel request to %s:%d", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort)
+	conn, cErr := net.Dial("tcp", fmt.Sprintf("%s:%d", tcpIpMsg.DstHost, tcpIpMsg.DstPort))
+	if cErr != nil {
+		s.Logger.Errorf("%sFailed to connect to %s:%d - %v", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort, cErr)
+		_ = nc.Reject(ssh.Prohibited, "Failed to connect to destination")
+		return
+	}
+	dChan, dReq, dErr := nc.Accept()
+	if dErr != nil {
+		s.Logger.Errorf("%sFailed to accept \"%s\" channel - %v", s.logID, nc.ChannelType(), dErr)
+		_ = conn.Close()
+		return
+	}
+	go ssh.DiscardRequests(dReq)
+	_, _ = sio.PipeWithCancel(dChan, conn)
 }
 
 func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {

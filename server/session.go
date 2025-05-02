@@ -61,7 +61,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		&instance.Config{
 			Logger:               s.Logger,
 			LogPrefix:            fmt.Sprintf("SessionID %d - SHELL ", sc),
-			EndpointType:         instance.ShellOnly,
+			EndpointType:         instance.ShellEndpoint,
 			CertificateAuthority: s.CertificateAuthority,
 		},
 	)
@@ -70,7 +70,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		&instance.Config{
 			Logger:       s.Logger,
 			LogPrefix:    fmt.Sprintf("SessionID %d - SOCKS ", sc),
-			EndpointType: instance.SocksOnly,
+			EndpointType: instance.SocksEndpoint,
 		},
 	)
 

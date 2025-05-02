@@ -922,14 +922,11 @@ func (s *server) portFwdCommand(args ...string) {
 	pSession, _ := portFwdFlags.NewIntFlag("s", "session", 0, "Session ID to add or remove Port Forwarding")
 	pReverse, _ := portFwdFlags.NewBoolFlag("R", "reverse", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
 	pRemove, _ := portFwdFlags.NewBoolFlag("r", "remove", false, "Remove Port Forwarding form port passed as argument")
+	pLocal, _ := portFwdFlags.NewBoolFlag("L", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
 	portFwdFlags.MarkFlagsRequireArgs("R", 1)
+	portFwdFlags.MarkFlagsRequireArgs("L", 1)
 	portFwdFlags.MarkFlagsRequireArgs("r", 1)
-	/*
-		pLocal, _ := portFwdFlags.NewBoolFlag("l", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
-		portFwdFlags.MarkFlagsRequireArgs("l", 1)
-		portFwdFlags.MarkFlagsMutuallyExclusive("l", "r")
-
-	*/
+	portFwdFlags.MarkFlagsMutuallyExclusive("L", "R")
 	portFwdFlags.Set.Usage = func() {
 		portFwdFlags.PrintUsage(true)
 	}
@@ -957,42 +954,114 @@ func (s *server) portFwdCommand(args ...string) {
 		tw := new(tabwriter.Writer)
 		tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
 
-		totalGlobalTcpIpFwd := 0
+		totalGlobalTcpIp := 0
 		sessionList := slices.Collect(maps.Values(s.sessionTrack.Sessions))
 
 		for _, sItem := range sessionList {
-			reverseMappings := sItem.SSHInstance.GetReverseMappings()
+			reverseMappings := sItem.SSHInstance.GetRemoteMappings()
 			totalSessionTcpIpFwd := len(reverseMappings)
-			totalGlobalTcpIpFwd += totalSessionTcpIpFwd
-			if totalSessionTcpIpFwd == 0 {
-				continue
-			}
-			_, _ = fmt.Fprintln(tw)
-			_, _ = fmt.Fprintf(tw, "\tSession ID\tForward Address\tLocal Port\tRemote Address\tRemote Port\n")
-			_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
-			for _, mapping := range reverseMappings {
-				var address string
-				var port string
-				if mapping.IsSshConn {
-					address = "(ssh client)"
-					port = "(ssh client)"
-				} else {
-					address = mapping.DstHost
-					port = fmt.Sprintf("%d", int(mapping.DstPort))
-				}
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\n",
-					sItem.sessionID,
-					address, port,
-					mapping.SrcHost, int(mapping.SrcPort),
-				)
-			}
-			_, _ = fmt.Fprintln(tw)
-			s.console.PrintlnDebugStep("Active Port Forwards: %d\n", totalSessionTcpIpFwd)
-			_ = tw.Flush()
-		}
+			totalGlobalTcpIp += totalSessionTcpIpFwd
 
-		if totalGlobalTcpIpFwd == 0 {
-			s.console.PrintlnDebugStep("Active Port Forwards: %d\n", totalGlobalTcpIpFwd)
+			if totalSessionTcpIpFwd != 0 {
+				_, _ = fmt.Fprintln(tw)
+				_, _ = fmt.Fprintf(tw, "\tSession ID\tForward Address\tForward Port\tRemote Address\tRemote Port\n")
+				_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
+				for _, mapping := range reverseMappings {
+					var address string
+					var port string
+					if mapping.IsSshConn {
+						address = "(ssh client)"
+						port = "(ssh client)"
+					} else {
+						address = mapping.DstHost
+						port = fmt.Sprintf("%d", int(mapping.DstPort))
+					}
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\n",
+						sItem.sessionID,
+						address, port,
+						mapping.SrcHost, int(mapping.SrcPort),
+					)
+				}
+			}
+
+			localMappings := sItem.SSHInstance.GetLocalMappings()
+			totalSessionDirectTcpIp := len(localMappings)
+			totalGlobalTcpIp += totalSessionDirectTcpIp
+
+			if totalSessionDirectTcpIp != 0 {
+				_, _ = fmt.Fprintln(tw)
+				_, _ = fmt.Fprintf(tw, "\tSession ID\tLocal Address\tLocal Port\tForward Address\tForward Port\n")
+				_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
+				for _, mapping := range localMappings {
+					var address string
+					var port string
+					if mapping.IsSshConn {
+						address = "(ssh client)"
+						port = "(ssh client)"
+					} else {
+						address = mapping.DstHost
+						port = fmt.Sprintf("%d", int(mapping.DstPort))
+					}
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%d\t%s\t%s\n",
+						sItem.sessionID,
+						mapping.SrcHost, int(mapping.SrcPort),
+						address, port,
+					)
+				}
+				_, _ = fmt.Fprintln(tw)
+				_ = tw.Flush()
+			}
+		}
+		s.console.PrintlnDebugStep("Active Port Forwards: %d\n", totalGlobalTcpIp)
+		return
+	}
+
+	if *pLocal {
+		if session == nil {
+			s.console.PrintlnErrorStep("Session ID not specified")
+			return
+		}
+		if *pRemove {
+			port, pErr := parsePort(portFwdFlags.Set.Args()[0])
+			if pErr != nil {
+				s.console.PrintlnErrorStep("Error: %v", pErr)
+				return
+			}
+			mapping, mErr := session.SSHInstance.GetLocalPortMapping(port)
+			if mErr != nil {
+				s.console.PrintlnErrorStep("Error: %v", mErr)
+				return
+			}
+			mapping.DoneChan <- true
+			s.console.PrintlnOkStep("Local Port forwarding (port %d) removed successfully", port)
+			return
+
+		}
+		fwdItem := portFwdFlags.Set.Args()[0]
+		msg, pErr := parseForwarding(fwdItem)
+		if pErr != nil {
+			s.console.PrintlnErrorStep("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
+			return
+		}
+		s.console.PrintlnDebugStep("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+		go session.SSHInstance.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg)
+		var sErr error
+		port := int(msg.SrcPort)
+		shellTicker := time.NewTicker(250 * time.Millisecond)
+		timeout := time.Now().Add(conf.Timeout)
+		for range shellTicker.C {
+			if !time.Now().Before(timeout) {
+				s.console.PrintlnErrorStep("Port forward request timed out")
+				return
+			}
+			_, sErr = session.SSHInstance.GetLocalPortMapping(port)
+			if port == 0 || sErr != nil {
+				fmt.Printf(".")
+				continue
+			} else {
+				s.console.PrintlnOkStep("Endpoint running on local port: %d", port)
+				break
+			}
 		}
 		return
 	}
@@ -1009,7 +1078,7 @@ func (s *server) portFwdCommand(args ...string) {
 				s.console.PrintlnErrorStep("Error: %v", pErr)
 				return
 			}
-			sErr := session.SSHInstance.CancelMsgReverseFwd(port)
+			sErr := session.SSHInstance.CancelMsgRemoteFwd(port)
 			if sErr != nil {
 				s.console.PrintlnErrorStep("Failed to remove: %v", sErr)
 				return
@@ -1036,7 +1105,7 @@ func (s *server) portFwdCommand(args ...string) {
 				s.console.PrintlnErrorStep("Port forward request timed out")
 				return
 			}
-			_, sErr = session.SSHInstance.GetReversePortMapping(port)
+			_, sErr = session.SSHInstance.GetRemotePortMapping(port)
 			if port == 0 || sErr != nil {
 				fmt.Printf(".")
 				continue
@@ -1065,10 +1134,18 @@ func parseForwarding(input string) (*types.CustomTcpIpChannelMsg, error) {
 
 	portFwd := strings.Split(input, ":")
 
+	var iErr error
 	switch len(portFwd) {
+	case 1:
+		localAddr = "localhost"
+		remoteAddr = "localhost"
+		localPort, iErr = parsePort(portFwd[0])
+		if iErr != nil {
+			return msg, iErr
+		}
+		remotePort = localPort
 	case 3:
 		remoteAddr = "0.0.0.0"
-		var iErr error
 		remotePort, iErr = parsePort(portFwd[0])
 		if iErr != nil {
 			return msg, iErr
@@ -1083,7 +1160,6 @@ func parseForwarding(input string) (*types.CustomTcpIpChannelMsg, error) {
 		}
 	case 4:
 		remoteAddr = portFwd[0]
-		var iErr error
 		remotePort, iErr = parsePort(portFwd[1])
 		if iErr != nil {
 			return msg, iErr

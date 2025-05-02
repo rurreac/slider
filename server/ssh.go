@@ -215,7 +215,7 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 
 	// Find PortFwd mapping
 	boundPort := int(payload.DstPort)
-	control, mErr := session.SSHInstance.GetReversePortMapping(boundPort)
+	control, mErr := session.SSHInstance.GetRemotePortMapping(boundPort)
 	if mErr != nil {
 		// This should never happen
 		session.Logger.Errorf(session.LogPrefix+"Failed to find PortFwd mapping: %v", boundPort, mErr)
