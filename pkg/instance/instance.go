@@ -721,9 +721,8 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 	// Because SOCKS comes from SSH, we need to perform the negotiation handshake first
 	// https://datatracker.ietf.org/doc/html/rfc1928#section-3
 	socks := socksConfig{
-		sessionClientChannel: sessionClientChannel,
-		socksChannel:         socksChannel,
-		directTCPIP:          dti,
+		socksChannel: socksChannel,
+		directTCPIP:  dti,
 	}
 
 	if ok, hErr := socks.handshake(); !ok || hErr != nil {

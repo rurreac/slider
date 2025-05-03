@@ -8,9 +8,8 @@ import (
 )
 
 type socksConfig struct {
-	sessionClientChannel ssh.Channel
-	socksChannel         ssh.Channel
-	directTCPIP          types.TcpIpChannelMsg
+	socksChannel ssh.Channel
+	directTCPIP  types.TcpIpChannelMsg
 }
 
 // handshake performs a SOCKS 5 handshake following the RFC1928
