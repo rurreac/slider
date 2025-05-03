@@ -484,18 +484,21 @@ func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg) {
 		default:
 			// Proceed
 		}
+
 		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
 		conn, cErr := listener.Accept()
 		if cErr != nil {
 			continue
 		}
+
 		oChan, oReq, oErr := si.sshSessionConn.OpenChannel("direct-tcpip", ssh.Marshal(msg))
 		if oErr != nil {
-			si.Logger.Errorf(si.LogPrefix+"Failed to open \"socks5\" channel - %v", oErr)
+			si.Logger.Errorf(si.LogPrefix+"Failed to open \"direct-tcpip\" channel - %v", oErr)
 			_ = conn.Close()
 			continue
 		}
 		go ssh.DiscardRequests(oReq)
+
 		_, _ = sio.PipeWithCancel(conn, oChan)
 	}
 

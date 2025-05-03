@@ -76,10 +76,11 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 
 	sshInstance := instance.New(
 		&instance.Config{
-			Logger:    s.Logger,
-			LogPrefix: fmt.Sprintf("SessionID %d - SSH ", sc),
-			ServerKey: s.serverKey,
-			AuthOn:    s.authOn,
+			Logger:       s.Logger,
+			LogPrefix:    fmt.Sprintf("SessionID %d - SSH ", sc),
+			EndpointType: instance.SshEndpoint,
+			ServerKey:    s.serverKey,
+			AuthOn:       s.authOn,
 		},
 	)
 
