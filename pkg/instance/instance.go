@@ -69,9 +69,8 @@ type PortForwardControl struct {
 }
 
 type DirectTcpIpControl struct {
-	RcvChan   chan *types.TcpIpChannelMsg
-	DoneChan  chan bool
-	isForward bool
+	RcvChan  chan *types.TcpIpChannelMsg
+	DoneChan chan bool
 	*types.CustomTcpIpChannelMsg
 }
 
