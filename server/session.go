@@ -61,7 +61,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		&instance.Config{
 			Logger:               s.Logger,
 			LogPrefix:            fmt.Sprintf("SessionID %d - SHELL ", sc),
-			EndpointType:         instance.ShellOnly,
+			EndpointType:         instance.ShellEndpoint,
 			CertificateAuthority: s.CertificateAuthority,
 		},
 	)
@@ -70,16 +70,17 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		&instance.Config{
 			Logger:       s.Logger,
 			LogPrefix:    fmt.Sprintf("SessionID %d - SOCKS ", sc),
-			EndpointType: instance.SocksOnly,
+			EndpointType: instance.SocksEndpoint,
 		},
 	)
 
 	sshInstance := instance.New(
 		&instance.Config{
-			Logger:    s.Logger,
-			LogPrefix: fmt.Sprintf("SessionID %d - SSH ", sc),
-			ServerKey: s.serverKey,
-			AuthOn:    s.authOn,
+			Logger:       s.Logger,
+			LogPrefix:    fmt.Sprintf("SessionID %d - SSH ", sc),
+			EndpointType: instance.SshEndpoint,
+			ServerKey:    s.serverKey,
+			AuthOn:       s.authOn,
 		},
 	)
 
@@ -154,6 +155,9 @@ func (s *server) getSession(sessionID int) (*Session, error) {
 func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 	session.sessionMutex.Lock()
 	session.sshConn = sshConn
+	session.SocksInstance.SetSSHConn(sshConn)
+	session.ShellInstance.SetSSHConn(sshConn)
+	session.SSHInstance.SetSSHConn(sshConn)
 	session.sessionMutex.Unlock()
 }
 
@@ -259,7 +263,6 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 }
 
 func (session *Session) socksEnable(port int, exposePort bool) {
-	session.SocksInstance.SetSSHConn(session.sshConn)
 	session.SocksInstance.SetExpose(exposePort)
 
 	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
@@ -268,7 +271,6 @@ func (session *Session) socksEnable(port int, exposePort bool) {
 }
 
 func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, interactiveOn bool) {
-	session.ShellInstance.SetSSHConn(session.sshConn)
 	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
 	session.ShellInstance.SetExpose(exposePort)
 
@@ -290,7 +292,6 @@ func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, inter
 }
 
 func (session *Session) sshEnable(port int, exposePort bool) {
-	session.SSHInstance.SetSSHConn(session.sshConn)
 	if session.SSHInstance.AuthOn {
 		session.SSHInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
 	}
@@ -315,26 +316,21 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 	return config
 }
 
-// newSFTPClient establishes an SFTP connection to a client session
 func (session *Session) newSftpClient() (*sftp.Client, error) {
 	session.Logger.Debugf("Opening SFTP channel to client")
 
-	// Open an SFTP channel to the client
 	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open SFTP channel: %v", err)
 	}
 
-	// Make sure to handle requests appropriately
 	go ssh.DiscardRequests(requests)
 
-	// Create cleanup function for use on error
 	cleanup := func() {
 		session.Logger.Debugf("Closing SFTP channel due to error")
 		_ = sftpChan.Close()
 	}
 
-	// Create the SFTP client using the established channel
 	session.Logger.Debugf("Initializing SFTP client")
 	client, err := sftp.NewClientPipe(sftpChan, sftpChan)
 	if err != nil {
@@ -342,7 +338,6 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 		return nil, fmt.Errorf("failed to create SFTP client: %v", err)
 	}
 
-	// Monitor client status in the background
 	go func() {
 		_ = client.Wait()
 		session.Logger.Debugf("SFTP client connection closed")

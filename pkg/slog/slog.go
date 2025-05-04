@@ -104,6 +104,17 @@ func (l *Logger) Debugf(t string, args ...interface{}) {
 		l.logger.Printf(" "+DEBUG+" "+t, args...)
 	}
 }
+func (l *Logger) DWarnf(t string, args ...interface{}) {
+	if l.logLevel == lvlDebug {
+		l.logger.Printf(" "+WARN+" "+t, args...)
+	}
+}
+
+func (l *Logger) DErrorf(t string, args ...interface{}) {
+	if l.logLevel == lvlDebug {
+		l.logger.Printf(" "+ERROR+" "+t, args...)
+	}
+}
 
 func (l *Logger) Warnf(t string, args ...interface{}) {
 	if l.logLevel <= lvlWarn {

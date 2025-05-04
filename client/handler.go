@@ -3,6 +3,7 @@ package client
 import (
 	"net/http"
 	"slider/pkg/conf"
+	"slider/pkg/types"
 	"strings"
 )
 
@@ -22,7 +23,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 		c.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secOperation)
 	}
 
-	if hErr := conf.HandleHttpRequest(w, r, &conf.HttpHandler{
+	if hErr := conf.HandleHttpRequest(w, r, &types.HttpHandler{
 		TemplatePath: c.templatePath,
 		ServerHeader: c.serverHeader,
 		StatusCode:   c.statusCode,
