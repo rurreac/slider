@@ -2,13 +2,13 @@ package server
 
 import (
 	"encoding/json"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 	"os"
 	"slider/pkg/conf"
 	"slider/pkg/sconn"
+	"slider/pkg/types"
 	"strconv"
-
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
 func (s *server) NewSSHServer(session *Session) {
@@ -97,6 +97,8 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 				session.sessionID,
 				nc.ChannelType(),
 			)
+		case "forwarded-tcpip":
+			go session.handleForwardedTcpIpChannel(nc)
 		default:
 			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
 			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
@@ -122,7 +124,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			if err != nil {
 				session.Logger.Errorf("Failed to obtain terminal size")
 			}
-			tSize := conf.TermDimensions{
+			tSize := types.TermDimensions{
 				Height: uint32(height),
 				Width:  uint32(width),
 			}
@@ -180,4 +182,64 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 			return
 		}
 	}
+}
+
+func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
+	// Prevent another go routine to smash session.SSHInstance.ForwardedSshChannel
+	// by locking the session until the content has been processed
+	session.SSHInstance.FTx.ForwardingMutex.Lock()
+	defer session.SSHInstance.FTx.ForwardingMutex.Unlock()
+
+	var err error
+	var requests <-chan *ssh.Request
+	session.Logger.Debugf("Session ID %d - Forwarded TCP IP Channel", session.sessionID)
+	session.SSHInstance.FTx.ForwardedSshChannel, requests, err = nc.Accept()
+	if err != nil {
+		session.Logger.Errorf(
+			"%sFailed to accept \"%s\" channel\n%v",
+			session.LogPrefix,
+			nc.ChannelType(),
+			err,
+		)
+		return
+	}
+	defer func() { _ = session.SSHInstance.FTx.ForwardedSshChannel.Close() }()
+	go ssh.DiscardRequests(requests)
+
+	payload := &types.CustomTcpIpChannelMsg{}
+
+	if uErr := json.Unmarshal(nc.ExtraData(), payload); uErr != nil {
+		session.Logger.Errorf(session.LogPrefix+"Failed to parse forwarded-tcpip extra data: %v", uErr)
+		return
+	}
+
+	// Find PortFwd mapping
+	boundPort := int(payload.DstPort)
+	control, mErr := session.SSHInstance.GetRemotePortMapping(boundPort)
+	if mErr != nil {
+		// This should never happen
+		session.Logger.Errorf(session.LogPrefix+"Failed to find PortFwd mapping: %v", boundPort, mErr)
+		return
+	}
+
+	tcpIpMsg := &types.TcpIpChannelMsg{
+		DstHost: payload.DstHost,
+		DstPort: payload.DstPort,
+		SrcHost: payload.SrcHost,
+		SrcPort: payload.SrcPort,
+	}
+	if payload.IsSshConn {
+		session.Logger.Debugf(session.LogPrefix+"Received SSH TCPIP Forwarded channel from remote %s:%d", control.DstHost, control.DstPort)
+		// Send the payload to the SSH instance
+		control.RcvChan <- tcpIpMsg
+		// Wait until done
+		<-control.DoneChan
+	} else {
+		session.Logger.Debugf(session.LogPrefix+"Received MSG TCPIP Forwarded channel %s:%d -> %s:%d", control.SrcHost, control.SrcPort, control.DstHost, control.DstPort)
+		// Send the payload to the msg request
+		control.RcvChan <- tcpIpMsg
+		// Wait until done
+		<-control.DoneChan
+	}
+
 }

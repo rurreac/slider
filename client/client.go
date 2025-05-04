@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/armon/go-socks5"
 	"io"
@@ -18,7 +19,9 @@ import (
 	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
 	"slider/pkg/sflag"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 	"strings"
 	"sync"
 	"time"
@@ -404,6 +407,9 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			// Blocking here to ensure is serviced before another channel is opened
 			s.handleInitSizeChannel(nc)
+		case "direct-tcpip":
+			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
+			go s.handleTcpIpChannel(nc)
 		default:
 			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
@@ -415,6 +421,30 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 			}
 		}
 	}
+}
+
+func (s *Session) handleTcpIpChannel(nc ssh.NewChannel) {
+	tcpIpMsg := &types.TcpIpChannelMsg{}
+	if uErr := ssh.Unmarshal(nc.ExtraData(), tcpIpMsg); uErr != nil {
+		s.Logger.Errorf("%sFailed to unmarshal \"%s\" channel data - %v", s.logID, nc.ChannelType(), uErr)
+		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode direct-tcpip data")
+		return
+	}
+	s.Logger.Debugf("%sDirect TCPIP channel request to %s:%d", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort)
+	conn, cErr := net.Dial("tcp", fmt.Sprintf("%s:%d", tcpIpMsg.DstHost, tcpIpMsg.DstPort))
+	if cErr != nil {
+		s.Logger.Errorf("%sFailed to connect to %s:%d - %v", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort, cErr)
+		_ = nc.Reject(ssh.Prohibited, "Failed to connect to destination")
+		return
+	}
+	dChan, dReq, dErr := nc.Accept()
+	if dErr != nil {
+		s.Logger.Errorf("%sFailed to accept \"%s\" channel - %v", s.logID, nc.ChannelType(), dErr)
+		_ = conn.Close()
+		return
+	}
+	go ssh.DiscardRequests(dReq)
+	_, _ = sio.PipeWithCancel(dChan, conn)
 }
 
 func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
@@ -429,6 +459,22 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 			_ = s.replyConnRequest(req, true, nil)
 			shutdown <- true
 			s.disconnect <- true
+		case "tcpip-forward":
+			go s.handleTcpIpForward(req)
+		case "cancel-tcpip-forward":
+			ok := false
+			tcpIpForward := &types.TcpIpFwdRequest{}
+			if uErr := ssh.Unmarshal(req.Payload, tcpIpForward); uErr == nil {
+				if _, found := s.revPortFwdMap[tcpIpForward.BindPort]; found {
+					if s.revPortFwdMap[tcpIpForward.BindPort].BindAddress == tcpIpForward.BindAddress {
+						s.revPortFwdMap[tcpIpForward.BindPort].StopChan <- true
+						ok = true
+					}
+				}
+			}
+			if req.WantReply {
+				_ = req.Reply(ok, nil)
+			}
 		default:
 			s.Logger.Debugf("%sReceived unknown Connection Request Type: \"%s\"", s.logID, req.Type)
 			_ = req.Reply(false, nil)
@@ -578,10 +624,120 @@ func (s *Session) handleInitSizeChannel(nc ssh.NewChannel) {
 	go ssh.DiscardRequests(requests)
 	s.Logger.Debugf("SSH Effective \"req-pty\" size as \"init-size\" payload: %v", payload)
 	if len(payload) > 0 {
-		var winSize conf.TermDimensions
+		var winSize types.TermDimensions
 		if jErr := json.Unmarshal(payload, &winSize); jErr != nil {
 			s.Logger.Errorf("Failed to unmarshal terminal size payload: %v", jErr)
 		}
 		s.setInitTermSize(winSize)
+	}
+}
+
+func (s *Session) handleTcpIpForward(req *ssh.Request) {
+	tcpIpForward := &types.CustomTcpIpFwdRequest{}
+	if uErr := json.Unmarshal(req.Payload, tcpIpForward); uErr != nil {
+		s.Logger.Errorf(s.logID+"Failed to unmarshal TcpIpFwdRequest request - %v", uErr)
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	fwdAddress := fmt.Sprintf("%s:%d", tcpIpForward.BindAddress, tcpIpForward.BindPort)
+	listener, err := net.Listen("tcp", fwdAddress)
+	if err != nil {
+		s.Logger.Errorf(s.logID+"Failed to start reverse port forward listener on %s: %v", fwdAddress, err)
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	// We may have asked to bind to port 0, we want it resolved, saved and send back to the server
+	finalBindPort := listener.Addr().(*net.TCPAddr).Port
+	s.Logger.Debugf(s.logID+"Reverse Port Forward request binding to %s:%d, resolved to %s:%d",
+		tcpIpForward.BindAddress,
+		tcpIpForward.BindPort,
+		tcpIpForward.BindAddress,
+		finalBindPort,
+	)
+	// Answer when we know if we can create a listener and the final bound port
+	if req.WantReply {
+		dataBytes := make([]byte, 0)
+		if tcpIpForward.BindPort == 0 {
+			// If the port was 0, we need to send the final bound port
+			data := types.TcpIpReqSuccess{BoundPort: uint32(finalBindPort)}
+			dataBytes = ssh.Marshal(data)
+		}
+
+		_ = req.Reply(true, dataBytes)
+	}
+	// Override the coming structure with the final bound port
+	tcpIpForward.BindPort = uint32(finalBindPort)
+
+	stopChan := make(chan bool, 1)
+	s.addTcpIpForward(tcpIpForward, stopChan)
+
+	defer func() {
+		_ = listener.Close()
+		s.dropTcpIpForward(tcpIpForward.BindPort)
+	}()
+
+	for {
+		select {
+		case <-stopChan:
+			return
+		default:
+			// Proceed
+		}
+
+		// Set a timeout to force checking the stop signal regularly
+		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
+		conn, lErr := listener.Accept()
+		if lErr != nil {
+			// Discard timeout errors
+			var netErr net.Error
+			if errors.As(lErr, &netErr) && netErr.Timeout() {
+				continue
+			}
+
+			s.Logger.Debugf(s.logID+"Error accepting connection on reverse port %d: %v", tcpIpForward.BindPort, lErr)
+			return
+		}
+
+		go func() {
+			srcAddr := conn.RemoteAddr().(*net.TCPAddr)
+			payload := &types.CustomTcpIpChannelMsg{
+				IsSshConn: tcpIpForward.IsSshConn,
+				TcpIpChannelMsg: &types.TcpIpChannelMsg{
+					DstHost: tcpIpForward.BindAddress,
+					DstPort: tcpIpForward.BindPort,
+					SrcHost: srcAddr.IP.String(),
+					SrcPort: uint32(srcAddr.Port),
+				},
+			}
+			customMsgBytes, mErr := json.Marshal(payload)
+			if mErr != nil {
+				s.Logger.Errorf("Failed to marshal custom message: %v", mErr)
+				return
+			}
+			// Start a "forwarded-tcpip" channel. Circling back to the server
+			channel, reqs, oErr := s.sshConn.OpenChannel("forwarded-tcpip", customMsgBytes)
+			if oErr != nil {
+				s.Logger.Errorf("Failed to open forwarded-tcpip channel: %v", oErr)
+				return
+			}
+			defer func() { _ = channel.Close() }()
+			go ssh.DiscardRequests(reqs)
+
+			_, _ = sio.PipeWithCancel(conn, channel)
+
+			s.Logger.Debugf(
+				"Completed request to remote %s:%d from local %s:%d",
+				tcpIpForward.BindAddress,
+				tcpIpForward.BindPort,
+				srcAddr.IP.String(),
+				srcAddr.Port,
+			)
+		}()
 	}
 }

@@ -51,6 +51,11 @@ const (
 	connectCmd   = "connect"
 	connectDesc  = "Receives the address of a Client to connect to"
 	connectUsage = "Usage: connect [flags] <[client_address]:port>"
+
+	// Console Port Forwarding Command
+	portFwdCmd   = "portfwd"
+	portFwdDesc  = "Creates a port forwarding tunnel to a client"
+	portFwdUsage = "Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>"
 )
 
 type commandStruct struct {
@@ -92,6 +97,10 @@ func (s *server) initCommands() map[string]commandStruct {
 		shellCmd: {
 			desc:    shellDesc,
 			cmdFunc: s.shellCommand,
+		},
+		portFwdCmd: {
+			desc:    portFwdDesc,
+			cmdFunc: s.portFwdCommand,
 		},
 	}
 

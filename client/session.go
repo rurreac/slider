@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
-	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,7 +24,13 @@ type Session struct {
 	keepAliveOn   bool
 	disconnect    chan bool
 	interpreter   *interpreter.Interpreter
-	initTermSize  *conf.TermDimensions
+	initTermSize  *types.TermDimensions
+	revPortFwdMap map[uint32]*RevPortControl
+}
+
+type RevPortControl struct {
+	BindAddress string
+	StopChan    chan bool
 }
 
 func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
@@ -47,6 +53,8 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		KeepAliveChan: make(chan bool, 1),
 		disconnect:    make(chan bool, 1),
 		Logger:        c.Logger,
+		revPortFwdMap: make(map[uint32]*RevPortControl),
+		keepAliveOn:   false,
 	}
 
 	if c.isListener {
@@ -61,7 +69,7 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		c.Logger.Fatalf("Interpreter not supported - %v", iErr)
 	}
 	session.interpreter = i
-	session.initTermSize = &conf.TermDimensions{
+	session.initTermSize = &types.TermDimensions{
 		Width:  uint32(0),
 		Height: uint32(0),
 	}
@@ -97,14 +105,29 @@ func (c *client) dropWebSocketSession(session *Session) {
 	c.sessionTrackMutex.Unlock()
 }
 
-func (s *Session) setInitTermSize(initSize conf.TermDimensions) {
+func (s *Session) setInitTermSize(initSize types.TermDimensions) {
 	s.sessionMutex.Lock()
-	s.initTermSize = &conf.TermDimensions{
+	s.initTermSize = &types.TermDimensions{
 		Width:  initSize.Width,
 		Height: initSize.Height,
 		X:      initSize.X,
 		Y:      initSize.Y,
 	}
+	s.sessionMutex.Unlock()
+}
+
+func (s *Session) addTcpIpForward(tcpIpReq *types.CustomTcpIpFwdRequest, stopChan chan bool) {
+	s.sessionMutex.Lock()
+	s.revPortFwdMap[tcpIpReq.BindPort] = &RevPortControl{
+		BindAddress: tcpIpReq.BindAddress,
+		StopChan:    stopChan,
+	}
+	s.sessionMutex.Unlock()
+}
+
+func (s *Session) dropTcpIpForward(port uint32) {
+	s.sessionMutex.Lock()
+	delete(s.revPortFwdMap, port)
 	s.sessionMutex.Unlock()
 }
 

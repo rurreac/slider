@@ -18,6 +18,7 @@ type FlagSetPack struct {
 	exclusionGrp   [][]string
 	requiredOneGrp [][]string
 	conditionGrp   []flagCondition
+	requireArgsGrp []flagRequireArgs
 	minArgs        int
 	maxArgs        int
 }
@@ -33,6 +34,11 @@ type flagCondition struct {
 	conditionFlag string
 	isEnabled     bool
 	excludeFlags  []string
+}
+
+type flagRequireArgs struct {
+	flagName    string
+	requireArgs int
 }
 
 func NewFlagPack(commands []string, usage string, description string, writerOut io.Writer) *FlagSetPack {
@@ -218,7 +224,7 @@ func (fsp *FlagSetPack) MarkFlagsMutuallyExclusive(flagNames ...string) {
 			}
 		}
 		if !found {
-			panic(fmt.Sprintf("cannot create mutex group: flag %q not found", name))
+			panic(fmt.Sprintf("cannot create mutually exclusive group: flag %q not found", name))
 		}
 	}
 
@@ -262,7 +268,7 @@ func (fsp *FlagSetPack) MarkFlagsConditionExclusive(conditionFlag string, isEnab
 			}
 		}
 		if !found {
-			panic(fmt.Sprintf("cannot create mutex group: flag %q not found", name))
+			panic(fmt.Sprintf("cannot create condition group: flag %q not found", name))
 		}
 	}
 	condition := flagCondition{
@@ -272,6 +278,30 @@ func (fsp *FlagSetPack) MarkFlagsConditionExclusive(conditionFlag string, isEnab
 	}
 
 	fsp.conditionGrp = append(fsp.conditionGrp, condition)
+}
+
+func (fsp *FlagSetPack) MarkFlagsRequireArgs(flagName string, reqArgs int) {
+	if flagName == "" {
+		panic("Flag can not be blank")
+	}
+	var found bool
+	// Validate that all flag names exist
+	for _, info := range fsp.flagList {
+		if info.shortFlag == flagName || info.longFlag == flagName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		panic(fmt.Sprintf("cannot create require args group: flag %q not found", flagName))
+	}
+
+	requireArgs := flagRequireArgs{
+		flagName:    flagName,
+		requireArgs: reqArgs,
+	}
+
+	fsp.requireArgsGrp = append(fsp.requireArgsGrp, requireArgs)
 }
 
 func (fsp *FlagSetPack) validateMutualExclusion() error {
@@ -396,6 +426,33 @@ func (fsp *FlagSetPack) validateConditionExclusion() error {
 	return nil
 }
 
+func (fsp *FlagSetPack) validateRequireArgs(args int) error {
+	for _, flagItem := range fsp.requireArgsGrp {
+		for _, info := range fsp.flagList {
+			if info.shortFlag == flagItem.flagName || info.longFlag == flagItem.flagName {
+				if (info.shortFlag != "" && flagIsDefined(fsp.Set, info.shortFlag)) ||
+					(info.longFlag != "" && flagIsDefined(fsp.Set, info.longFlag)) {
+
+					if args != flagItem.requireArgs {
+						var formatted string
+						if info.shortFlag != "" && info.longFlag != "" {
+							formatted = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
+						} else if info.shortFlag != "" {
+							formatted = fmt.Sprintf("-%s", info.shortFlag)
+						} else {
+							formatted = fmt.Sprintf("--%s", info.longFlag)
+						}
+						return fmt.Errorf("flag %s requires exactly %d argument(s)",
+							formatted, flagItem.requireArgs)
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // Parse wraps the standard flag.Parse method and check custom validation.
 func (fsp *FlagSetPack) Parse(arguments []string) error {
 	// Standard Parse
@@ -418,7 +475,11 @@ func (fsp *FlagSetPack) Parse(arguments []string) error {
 		return err
 	}
 
-	argsCount := len(fsp.Set.Args())
+	argsCount := fsp.Set.NArg()
+	if err := fsp.validateRequireArgs(argsCount); err != nil {
+		return err
+	}
+
 	if fsp.minArgs > 0 && argsCount < fsp.minArgs {
 		return fmt.Errorf("at least %d argument(s) required, got %d", fsp.minArgs, argsCount)
 	}
