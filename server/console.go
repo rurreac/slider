@@ -754,7 +754,7 @@ func (s *server) sshCommand(args ...string) {
 
 func (s *server) shellCommand(args ...string) {
 	shellFlags := sflag.NewFlagPack([]string{shellCmd}, shellUsage, shellDesc, s.console.Term)
-	sSession, _ := shellFlags.NewIntFlag("s", "session", 0, "Run a Shell server over an SSH Channel on a Session ID")
+	sSession, _ := shellFlags.NewIntFlag("s", "session", 0, "Target Session ID for the shell")
 	sPort, _ := shellFlags.NewIntFlag("p", "port", 0, "Use this port number as local Listener, otherwise randomly selected")
 	sKill, _ := shellFlags.NewIntFlag("k", "kill", 0, "Kill Shell Listener and Server on a Session ID")
 	sInteractive, _ := shellFlags.NewBoolFlag("i", "interactive", false, "Interactive mode, enters shell directly. Always TLS")

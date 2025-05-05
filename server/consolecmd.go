@@ -28,12 +28,12 @@ const (
 
 	// Console Socks Command
 	socksCmd   = "socks"
-	socksDesc  = "Runs or Kills a Reverse Socks server"
+	socksDesc  = "Creates a TCP Endpoint bound to a client SOCKSv5 server"
 	socksUsage = "Usage: socks [flags]"
 
 	// Console SSH Command
 	sshCmd   = "ssh"
-	sshDesc  = "Opens an SSH session to a client"
+	sshDesc  = "Creates an SSH Endpoint that binds to a client"
 	sshUsage = "Usage: ssh [flags]"
 
 	// Console Shell Command
@@ -54,7 +54,7 @@ const (
 
 	// Console Port Forwarding Command
 	portFwdCmd   = "portfwd"
-	portFwdDesc  = "Creates a port forwarding tunnel to a client"
+	portFwdDesc  = "Creates a port forwarding tunnel to / from a client"
 	portFwdUsage = "Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>"
 )
 

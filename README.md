@@ -66,33 +66,46 @@ Currently Slider uses the following external dependencies:
 ```
 Slider Server
 
-  Creates a new Slider Server instance and waits for 
+  Creates a new Slider Server instance and waits for
 incoming Slider Client connections on the defined port.
 
   Interaction with Slider Clients can be performed through
 its integrated Console by pressing CTR^C at any time.
 
-Usage: ./slider server [flags]
+Usage: <slider_server> [flags]
 
-Flags:
-  -address string
-    	Server will bind to this address (default "0.0.0.0")
-  -auth
-    	Enables Key authentication of Clients
-  -certs string
-    	Path of a valid slider-certs json file
-  -colorless
-    	Disables logging colors
-  -keepalive duration
-    	Sets keepalive interval vs Clients (default 1m0s)
-  -keypath string
-    	Path for reading or storing a Server key
-  -keystore
-    	Store Server key for later use
-  -port string
-    	Port where Server will listen (default "8080")
-  -verbose string
-    	Adds verbosity [debug|info|warn|error|off] (default "info")
+  --verbose
+        Adds verbosity [debug|info|warn|error|off] (default info)  
+  --address
+        Server will bind to this address (default 0.0.0.0)  
+  --port
+        port where Server will listen (default 8080)  
+  --keepalive
+        Sets keepalive interval vs Clients (default 1m0s)  
+  --colorless
+        Disables logging colors (default false)  
+  --auth
+        Enables Key authentication of Clients (default false)  
+  --certs
+        Path of a valid slider-certs json file (default "")  
+  --keystore
+        Store Server key for later use (default false)  
+  --keypath
+        Path for reading and/or storing a Server key (default "")  
+  --http-template
+        Path of a default file to serve (default "")  
+  --http-server-header
+        Sets a server header value (default "")  
+  --http-redirect
+        Redirects incoming HTTP to given URL (default "")  
+  --http-status-code
+        Status code [200|301|302|400|401|403|500|502|503] (default 200)  
+  --http-version
+        Enables /version HTTP path (default false)  
+  --http-health
+        Enables /health HTTP path (default false)  
+  --proto
+        Set your own proto string (default slider-v1)  
 ```
 
 ![Sever](./doc/server.gif)
@@ -189,74 +202,112 @@ Can be used in combination with `-template` to include a server header in the re
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
 fatal logs will be shown.
 
+##### `-proto`:
+Slider uses its own proto value (e.g. `slider-v1`), to ensure that only matching protocols are allowed to proceed
+with the websocket upgrade. Among other things to avoid future compatibility issues.
+
+This parameter allows you to specify your own proto value which can be handy, IF:
+1. you want to drop any connection attempt other than your own proto, before attempting the upgrade to websocket.
+2. you feel that the default proto (because it's sent as an HTTP header) is, for some reason, blocked by some kind of IPS.
+
 ### Console
 
 ```
-Slider> help
+Slider# help
 
-  Commands  Description  
-
-  bg        Puts Console into background and returns to logging output                                          
-  certs     Interacts with the Server Certificate Jar                                                           
-  connect   Receives the address of a Client to connect to                                                      
-  download  Downloads file passed as an argument from Client                                                    
-  execute   Runs a command remotely and returns the output                                                      
-  exit      Exits Console and terminates the Server                                                             
-  help      Shows this output                                                                                   
-  sessions  Interacts with Client Sessions                                                                      
-  socks     Runs / Stops a Socks server on the Client SSH Channel and a Listener to that channel on the Server  
-  upload    Uploads file passed as an argument to Client
+  Command   Description                                                 
+  -------   -----------                                                 
+  bg        Puts Console into background and returns to logging output  
+  certs     Interacts with the Server Certificate Jar                   
+  connect   Receives the address of a Client to connect to              
+  execute   Runs a command remotely and returns the output              
+  exit      Exits Console and terminates the Server                     
+  help      Shows this output                                           
+  portfwd   Creates a port forwarding tunnel to / from a client         
+  sessions  Interacts with Client Sessions                              
+  shell     Binds to a client Shell         
+  socks     Creates a TCP Endpoint bound to a client SOCKSv5 server     
+  ssh       Creates an SSH Endpoint that binds to a client              
+  !command  Execute "command" in local shell (non-interactive)
 ```
 
 #### Commands walk through
 
 ##### Sessions
 ```
-Slider> sessions -h
-Interacts with Client Sessions
-
-When run without parameters, all available Sessions will be listed.
+Slider# sessions -h
+When run without parameters, all available Sessions are listed.
 
 Usage: sessions [flags]
 
-Flags:
-  -d int
-    	Disconnects Session ID
-  -i int
-    	Starts Interactive Shell on a Session ID
-  -k int
-    	Kills Session ID
+  -i, --interactive  Start Interactive Slider Shell on a Session ID (default 0)  
+  -d, --disconnect   Disconnect Session ID (default 0)                           
+  -k, --kill         Kill Session ID (default 0)                                 
+
+Mutually exclusive flags:
+
+  -i/--interactive, -d/--disconnect, -k/--kill
 ```
 Each connection from a Slider Client creates a new Session, and when that connection is broken or terminated, the
 Session is dropped.
 The `sessions` command allows you to interact with each opened Session. Through the `sessions` command it is possible
 to list, kill, disconnect or receive a Shell from a given Session.
 
-If the Client host is running *nix OS or a Windows version with ConPTY (introduced in 2018) the spawned Shell will be
-fully interactive as well.
+Using the interactive option does not automatically bind to a client shell. Instead, it uses the current terminal to 
+interact with the Slider client through SFTP.
+
+This is a handy and quick way to interact with the client, but the key word here is QUICK, if this is not
+the case, consider using the `ssh` command to spin up an SSH endpoint to avoid blocking the console but also, for a more 
+robust way to handle transfers, shells, etc... 
+
+Running an interactive session provides its own sets of commands:
+
+```
+  Command           Description                                          
+  -------           -----------                                          
+  cd, chdir         Change remote directory                              
+  chmod             Change file permissions                              
+  execute           Runs a command remotely and returns the output       
+  exit              Exits Console and terminates the Server              
+  get, download     Download file or directory                           
+  help              Shows this output                                    
+  lcd               Change local directory                               
+  lls, ldir, llist  List local directory contents                        
+  lmkdir            Create local directory                               
+  lpwd, lgetwd      Show current local directory                         
+  ls, dir, list     List remote directory contents                       
+  mkdir             Create remote directory                              
+  mv, rename, move  Rename or move a file or directory                   
+  put, upload       Upload file or directory                             
+  pwd, getwd        Show current remote directory                        
+  rm, del, delete   Remove file or directory                             
+  shell             Binds to a client Shell  
+  stat, info        Show detailed file information                       
+  !command          Execute "command" in local shell (non-interactive) 
+```
+
+A note on the interactive `shell` command:
+* If the Client host is running *nix OS or a Windows version with ConPTY (introduced in late 2018) the spawned Shell will be
+  fully interactive as well.
 
 A note between killing a Session and disconnecting from a Session: 
 * Disconnect, closes the Session at the Server side, it would be equivalent to terminating the Server. 
-  * If the Client is configured with the `-retry` option, the Client will reconnect to the Server if available of the next
+  * If the Client is configured with the `-retry` option, the Client will reconnect to the Server if available on the next
   try, creating a new Session.
-  * If the Client is not configured with the `-retry` option, and is Not configured with the `-listener` option, once it
+  * If the Client is not configured with the `-retry` option, and is NOT configured with the `-listener` option, once it
 runs its next keepalive check will shut down.  
-* Kill, is equivalent to terminate the execution of the Client, independently if it's a regular Client or a Listener one. 
-
-![Console Sessions](./doc/console_sessions.gif)
+* Kill, is equivalent to terminate the execution of the Client, independently if it's a regular Client or a Listener one.
 
 ##### Connect
 ```
-Slider> connect
-Receives the address of a Client to connect to
-
-Connects to a Client configured as Listener and creates a new Session
-
+Slider# connect -h
 Usage: connect [flags] <[client_address]:port>
 
-Flags:
-  -c int
-    	Specifies certID for key authentication
+  -c, --cert   Specify certID for key authentication (default 0)  
+  -d, --dns    Use custom DNS resolver (default "")               
+  -p, --proto  Use custom proto (default slider-v1)               
+
+Requires exactly 1 argument(s)
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
 then we'll need to use the `connect` command.
@@ -267,6 +318,8 @@ successful or not. `connect` will hold until that confirmation is given, or othe
 Due to their purpose, Servers will disable Client authentication on connections to a Listener even if the Server is 
 started with `-auth`.
 
+I needed, it is possible, to use a custom DNS to resolve the Client, instead of the default one.
+
 Since the Server is the one that initiates the connection to the Listener and the Listener is facing the network,
 authentication of Servers will happen on the Client side with `-fingerprint`. 
 Servers will be rejected if their fingerprint is not successfully verified. in order to authenticate to a Listener, use
@@ -276,15 +329,21 @@ the `-c` flag to specify the certificate ID that you want to use.
 
 ##### Execute
 ```
-Slider> execute -h
-Runs a command remotely and returns the output
-
+Slider# execute -h
 Usage: execute [flags] [command]
 
-Flags:
-  -a	Runs given command on every Session
-  -s int
-    	Runs given command on a Session ID
+  -s, --session  Run command passed as an argument on a session id (default 0)      
+  -a, --all      Run command passed as an argument on all sessions (default false)  
+
+Requires at least 1 argument(s)
+
+One flag required from each group:
+
+  -s/--session, -a/--all  
+
+Mutually exclusive flags:
+
+  -s/--session, -a/--all 
 ```
 If you want to run a single OS command on a client rather than interacting with the session itself you can use Console
 `execute` command.
@@ -301,21 +360,25 @@ If you need something more interactive or don't want to keep the console busy, c
 
 ##### Socks
 ```
-Slider> socks -h
-Runs or Kills a Reverse Socks server
-
+Slider# socks -h
 Usage: socks [flags]
 
-Flags:
-  -e	Exposes socks port to all interfaces
-  -k int
-    	Kills Socks5 Listener and Server on a Session ID
-  -p int
-    	Uses this port number as local Listener, otherwise randomly selected
-  -s int
-    	Runs a Socks5 server over an SSH Channel on a Session ID
+  -s, --session  Run a Socks5 server over an SSH Channel on a Session ID (default 0)              
+  -p, --port     Use this port number as local Listener, otherwise randomly selected (default 0)  
+  -k, --kill     Kill Socks5 Listener and Server on a Session ID (default 0)                      
+  -e, --expose   Expose port to all interfaces (default false)                                    
+
+One flag required from each group:
+
+  -s/--session, -k/--kill  
+
+Mutually exclusive flags:
+
+  -k/--kill, -s/--session  
+  -k/--kill, -p/--port     
+  -k/--kill, -e/--expose 
 ```
-Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side to the specified port,
+Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side on the specified port,
 or a port randomly selected if not specified.
 
 If a port is not specified using the `-p` flag, one  will be automatically assigned.
@@ -324,68 +387,25 @@ By default, the Socks server will be exposed only to localhost, but you can use 
 
 ![Console Socks](./doc/console_socks.gif)
 
-##### Upload
-```
-Slider> upload -h
-Uploads file passed as an argument to Client
-
-Note that if no destination name is given, file will be uploaded with the same basename to the Client CWD.
-
-Usage: upload [flags] [src] [dst]
-
-Flags:
-  -s int
-    	Uploads file to selected Session ID
-```
-Mostly self-explanatory. Note that `[dst]` if provided must be a filepath. Also, be mindful to your destination, cause
-if the file exists and the User that is running the Client has the right permissions, the contents of the file will
-be overridden.
-
-Checksum of the file is checked, if there is a mismatch you'll be warned.
-
-![Console Upload](./doc/console_upload.gif)
-
-##### Download
-```
-Slider> download -h
-Downloads file passed as an argument from Client
-
-* If no destination name is given, file will be downloaded with the same basename to the Server CWD.
-* Downloading from a file list does not allow specifying destination.  
-
-Usage: download [flags] [src] [dst]
-
-Flags:
-  -f string
-    	Receives a file list with items to download
-  -s int
-    	Downloads file from a given a Session ID
-```
-Allows you to `download` a file from the client.
-
-It is possible to pass a file list as an argument with the `-f` flag. Using this flag does not allow specifying a
-destination. All files in the file list will be downloaded to [Slider Home Directory](#slider_home).
-Each file will be saved with a concatenated name of the filepath as its basename.
-
-Checksum of the file is checked, if there is a mismatch you'll be warned.
-
-![Console Download](./doc/console_download.gif)
-
 ##### SSH
 ```
-Slider> ssh -h
-Opens an SSH session to a client
-
+Slider# ssh -h
 Usage: ssh [flags]
 
-Flags:
-  -e	Expose port to all interfaces
-  -k int
-    	Kill SSH port forwarding to a Session ID
-  -p int
-    	Local port to forward SSH connection to
-  -s int
-    	Session ID to establish SSH connection with
+  -s, --session  Session ID to establish SSH connection with (default 0)  
+  -p, --port     Local port to forward SSH connection to (default 0)      
+  -k, --kill     Kill SSH port forwarding to a Session ID (default 0)     
+  -e, --expose   Expose port to all interfaces (default false)            
+
+One flag required from each group:
+
+  -s/--session, -k/--kill  
+
+Mutually exclusive flags:
+
+  -k/--kill, -s/--session  
+  -k/--kill, -p/--port     
+  -k/--kill, -e/--expose 
 ```
 Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
 and forward the connection to the Client side through another SSH channel.
@@ -400,9 +420,10 @@ While it is not a full implementation, this SSH connection opens the following p
 * Transfer files using any SFTP client or `scp`.
 * Connect to the Client using any SSH client and run commands on it.
 * Connect to the Client through SSH and run a reverse Socks v5 server.
+* Local and Remote Port forwarding.
 
-If server authentication is enabled you must authenticate using the SSH key that matches the key used by the
-client to connect to the server.
+If server authentication is enabled you must authenticate using the SSH key that matches the certificated used to
+authenticate Client and Server.
 Note that the key passed used is not a valid SSH key itself, but you can obtain it by running `certs -d <certID>` command 
 on the console.
 
@@ -411,26 +432,34 @@ A few considerations:
 anonymous connection to the server.
 * If the Client supports PTYs, the SSH connection will be fully interactive as well, also, window size changes events will
 be sent to the Client.
-* If the Client does not support PTYs, like, for instance, some Windows versions, the SSH connection will be non-interactive, 
-ergo, pressing CTRL^C will kill the SSH connection.
+* If the Client does not support PTYs, like, for instance, some Windows versions (< Windows 10 build 18362), the SSH 
+connection will be non-interactive, ergo, pressing CTRL^C will kill the SSH connection.
 
 ##### Shell
 ```
-Slider> shell -h
-Binds to a client Shell
-
+Slider# shell -h
 Usage: shell [flags]
 
-Flags:
-  -e	Expose port to all interfaces
-  -i	Interactive mode, enters shell directly (always TLS)
-  -k int
-    	Kills Shell Listener and Server on a Session ID
-  -p int
-    	Uses this port number as local Listener, otherwise randomly selected
-  -s int
-    	Runs a Shell server over an SSH Channel on a Session ID
-  -t	Enable TLS for the Shell
+  -s, --session      Target Session ID for the shell (default 0)               
+  -p, --port         Use this port number as local Listener, otherwise randomly selected (default 0)  
+  -k, --kill         Kill Shell Listener and Server on a Session ID (default 0)                       
+  -i, --interactive  Interactive mode, enters shell directly. Always TLS (default false)              
+  -t, --tls          Enable TLS for the Shell (default false)                                         
+  -e, --expose       Expose port to all interfaces (default false)                                    
+
+One flag required from each group:
+
+  -s/--session, -k/--kill  
+
+Mutually exclusive flags:
+
+  -k/--kill, -s/--session        
+  -k/--kill, -p/--port           
+  -k/--kill, -i/--interactive    
+  -k/--kill, -t/--tls            
+  -k/--kill, -e/--expose         
+  -i/--interactive, -e/--expose  
+  -i/--interactive, -t/--tls 
 ```
 Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
 or `openssl` for cyphered connections with the tls flag `-t`, which may be useful is `ssh` is not at hand. 
@@ -440,27 +469,26 @@ all interfaces.
 
 A few considerations:
 * If the client supports PTYs the Shell can be upgraded to fully interactive as well.
-* If the client is Windows and supports PTYs you will need to connect through `stty raw -echo && nc <host> <port>` or 
-`stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell, or you will end up 
-with a dummy shell.
+* If the client is Windows and supports PTYs you will want to connect through `stty raw -echo && nc <host> <port>` or 
+`stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell. 
+Otherwise, you may end up with a dummy shell.
 
 ##### Certs
 ```
-Slider> certs -h
-Interacts with the Server Certificate Jar
-
-When run without parameters, all available KeyPairs in the Certificate Jar will be listed.
+Slider# certs -h
+When run without parameters, all available Slider key pairs are listed.
 
 Usage: certs [flags]
 
-Flags:
-  -n	Generate a new Key Pair
-  -r int
-    	Removes matching index from the Certificate Jar
-  -d int
-    	Dump CertID SSH keys
+  -n, --new     Generate a new Key Pair (default false)                     
+  -r, --remove  Remove matching index from the Certificate Jar (default 0)  
+  -d, --dump    Dump CertID SSH keys (default 0)                            
+
+Mutually exclusive flags:
+
+  -n/--new, -r/--remove, -d/--dump 
 ```
-The `certs` command requires that authentication is enabled on the Server otherwise it won't be listed or available.
+The `certs` command requires that authentication is enabled on the Server otherwise it won't be available.
 
 Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
@@ -477,30 +505,63 @@ If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the co
 ```
 Slider Client
 
-  Creates a new Slider Client instance and connects 
+Creates a new Slider Client instance and connects
 to the defined Slider Server.
 
-Usage: ./slider client [flags] <[server_address]:port>
+Usage: <slider_client> [flags] [<[server_address]:port>]
 
-Flags:
-  -address string
-    	Address the Listener will bind to (default "0.0.0.0")
-  -colorless
-    	Disables logging colors
-  -fingerprint string
-    	Server fingerprint for host verification
-  -keepalive duration
-    	Sets keepalive interval in seconds. (default 1m0s)
-  -key string
-    	Private key to use for authentication
-  -listener
-    	Client will listen for incoming Server connections
-  -port int
-    	Listener Port (default 8081)
-  -retry
-    	Retries reconnection indefinitely
-  -verbose string
-    	Adds verbosity [debug|info|warn|error|off] (default "info")
+  --verbose
+        Adds verbosity [debug|info|warn|error|off] (default info)  
+  --keepalive
+        Sets keepalive interval in seconds. (default 1m0s)  
+  --colorless
+        Disables logging colors (default false)  
+  --fingerprint
+        Server fingerprint for host verification (listener) (default "")  
+  --key
+        Private key for authenticating to a Server (default "")  
+  --listener
+        Client will listen for incoming Server connections (default false)  
+  --port
+        Listener port (default 8081)  
+  --address
+        Address the Listener will bind to (default 0.0.0.0)  
+  --retry
+        Retries reconnection indefinitely (default false)  
+  --http-template
+        Path of a default file to serve (listener) (default "")  
+  --http-server-header
+        Sets a server header value (listener) (default "")  
+  --http-redirect
+        Redirects incoming HTTP to given URL (listener) (default "")  
+  --http-status-code
+        Template Status code [200|301|302|400|401|403|500|502|503] (listener) (default 200)  
+  --http-version
+        Enables /version HTTP path (default false)  
+  --http-health
+        Enables /health HTTP path (default false)  
+  --dns
+        Uses custom DNS server <host[:port]> for resolving server address (default "")  
+  --proto
+        Set your own proto string (default slider-v1)  
+
+Mutually exclusive flags:
+
+  --listener, --key    
+  --listener, --dns    
+  --listener, --retry  
+
+Flag "--listener" with status "false" is incompatible with flags:
+
+  --address             
+  --port                
+  --fingerprint         
+  --http-template       
+  --http-server-header  
+  --http-redirect       
+  --http-status-code    
+  --http-version        
+  --http-health 
 ```
 
 ![Client](./doc/client.gif)
@@ -571,6 +632,12 @@ certificate in the Server Certificate Jar will be authorized to connect.
 
 `-key` offers a way to authenticate Clients on Servers with `-auth` enabled. If the Server was not configured with 
 authentication, providing `-key` won't have any effect.
+
+##### `-dns`:
+Allows you to provide a custom DNS to resolve the Server address rather than using the default DNS servers.
+
+##### `-proto`:
+Same considerations as for the server apply.
 
 
 ## Credits
