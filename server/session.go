@@ -42,6 +42,7 @@ type Session struct {
 	sshConf           *ssh.ServerConfig
 	SSHInstance       *instance.Config
 	ShellInstance     *instance.Config
+	SftpHistory       *CustomHistory
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -95,6 +96,10 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		SocksInstance: socksInstance,
 		SSHInstance:   sshInstance,
 		ShellInstance: shellInstance,
+		SftpHistory: &CustomHistory{
+			entries: make([]string, 0),
+			maxSize: 100,
+		},
 	}
 
 	s.sessionTrack.Sessions[sc] = session
