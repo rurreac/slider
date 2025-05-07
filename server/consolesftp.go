@@ -115,6 +115,9 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	commands := ic.initSftpCommands()
 	s.newSftpTerminal(sftpPrompt(), commands)
 
+	// Replace Console History with own History for SFTP Session
+	s.console.Term.History = session.SftpHistory
+
 	var isRemote bool
 	for {
 		input, rErr := s.console.Term.ReadLine()
@@ -154,6 +157,8 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			}
 			s.console.TermPrintf("%s\n\n", localCwd)
 		case "exit":
+			// Set Console History back
+			s.console.Term.History = s.console.History
 			// Exit SFTP session
 			return
 		case "shell":
@@ -245,6 +250,7 @@ func (c *Console) setSftpConsoleAutoComplete(commands map[string]sftpCommandStru
 	slices.Sort(cmdList)
 	// Simple autocompletion
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		line = strings.TrimSpace(line)
 		// If TAB key is pressed and text was written
 		if key == 9 && len(line) > 0 {
 			newLine, newPos := autocompleteCommand(line, cmdList)

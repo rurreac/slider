@@ -29,6 +29,7 @@ type Console struct {
 	InitState *term.State
 	Output    *log.Logger
 	FirstRun  bool
+	History   *CustomHistory
 }
 
 type screenIO struct {
@@ -57,6 +58,7 @@ func (s *server) newTerminal(screen screenIO, commands map[string]commandStruct)
 	s.console.Term = term.NewTerminal(screen, getPrompt())
 	s.console.setConsoleAutoComplete(commands)
 	s.console.Output = log.New(s.console.Term, "", 0)
+	s.console.Term.History = s.console.History
 
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
 	if tErr != nil {
@@ -176,6 +178,7 @@ func (c *Console) setConsoleAutoComplete(commands map[string]commandStruct) {
 	slices.Sort(cmdList)
 	// Simple autocompletion
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		line = strings.TrimSpace(line)
 		// If a TAB key is pressed and a text was written
 		if key == 9 && len(line) > 0 {
 			newLine, newPos := autocompleteCommand(line, cmdList)
