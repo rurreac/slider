@@ -250,6 +250,7 @@ func (c *Console) setSftpConsoleAutoComplete(commands map[string]sftpCommandStru
 	slices.Sort(cmdList)
 	// Simple autocompletion
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		line = strings.TrimSpace(line)
 		// If TAB key is pressed and text was written
 		if key == 9 && len(line) > 0 {
 			newLine, newPos := autocompleteCommand(line, cmdList)
