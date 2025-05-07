@@ -115,7 +115,13 @@ func NewServer(args []string) {
 			Sessions: make(map[int64]*Session),
 		},
 		sshConf: sshConf,
-		console: Console{FirstRun: true},
+		console: Console{
+			FirstRun: true,
+			History: &CustomHistory{
+				entries: make([]string, 0),
+				maxSize: 100,
+			},
+		},
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
