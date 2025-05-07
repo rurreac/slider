@@ -10,9 +10,6 @@ type CustomHistory struct {
 	maxSize int
 }
 
-// Add implements term.History.Add
-// Adds a new entry to the history (most recent first)
-// If the entry is empty or a duplicate of the most recent entry, it's ignored
 func (h *CustomHistory) Add(entry string) {
 	// Skip empty entries
 	entry = strings.TrimSpace(entry)
@@ -34,15 +31,10 @@ func (h *CustomHistory) Add(entry string) {
 	}
 }
 
-// Len implements term.History.Len
-// Returns the number of entries in the history
 func (h *CustomHistory) Len() int {
 	return len(h.entries)
 }
 
-// At implements term.History.At
-// Returns the entry at the given index
-// Index 0 is the most recent entry, Len()-1 is the oldest
 func (h *CustomHistory) At(idx int) string {
 	if idx < 0 || idx >= len(h.entries) {
 		panic(fmt.Sprintf("history index out of range: %d", idx))
