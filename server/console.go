@@ -526,7 +526,8 @@ func (s *server) certsCommand(args ...string) {
 	cNew, _ := certsFlags.NewBoolFlag("n", "new", false, "Generate a new Key Pair")
 	cRemove, _ := certsFlags.NewIntFlag("r", "remove", 0, "Remove matching index from the Certificate Jar")
 	cSSH, _ := certsFlags.NewIntFlag("d", "dump", 0, "Dump CertID SSH keys")
-	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d")
+	cCA, _ := certsFlags.NewBoolFlag("c", "ca", false, "Dump CA Certificate")
+	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d", "c")
 	certsFlags.Set.Usage = func() {
 		certsFlags.PrintUsage(true)
 	}
@@ -543,7 +544,7 @@ func (s *server) certsCommand(args ...string) {
 	twl.Init(s.console.Term, 0, 4, 2, ' ', 0)
 
 	// If no flags are set, list all certificates
-	if (!*cNew && *cRemove == 0 && *cSSH == 0) || (len(args) == 0) {
+	if (!*cNew && *cRemove == 0 && *cSSH == 0 && !*cCA) || (len(args) == 0) {
 		if len(s.certTrack.Certs) > 0 {
 			var keys []int
 			for i := range s.certTrack.Certs {
@@ -580,23 +581,49 @@ func (s *server) certsCommand(args ...string) {
 	if *cSSH != 0 {
 		if keyPair, err := s.getCert(int64(*cSSH)); err == nil {
 			if s.certSaveOn {
-				if keyPath, pErr := s.savePrivateKey(int64(*cSSH)); pErr != nil {
-					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
-				} else {
-					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				pvKeyPath, pvErr := s.savePrivateKey(int64(*cSSH))
+				if pvErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pvErr)
+					return
+
 				}
-				if keyPath, pErr := s.savePublicKey(int64(*cSSH)); pErr != nil {
-					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
-				} else {
-					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				pbKeyPath, pbErr := s.savePublicKey(int64(*cSSH))
+				if pbErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pbErr)
+					return
 				}
+				s.console.PrintlnOkStep("Private Key saved to %s", pvKeyPath)
+				s.console.PrintlnOkStep("Public Key saved to %s", pbKeyPath)
 				return
 			}
+			s.console.PrintlnWarnStep("Current Certificates are not persistent, dumping to console")
 			s.console.PrintlnOkStep("SSH Private Key\n%s", keyPair.SSHPrivateKey)
 			s.console.PrintlnOkStep("SSH Public Key\n%s", keyPair.SSHPublicKey)
 			return
 		}
 		s.console.PrintlnErrorStep("Certificate ID %d not found", *cSSH)
+		return
+	}
+
+	if *cCA {
+		if s.caStoreOn {
+			caCertPath, cErr := s.saveCACert()
+			if cErr != nil {
+				s.console.PrintlnErrorStep("Failed to save CA certificate - %s", cErr)
+				return
+			}
+			caKeyPath, kErr := s.saveCAKey()
+			if kErr != nil {
+				s.console.PrintlnErrorStep("Failed to save CA certificate - %s", kErr)
+				return
+			}
+			s.console.PrintlnOkStep("CA Certificate saved to %s", caCertPath)
+			s.console.PrintlnOkStep("CA Certificate saved to %s", caKeyPath)
+			return
+		}
+		s.console.PrintlnWarnStep("Current CA certificate is not persistent, dumping to console")
+		s.console.PrintlnOkStep("CA Cert:\n%s", s.CertificateAuthority.CertPEM)
+		s.console.PrintlnOkStep("CA Key:\n%s", s.CertificateAuthority.KeyPEM)
 		return
 	}
 
