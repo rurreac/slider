@@ -368,7 +368,7 @@ func (fsp *FlagSetPack) validateMutualExclusion() error {
 func (fsp *FlagSetPack) validateMutualRequire() error {
 	for _, flagNames := range fsp.inclusionGrp {
 		formattedNames := make([]string, 0)
-		countFlags := len(flagNames)
+		countFlags := 0
 
 		for _, name := range flagNames {
 			var formatted string
@@ -376,7 +376,7 @@ func (fsp *FlagSetPack) validateMutualRequire() error {
 				if info.shortFlag == name || info.longFlag == name {
 					if (info.shortFlag != "" && !flagIsDefined(fsp.Set, info.shortFlag)) ||
 						(info.longFlag != "" && !flagIsDefined(fsp.Set, info.longFlag)) {
-						countFlags--
+						countFlags++
 					}
 
 					if info.shortFlag != "" && info.longFlag != "" {
@@ -388,16 +388,12 @@ func (fsp *FlagSetPack) validateMutualRequire() error {
 					}
 					formattedNames = append(formattedNames, formatted)
 
-					if countFlags == 0 {
-						break
+					if countFlags > 0 {
+						return fmt.Errorf("flags %s are required together",
+							strings.Join(formattedNames, ", "))
 					}
 				}
 			}
-		}
-
-		if len(formattedNames) > 0 {
-			return fmt.Errorf("flags %s are required together",
-				strings.Join(formattedNames, ", "))
 		}
 	}
 
