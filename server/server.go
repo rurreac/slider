@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -50,6 +51,7 @@ type server struct {
 	certJarFile          string
 	authOn               bool
 	certSaveOn           bool
+	caStoreOn            bool
 	keepalive            time.Duration
 	urlRedirect          *url.URL
 	templatePath         string
@@ -71,8 +73,8 @@ func NewServer(args []string) {
 	colorless, _ := serverFlags.NewBoolFlag("", "colorless", false, "Disables logging colors")
 	auth, _ := serverFlags.NewBoolFlag("", "auth", false, "Enables Key authentication of Clients")
 	certJarFile, _ := serverFlags.NewStringFlag("", "certs", "", "Path of a valid slider-certs json file")
-	keyStore, _ := serverFlags.NewBoolFlag("", "keystore", false, "Store Server key for later use")
-	keyPath, _ := serverFlags.NewStringFlag("", "keypath", "", "Path for reading and/or storing a Server key")
+	caStore, _ := serverFlags.NewBoolFlag("", "ca-store", false, "Store Server JSON with key and CA for later use")
+	caStorePath, _ := serverFlags.NewStringFlag("", "ca-store-path", "", "Path for reading and/or storing a Server JSON")
 	templatePath, _ := serverFlags.NewStringFlag("", "http-template", "", "Path of a default file to serve")
 	serverHeader, _ := serverFlags.NewStringFlag("", "http-server-header", "", "Sets a server header value")
 	httpRedirect, _ := serverFlags.NewStringFlag("", "http-redirect", "", "Redirects incoming HTTP to given URL")
@@ -80,6 +82,12 @@ func NewServer(args []string) {
 	httpVersion, _ := serverFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
 	httpHealth, _ := serverFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
 	customProto, _ := serverFlags.NewStringFlag("", "proto", conf.Proto, "Set your own proto string")
+	listenerCert, _ := serverFlags.NewStringFlag("", "listener-cert", "", "Certificate for SSL listener")
+	listenerKey, _ := serverFlags.NewStringFlag("", "listener-key", "", "Key for SSL listener")
+	listenerCA, _ := serverFlags.NewStringFlag("", "listener-ca", "", "CA for verifying client certificates")
+	serverFlags.MarkFlagsRequiresFlag("listener-cert", "listener-key")
+	serverFlags.MarkFlagsRequiresFlag("listener-key", "listener-cert")
+	serverFlags.MarkFlagsRequiresFlag("listener-ca", "listener-cert", "listener-key")
 	serverFlags.Set.Usage = func() {
 		serverFlags.PrintUsage(false)
 	}
@@ -127,6 +135,7 @@ func NewServer(args []string) {
 		},
 		certJarFile:  *certJarFile,
 		authOn:       *auth,
+		caStoreOn:    *caStore,
 		urlRedirect:  &url.URL{},
 		serverHeader: *serverHeader,
 		httpVersion:  *httpVersion,
@@ -166,16 +175,16 @@ func NewServer(args []string) {
 	var kErr error
 	var serverKeyPair *scrypt.ServerKeyPair
 	var privateKeySigner ssh.Signer
-	if *keyStore || *keyPath != "" {
+	if *caStore || *caStorePath != "" {
 		kp := conf.GetSliderHome() + serverCertFile
 
-		if *keyPath != "" {
-			kp = *keyPath
+		if *caStorePath != "" {
+			kp = *caStorePath
 		}
 
-		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !*keyStore && *keyPath != "" {
+		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !*caStore && *caStorePath != "" {
 			s.Logger.Fatalf("Failed load Server Key, %s does not exist", kp)
-		} else if os.IsNotExist(sErr) && *keyStore {
+		} else if os.IsNotExist(sErr) && *caStore {
 			s.Logger.Debugf("Storing New Server Certificate on %s", kp)
 		} else {
 			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
@@ -243,16 +252,49 @@ func NewServer(args []string) {
 		s.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 	}
 
+	tlsOn := false
+	tlsConfig := &tls.Config{}
+	listenerProto := "tcp"
+	if *listenerCert != "" && *listenerKey != "" {
+		tlsOn = true
+		listenerProto = "tls"
+		if *listenerCA != "" {
+			s.Logger.Warnf("Using CA \"%s\" for TLS client verification", *listenerCA)
+			caPem, rfErr := os.ReadFile(*listenerCA)
+			if rfErr != nil {
+				s.Logger.Fatalf("Failed to read CA file: %v", rfErr)
+			}
+			if len(caPem) == 0 {
+				s.Logger.Fatalf("CA file is empty")
+			}
+			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
+		}
+	}
+
 	go func() {
 		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
+		s.Logger.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
+
+		if tlsOn {
+			httpSrv := &http.Server{
+				Addr:      serverAddr.String(),
+				TLSConfig: tlsConfig,
+				ErrorLog:  slog.NewDummyLog(),
+			}
+			httpSrv.Handler = handler
+			if sErr := httpSrv.ListenAndServeTLS(*listenerCert, *listenerKey); sErr != nil {
+				s.Logger.Fatalf("TLS Listener error: %s", sErr)
+			}
+			return
+		}
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
-			s.Logger.Fatalf("%s", sErr)
+			s.Logger.Fatalf("Listener error: %s", sErr)
 		}
 	}()
-	s.Logger.Infof("Listening on %s://%s", serverAddr.Network(), serverAddr.String())
+
+	s.Logger.Infof("Press CTR^C to access the Slider Console")
 
 	// Capture Interrupt Signal to toggle log output and activate Console
-	s.Logger.Infof("Press CTR^C to access the Slider Console")
 	var cmdOutput string
 	for consoleToggle := true; consoleToggle; {
 		sig := make(chan os.Signal, 1)
