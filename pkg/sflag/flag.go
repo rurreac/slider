@@ -10,17 +10,18 @@ import (
 )
 
 type FlagSetPack struct {
-	Set            *flag.FlagSet
-	cmdDescription string
-	cmdUsage       string
-	CmdAlias       []string
-	flagList       []flagInfo
-	exclusionGrp   [][]string
-	requiredOneGrp [][]string
-	conditionGrp   []flagCondition
-	requireArgsGrp []flagRequireArgs
-	minArgs        int
-	maxArgs        int
+	Set             *flag.FlagSet
+	cmdDescription  string
+	cmdUsage        string
+	CmdAlias        []string
+	flagList        []flagInfo
+	exclusionGrp    [][]string
+	inclusionGrp    [][]string
+	requiredOneGrp  [][]string
+	conditionExcGrp []flagExcludeCondition
+	requireArgsGrp  []flagRequireArgs
+	minArgs         int
+	maxArgs         int
 }
 
 type flagInfo struct {
@@ -30,7 +31,7 @@ type flagInfo struct {
 	flagUsage string
 }
 
-type flagCondition struct {
+type flagExcludeCondition struct {
 	conditionFlag string
 	isEnabled     bool
 	excludeFlags  []string
@@ -45,16 +46,17 @@ func NewFlagPack(commands []string, usage string, description string, writerOut 
 	flagSet := flag.NewFlagSet(commands[0], flag.ContinueOnError)
 	flagSet.SetOutput(writerOut)
 	return &FlagSetPack{
-		Set:            flagSet,
-		cmdUsage:       usage,
-		cmdDescription: description,
-		CmdAlias:       commands,
-		flagList:       make([]flagInfo, 0),
-		exclusionGrp:   make([][]string, 0),
-		requiredOneGrp: make([][]string, 0),
-		conditionGrp:   make([]flagCondition, 0),
-		minArgs:        0,
-		maxArgs:        0,
+		Set:             flagSet,
+		cmdUsage:        usage,
+		cmdDescription:  description,
+		CmdAlias:        commands,
+		flagList:        make([]flagInfo, 0),
+		exclusionGrp:    make([][]string, 0),
+		inclusionGrp:    make([][]string, 0),
+		requiredOneGrp:  make([][]string, 0),
+		conditionExcGrp: make([]flagExcludeCondition, 0),
+		minArgs:         0,
+		maxArgs:         0,
 	}
 }
 
@@ -231,6 +233,28 @@ func (fsp *FlagSetPack) MarkFlagsMutuallyExclusive(flagNames ...string) {
 	fsp.exclusionGrp = append(fsp.exclusionGrp, flagNames)
 }
 
+func (fsp *FlagSetPack) MarkFlagsMutuallyRequired(flagNames ...string) {
+	if len(flagNames) < 2 {
+		panic("At least two flags are required to form a mutually exclusive group")
+	}
+
+	// Validate that all flag names exist
+	for _, name := range flagNames {
+		found := false
+		for _, info := range fsp.flagList {
+			if info.shortFlag == name || info.longFlag == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			panic(fmt.Sprintf("cannot create mutually exclusive group: flag %q not found", name))
+		}
+	}
+
+	fsp.inclusionGrp = append(fsp.inclusionGrp, flagNames)
+}
+
 func (fsp *FlagSetPack) MarkFlagsOneRequired(flagNames ...string) {
 	if len(flagNames) < 2 {
 		panic("at least two flags are required to form a required-one group")
@@ -271,13 +295,13 @@ func (fsp *FlagSetPack) MarkFlagsConditionExclusive(conditionFlag string, isEnab
 			panic(fmt.Sprintf("cannot create condition group: flag %q not found", name))
 		}
 	}
-	condition := flagCondition{
+	condition := flagExcludeCondition{
 		conditionFlag: conditionFlag,
 		isEnabled:     isEnabled,
 		excludeFlags:  excludeFlags,
 	}
 
-	fsp.conditionGrp = append(fsp.conditionGrp, condition)
+	fsp.conditionExcGrp = append(fsp.conditionExcGrp, condition)
 }
 
 func (fsp *FlagSetPack) MarkFlagsRequireArgs(flagName string, reqArgs int) {
@@ -341,6 +365,45 @@ func (fsp *FlagSetPack) validateMutualExclusion() error {
 	return nil
 }
 
+func (fsp *FlagSetPack) validateMutualRequire() error {
+	for _, flagNames := range fsp.inclusionGrp {
+		formattedNames := make([]string, 0)
+		countFlags := len(flagNames)
+
+		for _, name := range flagNames {
+			var formatted string
+			for _, info := range fsp.flagList {
+				if info.shortFlag == name || info.longFlag == name {
+					if (info.shortFlag != "" && !flagIsDefined(fsp.Set, info.shortFlag)) ||
+						(info.longFlag != "" && !flagIsDefined(fsp.Set, info.longFlag)) {
+						countFlags--
+					}
+
+					if info.shortFlag != "" && info.longFlag != "" {
+						formatted = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
+					} else if info.shortFlag != "" {
+						formatted = fmt.Sprintf("-%s", info.shortFlag)
+					} else {
+						formatted = fmt.Sprintf("--%s", info.longFlag)
+					}
+					formattedNames = append(formattedNames, formatted)
+
+					if countFlags == 0 {
+						break
+					}
+				}
+			}
+		}
+
+		if len(formattedNames) > 0 {
+			return fmt.Errorf("flags %s are required together",
+				strings.Join(formattedNames, ", "))
+		}
+	}
+
+	return nil
+}
+
 func (fsp *FlagSetPack) validateRequiredOne() error {
 	for _, flagNames := range fsp.requiredOneGrp {
 		anyFlagSet := false
@@ -383,7 +446,7 @@ func (fsp *FlagSetPack) validateRequiredOne() error {
 }
 
 func (fsp *FlagSetPack) validateConditionExclusion() error {
-	for _, condition := range fsp.conditionGrp {
+	for _, condition := range fsp.conditionExcGrp {
 		setFlagIndices := make(map[int]bool)
 		formattedNames := make([]string, 0)
 
@@ -462,6 +525,11 @@ func (fsp *FlagSetPack) Parse(arguments []string) error {
 
 	// Check for mutual exclusion violations
 	if err := fsp.validateMutualExclusion(); err != nil {
+		return err
+	}
+
+	// Check for flag-to-flag requirements
+	if err := fsp.validateMutualRequire(); err != nil {
 		return err
 	}
 
@@ -594,8 +662,34 @@ func (fsp *FlagSetPack) PrintUsage(compact bool) {
 		fmt.Println()
 	}
 
-	if len(fsp.conditionGrp) > 0 {
-		for _, condition := range fsp.conditionGrp {
+	// Print mutually required flags
+	if len(fsp.inclusionGrp) > 0 {
+		fmt.Printf("\rMutually required flags:\n\n")
+
+		for _, flagNames := range fsp.inclusionGrp {
+			var flagsStr []string
+			for _, name := range flagNames {
+				for _, info := range fsp.flagList {
+					if info.shortFlag == name || info.longFlag == name {
+						if info.shortFlag != "" && info.longFlag != "" {
+							flagsStr = append(flagsStr, fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag))
+						} else if info.shortFlag != "" {
+							flagsStr = append(flagsStr, fmt.Sprintf("-%s", info.shortFlag))
+						} else {
+							flagsStr = append(flagsStr, fmt.Sprintf("--%s", info.longFlag))
+						}
+						break
+					}
+				}
+			}
+			_, _ = fmt.Fprintf(tw, "\r\t%s\t\n", strings.Join(flagsStr, ", "))
+		}
+		_ = tw.Flush()
+		fmt.Println()
+	}
+
+	if len(fsp.conditionExcGrp) > 0 {
+		for _, condition := range fsp.conditionExcGrp {
 			var flagsCondStr string
 			for _, info := range fsp.flagList {
 				if info.shortFlag == condition.conditionFlag || info.longFlag == condition.conditionFlag {
