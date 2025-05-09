@@ -367,7 +367,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	}
 }
 
-func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
+func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier chan error) {
 	forwardReq := types.CustomTcpIpFwdRequest{
 		IsSshConn: false,
 		TcpIpFwdRequest: &types.TcpIpFwdRequest{
@@ -378,13 +378,16 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg) {
 
 	forwardReqBytes, mErr := json.Marshal(forwardReq)
 	if mErr != nil {
-		si.Logger.Errorf(si.LogPrefix+"Failed to marshal TcpIpFwdRequest request - %v", mErr)
+		notifier <- fmt.Errorf("failed to marshal TcpIpFwdRequest request - %v", mErr)
 		return
 	}
 
 	ok, respData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", true, forwardReqBytes)
 	if rErr != nil || !ok {
-		si.Logger.Errorf(si.LogPrefix+"Failed to send \"tcpip-forward\" request - %v", rErr)
+		if rErr == nil {
+			rErr = fmt.Errorf("request was rejected, port likely in use")
+		}
+		notifier <- fmt.Errorf("failed to send \"tcpip-forward\" request - %v", rErr)
 		return
 	}
 	if len(respData) > 0 {
@@ -458,10 +461,10 @@ func (si *Config) GetLocalPortMapping(port int) (DirectTcpIpControl, error) {
 	return mapping, nil
 }
 
-func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg) {
+func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan error) {
 	listener, lErr := net.Listen("tcp", fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
 	if lErr != nil {
-		si.Logger.Errorf("failed to listen on %s:%d - %v", msg.SrcHost, msg.SrcPort, lErr)
+		notifier <- fmt.Errorf("failed to listen on %s:%d - %v", msg.SrcHost, msg.SrcPort, lErr)
 		return
 	}
 	defer func() { _ = listener.Close() }()
@@ -470,7 +473,7 @@ func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg) {
 	si.addLocalMapping(&msg, false)
 	mapping, mErr := si.GetLocalPortMapping(int(msg.SrcPort))
 	if mErr != nil {
-		si.Logger.Errorf(si.LogPrefix+"Failed to get local port mapping - %v", mErr)
+		notifier <- fmt.Errorf("failed to get local port mapping - %v", mErr)
 		return
 	}
 

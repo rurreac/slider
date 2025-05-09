@@ -500,23 +500,36 @@ func (s *server) socksCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling Socks Endpoint in the background")
 
-		go session.socksEnable(*sPort, *sExpose)
-
+		// Receive Errors from Endpoint
+		notifier := make(chan error, 1)
+		defer close(notifier)
 		// Give some time to check
 		socksTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range socksTicker.C {
-			if time.Now().Before(timeout) {
-				port, sErr := session.SocksInstance.GetEndpointPort()
-				if port == 0 || sErr != nil {
-					fmt.Printf(".")
-					continue
+
+		go session.socksEnable(*sPort, *sExpose, notifier)
+
+		for {
+			select {
+			case nErr := <-notifier:
+				if nErr != nil {
+					s.console.PrintlnErrorStep("Endpoint error: %v", nErr)
+					return
 				}
-				s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
-				return
+			case <-socksTicker.C:
+				if time.Now().Before(timeout) {
+					port, sErr := session.SocksInstance.GetEndpointPort()
+					if port == 0 || sErr != nil {
+						fmt.Printf(".")
+						continue
+					}
+					s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
+					return
+				} else {
+					s.console.PrintlnErrorStep("Socks Endpoint reached Timeout trying to start")
+					return
+				}
 			}
-			s.console.PrintlnErrorStep("Socks Endpoint timeout, port likely in use")
-			return
 		}
 	}
 }
@@ -763,23 +776,36 @@ func (s *server) sshCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling SSH Endpoint in the background")
 
-		go session.sshEnable(*sPort, *sExpose)
-
+		// Receive Errors from Endpoint
+		notifier := make(chan error, 1)
+		defer close(notifier)
 		// Give some time to check
 		sshTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range sshTicker.C {
-			if time.Now().Before(timeout) {
-				port, sErr := session.SSHInstance.GetEndpointPort()
-				if port == 0 || sErr != nil {
-					fmt.Printf(".")
-					continue
+
+		go session.sshEnable(*sPort, *sExpose, notifier)
+
+		for {
+			select {
+			case nErr := <-notifier:
+				if nErr != nil {
+					s.console.PrintlnErrorStep("Endpoint error: %v", nErr)
+					return
 				}
-				s.console.PrintlnOkStep("SSH Endpoint running on port: %d", port)
-				return
+			case <-sshTicker.C:
+				if time.Now().Before(timeout) {
+					port, sErr := session.SSHInstance.GetEndpointPort()
+					if port == 0 || sErr != nil {
+						fmt.Printf(".")
+						continue
+					}
+					s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
+					return
+				} else {
+					s.console.PrintlnErrorStep("Socks Endpoint reached Timeout trying to start")
+					return
+				}
 			}
-			s.console.PrintlnErrorStep("SSH Endpoint timeout, port likely in use")
-			return
 		}
 	}
 }
@@ -839,6 +865,7 @@ func (s *server) shellCommand(args ...string) {
 		return
 	}
 
+	var port int
 	if *sSession > 0 {
 		if session.ShellInstance.IsEnabled() {
 			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
@@ -848,27 +875,39 @@ func (s *server) shellCommand(args ...string) {
 		}
 		s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
 
-		go session.shellEnable(*sPort, *sExpose, *sTls, *sInteractive)
-
+		// Receive Errors from Endpoint
+		notifier := make(chan error, 1)
+		defer close(notifier)
 		// Give some time to check
-		var port int
-		var sErr error
 		shellTicker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range shellTicker.C {
-			if !time.Now().Before(timeout) {
-				s.console.PrintlnErrorStep("Shell Endpoint timeout, port likely in use")
-				return
-			}
-			port, sErr = session.ShellInstance.GetEndpointPort()
-			if port == 0 || sErr != nil {
-				fmt.Printf(".")
-				continue
-			} else {
-				break
+
+		go session.shellEnable(*sPort, *sExpose, *sTls, *sInteractive, notifier)
+
+		for endpointCheck := true; endpointCheck; {
+			select {
+			case nErr := <-notifier:
+				if nErr != nil {
+					s.console.PrintlnErrorStep("Endpoint error: %v", nErr)
+					return
+				}
+			case <-shellTicker.C:
+				if time.Now().Before(timeout) {
+					var sErr error
+					port, sErr = session.ShellInstance.GetEndpointPort()
+					if port == 0 || sErr != nil {
+						fmt.Printf(".")
+						continue
+					}
+					s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
+					endpointCheck = false
+					break
+				} else {
+					s.console.PrintlnErrorStep("Socks Endpoint reached Timeout trying to start")
+					return
+				}
 			}
 		}
-		s.console.PrintlnOkStep("Shell Endpoint running on port: %d", port)
 
 		if *sInteractive {
 			var conn net.Conn
@@ -942,8 +981,6 @@ func (s *server) shellCommand(args ...string) {
 			_, _ = io.Copy(conn, os.Stdin)
 
 			return
-		} else {
-			return
 		}
 	}
 
@@ -953,7 +990,7 @@ func (s *server) portFwdCommand(args ...string) {
 	portFwdFlags := sflag.NewFlagPack([]string{portFwdCmd}, portFwdUsage, portFwdDesc, s.console.Term)
 	pSession, _ := portFwdFlags.NewIntFlag("s", "session", 0, "Session ID to add or remove Port Forwarding")
 	pReverse, _ := portFwdFlags.NewBoolFlag("R", "reverse", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
-	pRemove, _ := portFwdFlags.NewBoolFlag("r", "remove", false, "Remove Port Forwarding form port passed as argument")
+	pRemove, _ := portFwdFlags.NewBoolFlag("r", "remove", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
 	pLocal, _ := portFwdFlags.NewBoolFlag("L", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
 	portFwdFlags.MarkFlagsRequireArgs("R", 1)
 	portFwdFlags.MarkFlagsRequireArgs("L", 1)
@@ -1076,26 +1113,39 @@ func (s *server) portFwdCommand(args ...string) {
 			return
 		}
 		s.console.PrintlnDebugStep("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
-		go session.SSHInstance.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg)
-		var sErr error
+
+		// Receive Errors from Instance
+		notifier := make(chan error, 1)
+		defer close(notifier)
+		go session.SSHInstance.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg, notifier)
+
 		port := int(msg.SrcPort)
-		shellTicker := time.NewTicker(250 * time.Millisecond)
+		ticker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range shellTicker.C {
-			if !time.Now().Before(timeout) {
-				s.console.PrintlnErrorStep("Port forward request timed out")
-				return
-			}
-			_, sErr = session.SSHInstance.GetLocalPortMapping(port)
-			if port == 0 || sErr != nil {
-				fmt.Printf(".")
-				continue
-			} else {
-				s.console.PrintlnOkStep("Endpoint running on local port: %d", port)
-				break
+
+		for {
+			select {
+			case nErr := <-notifier:
+				if nErr != nil {
+					s.console.PrintlnErrorStep("Local Port Forward error: %v", nErr)
+					return
+				}
+			case <-ticker.C:
+				if time.Now().Before(timeout) {
+					var sErr error
+					_, sErr = session.SSHInstance.GetLocalPortMapping(port)
+					if sErr != nil {
+						fmt.Printf(".")
+						continue
+					}
+					s.console.PrintlnOkStep("Local Port Forward Endpoint running on port: %d", port)
+					return
+				} else {
+					s.console.PrintlnErrorStep("Local Port Forward reached Timeout trying to start")
+					return
+				}
 			}
 		}
-		return
 	}
 
 	if *pReverse {
@@ -1127,26 +1177,37 @@ func (s *server) portFwdCommand(args ...string) {
 			return
 		}
 		s.console.PrintlnDebugStep("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
-		go session.SSHInstance.TcpIpForwardFromMsg(*msg)
-		var sErr error
-		port := int(msg.SrcPort)
-		shellTicker := time.NewTicker(250 * time.Millisecond)
+
+		notifier := make(chan error, 1)
+		defer close(notifier)
+		go session.SSHInstance.TcpIpForwardFromMsg(*msg, notifier)
+
+		ticker := time.NewTicker(250 * time.Millisecond)
 		timeout := time.Now().Add(conf.Timeout)
-		for range shellTicker.C {
-			if !time.Now().Before(timeout) {
-				s.console.PrintlnErrorStep("Port forward request timed out")
-				return
-			}
-			_, sErr = session.SSHInstance.GetRemotePortMapping(port)
-			if port == 0 || sErr != nil {
-				fmt.Printf(".")
-				continue
-			} else {
-				s.console.PrintlnOkStep("Forwarding established on remote port: %d", port)
-				break
+		port := int(msg.SrcPort)
+		for {
+			select {
+			case nErr := <-notifier:
+				if nErr != nil {
+					s.console.PrintlnErrorStep("Remote Port Forward error: %v", nErr)
+					return
+				}
+			case <-ticker.C:
+				if time.Now().Before(timeout) {
+					var sErr error
+					_, sErr = session.SSHInstance.GetRemotePortMapping(port)
+					if sErr != nil {
+						fmt.Printf(".")
+						continue
+					}
+					s.console.PrintlnOkStep("Remote Port Forward Endpoint running on port: %d", port)
+					return
+				} else {
+					s.console.PrintlnErrorStep("Remote Port Forward reached Timeout trying to start")
+					return
+				}
 			}
 		}
-		return
 	}
 
 }
