@@ -88,10 +88,10 @@ Usage: <slider_server> [flags]
         Enables Key authentication of Clients (default false)  
   --certs
         Path of a valid slider-certs json file (default "")  
-  --keystore
-        Store Server key for later use (default false)  
-  --keypath
-        Path for reading and/or storing a Server key (default "")  
+  --ca-store
+        Store Server JSON with key and CA for later use (default false)  
+  --ca-store-path
+        Path for reading and/or storing a Server JSON (default "")  
   --http-template
         Path of a default file to serve (default "")  
   --http-server-header
@@ -106,6 +106,18 @@ Usage: <slider_server> [flags]
         Enables /health HTTP path (default false)  
   --proto
         Set your own proto string (default slider-v1)  
+  --listener-cert
+        Certificate for SSL listener (default "")  
+  --listener-key
+        Key for SSL listener (default "")  
+  --listener-ca
+        CA for verifying client certificates (default "")  
+
+Mutually required flags:
+
+  --listener-key                   
+  --listener-cert                  
+  --listener-cert, --listener-key
 ```
 
 ![Sever](./doc/server.gif)
@@ -130,23 +142,23 @@ Slider only creates and uses [Ed25519](https://ed25519.cr.yp.to/) keys.
 
 ### Server Flags Overview
 
-##### `-address`:
+##### `--address`:
 Local address to bind to. By default, Slider binds to all local addresses
 
-##### `-auth` and `-certs`:
+##### `--auth` and `--certs`:
 By default, Slider Clients do not require any authentication to connect to Server.
 
-* `-auth`: Enables and requires SSH Key-Based authentication to all Clients.
-* `-certs`: Is an optional parameter, holding the path of a Certificate Jar file. This flag requires authentication is
+* `--auth`: Enables and requires SSH Key-Based authentication to all Clients.
+* `--certs`: Is an optional parameter, holding the path of a Certificate Jar file. This flag requires authentication is
   enabled.
 
-When `-auth` is passed, a few things will and may happen:
-1. If `-cert` flag is not provided:
+When `--auth` is passed, a few things will and may happen:
+1. If `--certs` flag is not provided:
     1. Slider will check if the default certificate file (`client-certs.json`) exists in "[Slider Home directory](#slider_home)".
     2. If `client-certs.json` exists, Slider will load all existing KeyPairs into its Certificate Jar.
     3. If `client-certs.json` does not exist, Slider will initialize its Certificate Jar with a new KeyPair  
        and store it a new `client-certs.json` file.
-2. if `-cert` flag is provided:
+2. if `--certs` flag is provided:
     1. If the file exists, Slider will load all KeyPairs in its Certificate Jar.
     2. If the file does not exist, Slider will initialize the Certificate Jar with a new certificate and attempt to save it
        in the provided path.
@@ -159,56 +171,60 @@ on *nix hosts, or `\certs` on Windows hosts.
 
 ![Sever Auth](./doc/server_auth.gif)
 
-##### `-colorless`:
+##### `--colorless`:
 By default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using colors. If this flag is passed
 then logs will have no colors.
 
-##### `-keepalive`:
+##### `--keepalive`:
 By default, Slider pings every Client Session (every 60s) to ensure its available, otherwise kills the Session.
 
 This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
 it to this one.
 
-##### `-keypath` and `-keystore`:
+##### `--keypath` and `--keystore`:
 By default, everytime Slider Server is executed, a new in memory KeyPair is generated, and so it's lost on termination.
 
-When the flag `-keystore` is provided, Slider will store a new KeyPair in disk, but:
-1. If `-keypath` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
+When the flag `--keystore` is provided, Slider will store a new KeyPair in disk, but:
+1. If `--keypath` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
    then it will be loaded instead or overriding it.
-2. If `-keypath` was provided:
+2. If `--keypath` was provided:
     1. If the path exists, Slider will attempt to load its KeyPair.
     2. If the path does not exist, Slider will save a new KeyPair in this path.
 
-##### `-port`:
+##### `--port`:
 By default, Slider listens in port `8080`. Specify any other port using this flag.
 
-##### `-http-template`, `-http-server-header`, `-http-status-code`:
-Allows mimicking another web server while accepts setting a status code and a using a file as template.
+##### `--http-template`, `--http-server-header`, `--http-status-code`:
+Allows mimicking another web server while accepts setting a status code and using a file as a template.
 
 This may help you blend Slider with your environment.
 
-Size of the file is currently limited to 2MiB which should be enough for an HTML template with embedded images.
+The size of the file is currently limited to 2MiB which should be enough for an HTML template with embedded images.
 
-##### `-http-version`:
+##### `--http-version`:
 Disabled by default, it will serve a JSON with current Proto and Slider version at `/version`. 
 
-##### `-http-redirect`:
+##### `--http-redirect`:
 A redirect parameter must be at least a URL with a valid scheme and host (`http[s]://<host>[:<port>]`).
 
-HTTP connections will be redirected to the given URL while Slider connections will proceed as usual.
-Can be used in combination with `-template` to include a server header in the response headers.
+HTTP connections will be redirected to the given URL, while Slider connections will proceed as usual.
 
-##### `-verbose`:
+##### `--verbose`:
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
 fatal logs will be shown.
 
-##### `-proto`:
+##### `--proto`:
 Slider uses its own proto value (e.g. `slider-v1`), to ensure that only matching protocols are allowed to proceed
 with the websocket upgrade. Among other things to avoid future compatibility issues.
 
 This parameter allows you to specify your own proto value which can be handy, IF:
-1. you want to drop any connection attempt other than your own proto, before attempting the upgrade to websocket.
-2. you feel that the default proto (because it's sent as an HTTP header) is, for some reason, blocked by some kind of IPS.
+1. you want to drop any connection attempt other than your own "proto" before attempting the upgrade to websocket.
+2. you feel that some kind of IPS for some reason blocks the default proto (because proto is sent as an HTTP header).
+
+##### `--listener-cert`, `--listener-key`, `--listener-ca`:
+The flags `--listener-cert` and `--listener-key` allow us to provide your own certificate so we can have a TLS listener.
+
+If the flag `--listener-ca` is provided, the listener will also verify the client certificate against this CA certificate.
 
 ### Console
 
@@ -291,21 +307,23 @@ A note on the interactive `shell` command:
   fully interactive as well.
 
 A note between killing a Session and disconnecting from a Session: 
-* Disconnect, closes the Session at the Server side, it would be equivalent to terminating the Server. 
-  * If the Client is configured with the `-retry` option, the Client will reconnect to the Server if available on the next
+* Disconnect closes the Session at the Server side, it would be equivalent to terminating the Server. 
+  * If the Client is configured with the `--retry` option, the Client will reconnect to the Server if available on the next
   try, creating a new Session.
-  * If the Client is not configured with the `-retry` option, and is NOT configured with the `-listener` option, once it
+  * If the Client is not configured with the `--retry` option, and is NOT configured with the `--listener` option, once it
 runs its next keepalive check will shut down.  
-* Kill, is equivalent to terminate the execution of the Client, independently if it's a regular Client or a Listener one.
+* Kill is equivalent to terminating the execution of the Client, independently if it's a regular Client or a Listener one.
 
 ##### Connect
 ```
 Slider# connect -h
 Usage: connect [flags] <[client_address]:port>
 
-  -c, --cert   Specify certID for key authentication (default 0)  
-  -d, --dns    Use custom DNS resolver (default "")               
-  -p, --proto  Use custom proto (default slider-v1)               
+  -i, --cert-id   Specify certID for SSH key authentication (default 0)  
+  -d, --dns       Use custom DNS resolver (default "")                   
+  -p, --proto     Use custom proto (default slider-v1)                   
+  -c, --tls-cert  Use custom client TLS certificate (default "")         
+  -k, --tls-key   Use custom client TLS key (default "")                 
 
 Requires exactly 1 argument(s)
 ```
@@ -316,14 +334,17 @@ This command will try to open a Session in the background, and you will be notif
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
 
 Due to their purpose, Servers will disable Client authentication on connections to a Listener even if the Server is 
-started with `-auth`.
+started with `--auth`.
 
 I needed, it is possible, to use a custom DNS to resolve the Client, instead of the default one.
 
 Since the Server is the one that initiates the connection to the Listener and the Listener is facing the network,
-authentication of Servers will happen on the Client side with `-fingerprint`. 
-Servers will be rejected if their fingerprint is not successfully verified. in order to authenticate to a Listener, use
-the `-c` flag to specify the certificate ID that you want to use.
+authentication of Servers will happen on the Client side with `--fingerprint`. 
+Servers will be rejected if their fingerprint is not successfully verified. To authenticate to a Listener, use
+the `-i` flag to specify the certificate ID that corresponds to the fingerprint used by the listener.
+
+Depending on configuration, a TLS Listener may require you to provide a valid certificate for client authentication. 
+In this case, you can provide a certificate and key (flags `-c`, `-k`) signed with the same CA.
 
 ![Console Connect](./doc/console_connect.gif)
 
@@ -381,7 +402,7 @@ Mutually exclusive flags:
 Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side on the specified port,
 or a port randomly selected if not specified.
 
-If a port is not specified using the `-p` flag, one  will be automatically assigned.
+If a port is not specified using the `-p` flag, it will be automatically assigned.
 
 By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
 
@@ -413,7 +434,7 @@ and forward the connection to the Client side through another SSH channel.
 By default, the SSH server will be exposed only to the localhost interface, but you can use the `-e` flag to expose it
 to all interfaces.
 
-Only supported authentication methods are anonymous and Public/Private key.
+The only supported authentication methods are anonymous and Public/Private key.
 
 While it is not a full implementation, this SSH connection opens the following possibilities:
 * Connect to a Client Shell using any SSH client.
@@ -424,7 +445,7 @@ While it is not a full implementation, this SSH connection opens the following p
 
 If server authentication is enabled you must authenticate using the SSH key that matches the certificated used to
 authenticate Client and Server.
-Note that the key passed used is not a valid SSH key itself, but you can obtain it by running `certs -d <certID>` command 
+Note that the key passed used is not a valid SSH key itself, but you can get it by running `certs -d <certID>` command 
 on the console.
 
 A few considerations:
@@ -480,23 +501,33 @@ When run without parameters, all available Slider key pairs are listed.
 
 Usage: certs [flags]
 
-  -n, --new     Generate a new Key Pair (default false)                     
-  -r, --remove  Remove matching index from the Certificate Jar (default 0)  
-  -d, --dump    Dump CertID SSH keys (default 0)                            
+  -n, --new       Generate a new Key Pair (default false)                     
+  -r, --remove    Remove matching index from the Certificate Jar (default 0)  
+  -d, --dump-ssh  Dump corresponding CertID SSH keys (default 0)              
+  -c, --dump-ca   Dump CA Certificate and key (default false)                 
 
 Mutually exclusive flags:
 
-  -n/--new, -r/--remove, -d/--dump 
+  -n/--new, -r/--remove, -d/--dump-ssh, -c/--dump-ca  
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be available.
 
-Usually if the Server was run with `-auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
+Usually if the Server was run with `--auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
 
 Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
 by default, it will be stored locally, and you'll get the path.
 If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
+
+Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. Using the `-d`
+flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH
+endpoint (ssh, sftp, scp, ...).
+
+We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates
+for creating TLS listeners.
+If we generated our own certificates for server or client listeners with this CA, we can also provide this CA to authenticate
+listener client certificates.
 
 ![Console Certs](./doc/console_certs.gif)
 
@@ -544,12 +575,30 @@ Usage: <slider_client> [flags] [<[server_address]:port>]
         Uses custom DNS server <host[:port]> for resolving server address (default "")  
   --proto
         Set your own proto string (default slider-v1)  
+  --listener-cert
+        Certificate for SSL listener (default "")  
+  --listener-key
+        Key for SSL listener (default "")  
+  --listener-ca
+        CA for verifying client certificates (default "")  
+  --tls-cert
+        TLS client Certificate (default "")  
+  --tls-key
+        TLS client Key (default "")  
 
 Mutually exclusive flags:
 
-  --listener, --key    
-  --listener, --dns    
-  --listener, --retry  
+  --listener, --key       
+  --listener, --dns       
+  --listener, --retry     
+  --listener, --tls-cert  
+  --listener, --tls-key   
+
+Mutually required flags:
+
+  --listener, --listener-key                   
+  --listener, --listener-cert                  
+  --listener, --listener-cert, --listener-key  
 
 Flag "--listener" with status "false" is incompatible with flags:
 
@@ -561,7 +610,10 @@ Flag "--listener" with status "false" is incompatible with flags:
   --http-redirect       
   --http-status-code    
   --http-version        
-  --http-health 
+  --http-health         
+  --listener-cert       
+  --listener-key        
+  --listener-ca        
 ```
 
 ![Client](./doc/client.gif)
@@ -570,12 +622,12 @@ Flag "--listener" with status "false" is incompatible with flags:
 
 #### Common Client Flags
 
-##### `-colorless`:
-Same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using
+##### `--colorless`:
+The same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using
 colors. If this flag is passed then logs will have no colors.
 
-##### `-keepalive`:
-By default, Slider pings every Server Session (every 60s) to ensure its available, otherwise kills the Session.
+##### `--keepalive`:
+By default, Slider pings every Server Session (every 60s) to ensure it's available, otherwise it kills the Session.
 
 This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
 it to this one.
@@ -585,11 +637,11 @@ the keepalive will leave not listener clients hanging forever.
 
 #### Listener Client Flags
 
-##### `-listener`, `-address` and `-port`:
+##### `--listener`, `--address` and `--port`:
 A Slider Client by default connects back to a server on a given address:port (Reverse Client), but it is also possible to run a Slider
-Client in Listener mode (`-listener`).
+Client in Listener mode (`--listener`).
 
-When used as Listener it will listen for incoming connections on a bound address (`-address`) and port (`-port`). If not
+When used as Listener it will listen for incoming connections on a bound address (`--address`) and port (`--port`). If not
 configured, their default values are `0.0.0.0` and `8081` respectively.
 
 One or several Servers will be able to open N number of sessions to a Client working as Listener at the same time.
@@ -598,7 +650,7 @@ The main two reasons for using a Slider Client on Listener mode are:
 * The Server is located on a private network and a regular Client would not be able to reach it.
 * Several Servers may want to collaborate on the same Client or use a particular Client as a gateway.
 
-##### `-fingerprint`:
+##### `--fingerprint`:
 A Slider fingerprint represents a sha256sum string of a base64 encoded public key.
 
 This flag could either be a fingerprint string or a file containing a list fingerprints, each one of them representing
@@ -610,34 +662,42 @@ Same considerations as in Server HTTP flags documentation applies.
 
 #### Reverse Client Flags
 
-##### `-retry`:
-A Reverse Client configured with the `-retry` flag will try to reconnect to the server according to its `-keepalive` 
-value. You will very likely want to tune `-keepalive` to either short reconnection intervals or expand them fitting 
+##### `--retry`:
+A Reverse Client configured with the `--retry` flag will try to reconnect to the server according to its `--keepalive` 
+value. You will very likely want to tune `--keepalive` to either short reconnection intervals or expand them fitting 
 your needs.
 
-Enabling `-retry` will only have an effect if the Client was able to connect to the Server at least once, in other words, 
+Enabling `--retry` will only have an effect if the Client was able to connect to the Server at least once, in other words, 
 if the Client fails to connect to the Server on the first run it will terminate its execution as usual.
 
-Combining Client `-retry` with Server `-auth` and maintaining different Certificate Jar Files, is a great way to work 
+Combining Client `--retry` with Server `--auth` and maintaining different Certificate Jar Files, is a great way to work 
 between different "Workspaces" where using one Certificate Jar or another will determine what Clients will automatically
 reconnect to your Server and create a Session.
 
-##### `-key`:
+##### `--key`:
 A Slider Key represents an Ed25519 private key base64 encoded.
 
-Keys will only be used against a Server with authentication enabled otherwise will be disregarded.
+Keys will only be used against a Server with authentication enabled, otherwise they will be disregarded.
 
 A Client would use a key generated by the Server and stored in its Certificate Jar, since a Client using any
 certificate in the Server Certificate Jar will be authorized to connect.
 
-`-key` offers a way to authenticate Clients on Servers with `-auth` enabled. If the Server was not configured with 
-authentication, providing `-key` won't have any effect.
+`--key` offers a way to authenticate Clients on Servers with `--auth` enabled. If the Server was not configured with 
+authentication, providing `--key` won't have any effect.
 
-##### `-dns`:
+##### `--dns`:
 Allows you to provide a custom DNS to resolve the Server address rather than using the default DNS servers.
 
-##### `-proto`:
-Same considerations as for the server apply.
+##### `--proto`:
+The same considerations as for the server apply.
+
+##### `--tls-cert`, `--tls-key`:
+Authenticate to a server using a specific certificate. This will be required if server uses `--listener-ca` for certificate
+validation. 
+The provided certificate must have been generated using the same CA. 
+
+##### `--listener-cert`, `--listener-key`, `--listener-ca`:
+The same considerations as for the server apply.
 
 
 ## Credits
