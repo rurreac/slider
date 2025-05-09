@@ -490,9 +490,31 @@ func (fsp *FlagSetPack) validateRequiredOne() error {
 }
 
 func (fsp *FlagSetPack) validateConditionExclusion() error {
+	var formattedMain string
 	for _, condition := range fsp.conditionExcGrp {
+		skipCheck := false
 		setFlagIndices := make(map[int]bool)
 		formattedNames := make([]string, 0)
+
+		for _, info := range fsp.flagList {
+			if info.shortFlag == condition.conditionFlag || info.longFlag == condition.conditionFlag {
+				if info.shortFlag != "" && info.longFlag != "" {
+					formattedMain = fmt.Sprintf("-%s/--%s", info.shortFlag, info.longFlag)
+				} else if info.shortFlag != "" {
+					formattedMain = fmt.Sprintf("-%s", info.shortFlag)
+				} else {
+					formattedMain = fmt.Sprintf("--%s", info.longFlag)
+				}
+				if (info.shortFlag != "" && flagIsDefined(fsp.Set, info.shortFlag)) ||
+					(info.longFlag != "" && flagIsDefined(fsp.Set, info.longFlag)) {
+					skipCheck = true
+					break
+				}
+			}
+		}
+		if skipCheck {
+			continue
+		}
 
 		for i, name := range condition.excludeFlags {
 			for _, info := range fsp.flagList {
@@ -523,10 +545,10 @@ func (fsp *FlagSetPack) validateConditionExclusion() error {
 
 		if condition.isEnabled {
 			return fmt.Errorf("flag(s) %s require flag %s enabled",
-				strings.Join(formattedNames, ", "), condition.conditionFlag)
+				strings.Join(formattedNames, ", "), formattedMain)
 		} else {
 			return fmt.Errorf("flag(s) %s require flag %s disabled",
-				strings.Join(formattedNames, ", "), condition.conditionFlag)
+				strings.Join(formattedNames, ", "), formattedMain)
 		}
 	}
 
