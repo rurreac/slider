@@ -271,9 +271,9 @@ func NewServer(args []string) {
 		}
 	}
 
+	s.Logger.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
 	go func() {
 		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
-		s.Logger.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
 
 		if tlsOn {
 			httpSrv := &http.Server{
