@@ -525,8 +525,8 @@ func (s *server) certsCommand(args ...string) {
 	certsFlags := sflag.NewFlagPack([]string{certsCmd}, certsUsage, certsDesc, s.console.Term)
 	cNew, _ := certsFlags.NewBoolFlag("n", "new", false, "Generate a new Key Pair")
 	cRemove, _ := certsFlags.NewIntFlag("r", "remove", 0, "Remove matching index from the Certificate Jar")
-	cSSH, _ := certsFlags.NewIntFlag("d", "dump", 0, "Dump CertID SSH keys")
-	cCA, _ := certsFlags.NewBoolFlag("c", "ca", false, "Dump CA Certificate")
+	cSSH, _ := certsFlags.NewIntFlag("d", "dump-ssh", 0, "Dump corresponding CertID SSH keys")
+	cCA, _ := certsFlags.NewBoolFlag("c", "dump-ca", false, "Dump CA Certificate and key")
 	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d", "c")
 	certsFlags.Set.Usage = func() {
 		certsFlags.PrintUsage(true)
@@ -654,9 +654,11 @@ func (s *server) certsCommand(args ...string) {
 
 func (s *server) connectCommand(args ...string) {
 	connectFlags := sflag.NewFlagPack([]string{connectCmd}, connectUsage, connectDesc, s.console.Term)
-	cCert, _ := connectFlags.NewInt64Flag("c", "cert", 0, "Specify certID for key authentication")
+	cCert, _ := connectFlags.NewInt64Flag("i", "cert-id", 0, "Specify certID for SSH key authentication")
 	cDNS, _ := connectFlags.NewStringFlag("d", "dns", "", "Use custom DNS resolver")
 	cProto, _ := connectFlags.NewStringFlag("p", "proto", conf.Proto, "Use custom proto")
+	cTlsCert, _ := connectFlags.NewStringFlag("c", "tls-cert", "", "Use custom client TLS certificate")
+	cTlsKey, _ := connectFlags.NewStringFlag("k", "tls-key", "", "Use custom client TLS key")
 	connectFlags.SetExactArgs(1)
 	connectFlags.Set.Usage = func() {
 		connectFlags.PrintUsage(true)
@@ -683,7 +685,7 @@ func (s *server) connectCommand(args ...string) {
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto)
+	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
 
 	for {
 		select {

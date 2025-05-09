@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,9 +93,19 @@ func NewClient(args []string) {
 	httpHealth, _ := clientFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
 	customDNS, _ := clientFlags.NewStringFlag("", "dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
 	customProto, _ := clientFlags.NewStringFlag("", "proto", conf.Proto, "Set your own proto string")
+	listenerCert, _ := clientFlags.NewStringFlag("", "listener-cert", "", "Certificate for SSL listener")
+	listenerKey, _ := clientFlags.NewStringFlag("", "listener-key", "", "Key for SSL listener")
+	listenerCA, _ := clientFlags.NewStringFlag("", "listener-ca", "", "CA for verifying client certificates")
+	clientTlsCert, _ := clientFlags.NewStringFlag("", "tls-cert", "", "TLS client Certificate")
+	clientTlsKey, _ := clientFlags.NewStringFlag("", "tls-key", "", "TLS client Key")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "key")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "dns")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "retry")
+	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-cert")
+	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-key")
+	clientFlags.MarkFlagsRequiresFlag("listener-cert", "listener", "listener-key")
+	clientFlags.MarkFlagsRequiresFlag("listener-key", "listener", "listener-cert")
+	clientFlags.MarkFlagsRequiresFlag("listener-ca", "listener", "listener-cert", "listener-key")
 	clientFlags.MarkFlagsConditionExclusive(
 		"listener",
 		false,
@@ -107,6 +118,9 @@ func NewClient(args []string) {
 		"http-status-code",
 		"http-version",
 		"http-health",
+		"listener-cert",
+		"listener-key",
+		"listener-ca",
 	)
 	clientFlags.Set.Usage = func() {
 		clientFlags.PrintUsage(false)
@@ -212,13 +226,46 @@ func NewClient(args []string) {
 			c.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 		}
 
+		tlsOn := false
+		tlsConfig := &tls.Config{}
+		listenerProto := "tcp"
+		if *listenerCert != "" && *listenerKey != "" {
+			tlsOn = true
+			listenerProto = "tls"
+			if *listenerCA != "" {
+				c.Logger.Warnf("Using CA \"%s\" for TLS client verification", *listenerCA)
+				caPem, rfErr := os.ReadFile(*listenerCA)
+				if rfErr != nil {
+					c.Logger.Fatalf("Failed to read CA file: %v", rfErr)
+				}
+				if len(caPem) == 0 {
+					c.Logger.Fatalf("CA file is empty")
+				}
+				tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
+			}
+		}
+
 		go func() {
 			handler := http.Handler(http.HandlerFunc(c.handleHTTPConn))
-			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
-				c.Logger.Fatalf("%s", sErr)
+
+			if tlsOn {
+				httpSrv := &http.Server{
+					Addr:      clientAddr.String(),
+					TLSConfig: tlsConfig,
+					ErrorLog:  slog.NewDummyLog(),
+				}
+				httpSrv.Handler = handler
+				if sErr := httpSrv.ListenAndServeTLS(*listenerCert, *listenerKey); sErr != nil {
+					c.Logger.Fatalf("TLS Listener error: %s", sErr)
+				}
+				return
 			}
+			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
+				c.Logger.Fatalf("Listener error: %s", sErr)
+			}
+
 		}()
-		c.Logger.Infof("Listening on %s://%s", clientAddr.Network(), clientAddr.String())
+		c.Logger.Infof("Listening on %s://%s", listenerProto, clientAddr.String())
 		<-shutdown
 	} else {
 		argNumber := len(clientFlags.Set.Args())
@@ -234,6 +281,11 @@ func NewClient(args []string) {
 
 		c.serverURL = su
 		c.wsConfig = conf.DefaultWebSocketDialer
+		tlsCert, lErr := tls.LoadX509KeyPair(*clientTlsCert, *clientTlsKey)
+		if lErr != nil {
+			c.Logger.Fatalf("Failed to load TLS certificate: %v", lErr)
+		}
+		c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 
 		for loop := true; loop; {
 			c.startConnection(*customDNS)
