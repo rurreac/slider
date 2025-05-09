@@ -181,13 +181,13 @@ By default, Slider pings every Client Session (every 60s) to ensure its availabl
 This value can be changed to any other duration value. If the value introduced is inferior to 5s, Slider will override
 it to this one.
 
-##### `--keypath` and `--keystore`:
-By default, everytime Slider Server is executed, a new in memory KeyPair is generated, and so it's lost on termination.
+##### `--ca-store-path` and `--ca-store`:
+By default, everytime Slider Server is executed, new in memory KeyPair and CA are generated, and so it's lost on termination.
 
-When the flag `--keystore` is provided, Slider will store a new KeyPair in disk, but:
-1. If `--keypath` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
+When the flag `--ca-store` is provided, Slider will store a new KeyPair in disk, but:
+1. If `--ca-store-path` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
    then it will be loaded instead or overriding it.
-2. If `--keypath` was provided:
+2. If `--ca-store-path` was provided:
     1. If the path exists, Slider will attempt to load its KeyPair.
     2. If the path does not exist, Slider will save a new KeyPair in this path.
 
