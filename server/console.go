@@ -989,9 +989,9 @@ func (s *server) shellCommand(args ...string) {
 func (s *server) portFwdCommand(args ...string) {
 	portFwdFlags := sflag.NewFlagPack([]string{portFwdCmd}, portFwdUsage, portFwdDesc, s.console.Term)
 	pSession, _ := portFwdFlags.NewIntFlag("s", "session", 0, "Session ID to add or remove Port Forwarding")
+	pLocal, _ := portFwdFlags.NewBoolFlag("L", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
 	pReverse, _ := portFwdFlags.NewBoolFlag("R", "reverse", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
 	pRemove, _ := portFwdFlags.NewBoolFlag("r", "remove", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
-	pLocal, _ := portFwdFlags.NewBoolFlag("L", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
 	portFwdFlags.MarkFlagsRequireArgs("R", 1)
 	portFwdFlags.MarkFlagsRequireArgs("L", 1)
 	portFwdFlags.MarkFlagsRequireArgs("r", 1)
@@ -1051,6 +1051,8 @@ func (s *server) portFwdCommand(args ...string) {
 						mapping.SrcHost, int(mapping.SrcPort),
 					)
 				}
+				_, _ = fmt.Fprintln(tw)
+				_ = tw.Flush()
 			}
 
 			localMappings := sItem.SSHInstance.GetLocalMappings()
