@@ -228,3 +228,22 @@ func (ca *CertificateAuthority) GetTLSServerConfig(serverCert *GeneratedCertific
 
 	return tlsConfig
 }
+
+// GetTLSClientVerifiedConfig returns a TLS config for a server using a provided CA
+func GetTLSClientVerifiedConfig(caCert []byte) *tls.Config {
+	// Create a cert pool and add the CA's cert to it
+	certPool := x509.NewCertPool()
+	certPool.AppendCertsFromPEM(caCert)
+
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+		CipherSuites: []uint16{
+			tls.TLS_AES_256_GCM_SHA384,
+		},
+	}
+
+	tlsConfig.ClientCAs = certPool
+	tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
+
+	return tlsConfig
+}
