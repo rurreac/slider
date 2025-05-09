@@ -348,6 +348,6 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 		session.Logger.Debugf("SFTP client connection closed")
 	}()
 
-	session.Logger.Infof("SFTP client connected successfully")
+	session.Logger.Debugf("SFTP client connected successfully")
 	return client, nil
 }
