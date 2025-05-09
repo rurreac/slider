@@ -267,15 +267,16 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 	return request.Reply(ok, payload)
 }
 
-func (session *Session) socksEnable(port int, exposePort bool) {
+func (session *Session) socksEnable(port int, exposePort bool, notifier chan error) {
 	session.SocksInstance.SetExpose(exposePort)
 
 	if sErr := session.SocksInstance.StartEndpoint(port); sErr != nil {
-		session.Logger.Errorf(session.LogPrefix+"Socks - %v", sErr)
+		notifier <- sErr
 	}
+
 }
 
-func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, interactiveOn bool) {
+func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, interactiveOn bool, notifier chan error) {
 	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
 	session.ShellInstance.SetExpose(exposePort)
 
@@ -286,17 +287,17 @@ func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, inter
 			defer session.ShellInstance.SetInteractiveOn(false)
 		}
 		if sErr := session.ShellInstance.StartTLSEndpoint(port); sErr != nil {
-			session.Logger.Errorf(session.LogPrefix+"SHELL(TLS) - %v", sErr)
+			notifier <- sErr
 		}
 	} else {
 		if sErr := session.ShellInstance.StartEndpoint(port); sErr != nil {
-			session.Logger.Errorf(session.LogPrefix+"SHELL - %v", sErr)
+			notifier <- sErr
 		}
 	}
 
 }
 
-func (session *Session) sshEnable(port int, exposePort bool) {
+func (session *Session) sshEnable(port int, exposePort bool, notifier chan error) {
 	if session.SSHInstance.AuthOn {
 		session.SSHInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
 	}
@@ -304,8 +305,7 @@ func (session *Session) sshEnable(port int, exposePort bool) {
 	session.SSHInstance.SetExpose(exposePort)
 
 	if sErr := session.SSHInstance.StartEndpoint(port); sErr != nil {
-		session.Logger.Errorf(session.LogPrefix+"SSH - %v", sErr)
-		return
+		notifier <- sErr
 	}
 }
 
