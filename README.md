@@ -516,16 +516,19 @@ Usually if the Server was run with `--auth` enabled there will be at least 1 Key
 The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
 Server.
 
-Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
-by default, it will be stored locally, and you'll get the path.
-If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
-
 Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. Using the `-d`
 flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH
 endpoint (ssh, sftp, scp, ...).
 
+Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
+by default, it will be stored locally, and you'll get the path.
+If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
+
 We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates
 for creating TLS listeners.
+If the server was run with the `--ca-store` flag, the CA certificate and key will be saved to disk, otherwise since it
+is ephemeral it will be just dump to the console.
+
 If we generated our own certificates for server or client listeners with this CA, we can also provide this CA to authenticate
 listener client certificates.
 
