@@ -239,7 +239,7 @@ func (fsp *FlagSetPack) MarkFlagsMutuallyExclusive(flagNames ...string) {
 	fsp.exclusionGrp = append(fsp.exclusionGrp, flagNames)
 }
 
-func (fsp *FlagSetPack) MarkFlagsRequiresFlag(flagName string, flagsRequired ...string) {
+func (fsp *FlagSetPack) MarkFlagRequiresFlags(flagName string, flagsRequired ...string) {
 	if flagName == "" {
 		panic("Flag can not be blank")
 	}
