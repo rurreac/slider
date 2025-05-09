@@ -281,11 +281,13 @@ func NewClient(args []string) {
 
 		c.serverURL = su
 		c.wsConfig = conf.DefaultWebSocketDialer
-		tlsCert, lErr := tls.LoadX509KeyPair(*clientTlsCert, *clientTlsKey)
-		if lErr != nil {
-			c.Logger.Fatalf("Failed to load TLS certificate: %v", lErr)
+		if *clientTlsCert != "" || *clientTlsKey != "" {
+			tlsCert, lErr := tls.LoadX509KeyPair(*clientTlsCert, *clientTlsKey)
+			if lErr != nil {
+				c.Logger.Fatalf("Failed to load TLS certificate: %v", lErr)
+			}
+			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 		}
-		c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 
 		for loop := true; loop; {
 			c.startConnection(*customDNS)
