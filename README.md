@@ -534,6 +534,29 @@ listener client certificates.
 
 ![Console Certs](./doc/console_certs.gif)
 
+##### Portfwd
+```
+Slider# portfwd -h
+Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>
+
+  -s, --session  Session ID to add or remove Port Forwarding (default 0)                                          
+  -L, --local    Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port> (default false)        
+  -R, --reverse  Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port> (default false)  
+  -r, --remove   Remove Port Forwarding from port passed as argument (requires L or R) (default false)            
+
+Mutually exclusive flags:
+
+  -L/--local, -R/--reverse 
+```
+Allows creating / removing Local and Remote port forwards dynamically over a specific session.
+
+Running the command without arguments will display all Port Forwards.
+* Any Remote Port forward that has been created through an SSH endpoint will be displayed as well. Its destination 
+information won't be displayed as that is known only within the context of the SSH client.
+* Terminating a Remote Port forward created through an SSH endpoint won't be allowed.
+* Any Local Port Forward created through an SSH endpoint won't be displayed since the endpoint creation is handled within 
+the SSH client.
+
 ## Client
 
 ```
