@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/url"
 	"slider/pkg/conf"
@@ -58,7 +59,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string, customProto string) {
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
 	wsURL, wErr := conf.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.Logger.Errorf("Failed to convert %s to WebSocket URL: %v", clientUrl.String(), wErr)
@@ -79,6 +80,15 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 	wsConfig := conf.DefaultWebSocketDialer
 	if wsURL.Scheme == "wss" {
 		wsConfig.TLSClientConfig.InsecureSkipVerify = true
+		if tlsCertPath != "" && tlsKeyPath != "" {
+			cert, lErr := tls.LoadX509KeyPair(tlsCertPath, tlsKeyPath)
+			if lErr != nil {
+				s.Logger.Errorf("Failed to load TLS certificate: %v", lErr)
+				return
+			}
+			wsConfig.TLSClientConfig.Certificates = []tls.Certificate{cert}
+		}
+
 	}
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
 		"Sec-WebSocket-Protocol":  {customProto},
@@ -97,7 +107,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 	session.setListenerOn(true)
 	session.addSessionNotifier(notifier)
 
-	// Create new ssh server configuration
+	// Create a new ssh server configuration
 	sshConf := *s.sshConf
 	if certID != 0 {
 		keyPair, kErr := s.getCert(certID)

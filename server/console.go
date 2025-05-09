@@ -525,8 +525,9 @@ func (s *server) certsCommand(args ...string) {
 	certsFlags := sflag.NewFlagPack([]string{certsCmd}, certsUsage, certsDesc, s.console.Term)
 	cNew, _ := certsFlags.NewBoolFlag("n", "new", false, "Generate a new Key Pair")
 	cRemove, _ := certsFlags.NewIntFlag("r", "remove", 0, "Remove matching index from the Certificate Jar")
-	cSSH, _ := certsFlags.NewIntFlag("d", "dump", 0, "Dump CertID SSH keys")
-	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d")
+	cSSH, _ := certsFlags.NewIntFlag("d", "dump-ssh", 0, "Dump corresponding CertID SSH keys")
+	cCA, _ := certsFlags.NewBoolFlag("c", "dump-ca", false, "Dump CA Certificate and key")
+	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d", "c")
 	certsFlags.Set.Usage = func() {
 		certsFlags.PrintUsage(true)
 	}
@@ -543,7 +544,7 @@ func (s *server) certsCommand(args ...string) {
 	twl.Init(s.console.Term, 0, 4, 2, ' ', 0)
 
 	// If no flags are set, list all certificates
-	if (!*cNew && *cRemove == 0 && *cSSH == 0) || (len(args) == 0) {
+	if (!*cNew && *cRemove == 0 && *cSSH == 0 && !*cCA) || (len(args) == 0) {
 		if len(s.certTrack.Certs) > 0 {
 			var keys []int
 			for i := range s.certTrack.Certs {
@@ -580,23 +581,49 @@ func (s *server) certsCommand(args ...string) {
 	if *cSSH != 0 {
 		if keyPair, err := s.getCert(int64(*cSSH)); err == nil {
 			if s.certSaveOn {
-				if keyPath, pErr := s.savePrivateKey(int64(*cSSH)); pErr != nil {
-					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
-				} else {
-					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				pvKeyPath, pvErr := s.savePrivateKey(int64(*cSSH))
+				if pvErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pvErr)
+					return
+
 				}
-				if keyPath, pErr := s.savePublicKey(int64(*cSSH)); pErr != nil {
-					s.console.PrintlnErrorStep("Failed to save private key - %s", pErr)
-				} else {
-					s.console.PrintlnOkStep("Private Key saved to %s", keyPath)
+				pbKeyPath, pbErr := s.savePublicKey(int64(*cSSH))
+				if pbErr != nil {
+					s.console.PrintlnErrorStep("Failed to save private key - %s", pbErr)
+					return
 				}
+				s.console.PrintlnOkStep("Private Key saved to %s", pvKeyPath)
+				s.console.PrintlnOkStep("Public Key saved to %s", pbKeyPath)
 				return
 			}
+			s.console.PrintlnWarnStep("Current Certificates are not persistent, dumping to console")
 			s.console.PrintlnOkStep("SSH Private Key\n%s", keyPair.SSHPrivateKey)
 			s.console.PrintlnOkStep("SSH Public Key\n%s", keyPair.SSHPublicKey)
 			return
 		}
 		s.console.PrintlnErrorStep("Certificate ID %d not found", *cSSH)
+		return
+	}
+
+	if *cCA {
+		if s.caStoreOn {
+			caCertPath, cErr := s.saveCACert()
+			if cErr != nil {
+				s.console.PrintlnErrorStep("Failed to save CA certificate - %s", cErr)
+				return
+			}
+			caKeyPath, kErr := s.saveCAKey()
+			if kErr != nil {
+				s.console.PrintlnErrorStep("Failed to save CA certificate - %s", kErr)
+				return
+			}
+			s.console.PrintlnOkStep("CA Certificate saved to %s", caCertPath)
+			s.console.PrintlnOkStep("CA Certificate saved to %s", caKeyPath)
+			return
+		}
+		s.console.PrintlnWarnStep("Current CA certificate is not persistent, dumping to console")
+		s.console.PrintlnOkStep("CA Cert:\n%s", s.CertificateAuthority.CertPEM)
+		s.console.PrintlnOkStep("CA Key:\n%s", s.CertificateAuthority.KeyPEM)
 		return
 	}
 
@@ -627,9 +654,11 @@ func (s *server) certsCommand(args ...string) {
 
 func (s *server) connectCommand(args ...string) {
 	connectFlags := sflag.NewFlagPack([]string{connectCmd}, connectUsage, connectDesc, s.console.Term)
-	cCert, _ := connectFlags.NewInt64Flag("c", "cert", 0, "Specify certID for key authentication")
+	cCert, _ := connectFlags.NewInt64Flag("i", "cert-id", 0, "Specify certID for SSH key authentication")
 	cDNS, _ := connectFlags.NewStringFlag("d", "dns", "", "Use custom DNS resolver")
 	cProto, _ := connectFlags.NewStringFlag("p", "proto", conf.Proto, "Use custom proto")
+	cTlsCert, _ := connectFlags.NewStringFlag("c", "tls-cert", "", "Use custom client TLS certificate")
+	cTlsKey, _ := connectFlags.NewStringFlag("k", "tls-key", "", "Use custom client TLS key")
 	connectFlags.SetExactArgs(1)
 	connectFlags.Set.Usage = func() {
 		connectFlags.PrintUsage(true)
@@ -656,7 +685,7 @@ func (s *server) connectCommand(args ...string) {
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto)
+	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
 
 	for {
 		select {
