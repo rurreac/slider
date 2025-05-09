@@ -103,9 +103,9 @@ func NewClient(args []string) {
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "retry")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-cert")
 	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-key")
-	clientFlags.MarkFlagsRequiresFlag("listener-cert", "listener", "listener-key")
-	clientFlags.MarkFlagsRequiresFlag("listener-key", "listener", "listener-cert")
-	clientFlags.MarkFlagsRequiresFlag("listener-ca", "listener", "listener-cert", "listener-key")
+	clientFlags.MarkFlagRequiresFlags("listener-cert", "listener", "listener-key")
+	clientFlags.MarkFlagRequiresFlags("listener-key", "listener", "listener-cert")
+	clientFlags.MarkFlagRequiresFlags("listener-ca", "listener", "listener-cert", "listener-key")
 	clientFlags.MarkFlagsConditionExclusive(
 		"listener",
 		false,

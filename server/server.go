@@ -85,9 +85,9 @@ func NewServer(args []string) {
 	listenerCert, _ := serverFlags.NewStringFlag("", "listener-cert", "", "Certificate for SSL listener")
 	listenerKey, _ := serverFlags.NewStringFlag("", "listener-key", "", "Key for SSL listener")
 	listenerCA, _ := serverFlags.NewStringFlag("", "listener-ca", "", "CA for verifying client certificates")
-	serverFlags.MarkFlagsRequiresFlag("listener-cert", "listener-key")
-	serverFlags.MarkFlagsRequiresFlag("listener-key", "listener-cert")
-	serverFlags.MarkFlagsRequiresFlag("listener-ca", "listener-cert", "listener-key")
+	serverFlags.MarkFlagRequiresFlags("listener-cert", "listener-key")
+	serverFlags.MarkFlagRequiresFlags("listener-key", "listener-cert")
+	serverFlags.MarkFlagRequiresFlags("listener-ca", "listener-cert", "listener-key")
 	serverFlags.Set.Usage = func() {
 		serverFlags.PrintUsage(false)
 	}
