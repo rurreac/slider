@@ -1,12 +1,9 @@
 package main
 
 import (
-	"flag"
-	"slider/client"
+	"slider/cmd"
 )
 
 func main() {
-	flag.Parse()
-	var flags = flag.Args()
-	client.NewClient(flags)
+	cmd.Execute()
 }
