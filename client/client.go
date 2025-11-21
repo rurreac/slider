@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/armon/go-socks5"
 	"io"
 	"net"
 	"net/http"
@@ -19,13 +17,14 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
-	"slider/pkg/sflag"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/armon/go-socks5"
 
 	"github.com/gorilla/websocket"
 	"github.com/pkg/sftp"
@@ -72,243 +71,6 @@ const (
 )
 
 var shutdown = make(chan bool, 1)
-
-func NewClient(args []string) {
-	defer close(shutdown)
-	clientFlags := sflag.NewFlagPack([]string{"client"}, clientUsage, "", os.Stdout)
-	verbose, _ := clientFlags.NewStringFlag("", "verbose", "info", "Adds verbosity [debug|info|warn|error|off]")
-	keepalive, _ := clientFlags.NewDurationFlag("", "keepalive", conf.Keepalive, "Sets keepalive interval in seconds.")
-	colorless, _ := clientFlags.NewBoolFlag("", "colorless", false, "Disables logging colors")
-	fingerprint, _ := clientFlags.NewStringFlag("", "fingerprint", "", "Server fingerprint for host verification (listener)")
-	key, _ := clientFlags.NewStringFlag("", "key", "", "Private key for authenticating to a Server")
-	listener, _ := clientFlags.NewBoolFlag("", "listener", false, "Client will listen for incoming Server connections")
-	port, _ := clientFlags.NewIntFlag("", "port", 8081, "Listener port")
-	address, _ := clientFlags.NewStringFlag("", "address", "0.0.0.0", "Address the Listener will bind to")
-	retry, _ := clientFlags.NewBoolFlag("", "retry", false, "Retries reconnection indefinitely")
-	templatePath, _ := clientFlags.NewStringFlag("", "http-template", "", "Path of a default file to serve (listener)")
-	serverHeader, _ := clientFlags.NewStringFlag("", "http-server-header", "", "Sets a server header value (listener)")
-	httpRedirect, _ := clientFlags.NewStringFlag("", "http-redirect", "", "Redirects incoming HTTP to given URL (listener)")
-	statusCode, _ := clientFlags.NewIntFlag("", "http-status-code", 200, "Template Status code [200|301|302|400|401|403|500|502|503] (listener)")
-	httpVersion, _ := clientFlags.NewBoolFlag("", "http-version", false, "Enables /version HTTP path")
-	httpHealth, _ := clientFlags.NewBoolFlag("", "http-health", false, "Enables /health HTTP path")
-	customDNS, _ := clientFlags.NewStringFlag("", "dns", "", "Uses custom DNS server <host[:port]> for resolving server address")
-	customProto, _ := clientFlags.NewStringFlag("", "proto", conf.Proto, "Set your own proto string")
-	listenerCert, _ := clientFlags.NewStringFlag("", "listener-cert", "", "Certificate for SSL listener")
-	listenerKey, _ := clientFlags.NewStringFlag("", "listener-key", "", "Key for SSL listener")
-	listenerCA, _ := clientFlags.NewStringFlag("", "listener-ca", "", "CA for verifying client certificates")
-	clientTlsCert, _ := clientFlags.NewStringFlag("", "tls-cert", "", "TLS client Certificate")
-	clientTlsKey, _ := clientFlags.NewStringFlag("", "tls-key", "", "TLS client Key")
-	clientFlags.MarkFlagsMutuallyExclusive("listener", "key")
-	clientFlags.MarkFlagsMutuallyExclusive("listener", "dns")
-	clientFlags.MarkFlagsMutuallyExclusive("listener", "retry")
-	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-cert")
-	clientFlags.MarkFlagsMutuallyExclusive("listener", "tls-key")
-	clientFlags.MarkFlagRequiresFlags("listener-cert", "listener", "listener-key")
-	clientFlags.MarkFlagRequiresFlags("listener-key", "listener", "listener-cert")
-	clientFlags.MarkFlagRequiresFlags("listener-ca", "listener", "listener-cert", "listener-key")
-	clientFlags.MarkFlagsConditionExclusive(
-		"listener",
-		false,
-		"address",
-		"port",
-		"fingerprint",
-		"http-template",
-		"http-server-header",
-		"http-redirect",
-		"http-status-code",
-		"http-version",
-		"http-health",
-		"listener-cert",
-		"listener-key",
-		"listener-ca",
-	)
-	clientFlags.Set.Usage = func() {
-		clientFlags.PrintUsage(false)
-	}
-
-	if pErr := clientFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
-			return
-		}
-		fmt.Printf("Flag error: %v\n", pErr)
-		return
-	}
-
-	log := slog.NewLogger("Client")
-	lvErr := log.SetLevel(*verbose)
-	if lvErr != nil {
-		fmt.Printf("wrong log level \"%s\", %s", *verbose, lvErr)
-		return
-	}
-
-	// It is safe to assume that if PTY is On then colors are supported.
-	if interpreter.IsPtyOn() && !*colorless {
-		log.WithColors()
-	}
-
-	c := client{
-		Logger:   log,
-		shutdown: make(chan bool, 1),
-		sessionTrack: &sessionTrack{
-			Sessions: make(map[int64]*Session),
-		},
-		firstRun:    true,
-		customProto: *customProto,
-		listenerConf: &listenerConf{
-			urlRedirect: &url.URL{},
-			httpVersion: *httpVersion,
-			httpHealth:  *httpHealth,
-		},
-	}
-
-	if *keepalive < conf.MinKeepAlive {
-		c.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
-		*keepalive = conf.MinKeepAlive
-	}
-	c.keepalive = *keepalive
-
-	c.sshConfig = &ssh.ClientConfig{
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		ClientVersion:   "SSH-slider-client",
-		Timeout:         conf.Timeout,
-	}
-
-	if *key != "" {
-		if aErr := c.enableKeyAuth(*key); aErr != nil {
-			c.Logger.Fatalf("%s", aErr)
-		}
-	}
-
-	if *fingerprint != "" {
-		if fErr := c.loadFingerPrint(*fingerprint); fErr != nil {
-			c.Logger.Fatalf("%s", fErr)
-		}
-		c.sshConfig.HostKeyCallback = c.verifyServerKey
-	}
-
-	// Check the use of extra headers for added functionality
-	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
-	c.httpHeaders = http.Header{
-		"Sec-WebSocket-Protocol":  {*customProto},
-		"Sec-WebSocket-Operation": {"client"},
-	}
-
-	if *listener {
-		c.isListener = *listener
-		c.listenerConf.serverHeader = *serverHeader
-
-		if *templatePath != "" {
-			tErr := conf.CheckTemplate(*templatePath)
-			if tErr != nil {
-				c.Logger.Fatalf("Wrong template: %s", tErr)
-			}
-			c.listenerConf.templatePath = *templatePath
-		}
-
-		c.listenerConf.statusCode = *statusCode
-		if !conf.CheckStatusCode(*statusCode) {
-			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", *statusCode, http.StatusOK)
-			c.listenerConf.statusCode = http.StatusOK
-		}
-
-		if *httpRedirect != "" {
-			wr, wErr := conf.ResolveURL(*httpRedirect)
-			if wErr != nil {
-				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
-			}
-			c.urlRedirect = wr
-			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.urlRedirect.String())
-		}
-
-		fmtAddress := fmt.Sprintf("%s:%d", *address, *port)
-		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
-		if rErr != nil {
-			c.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
-		}
-
-		tlsOn := false
-		tlsConfig := &tls.Config{}
-		listenerProto := "tcp"
-		if *listenerCert != "" && *listenerKey != "" {
-			tlsOn = true
-			listenerProto = "tls"
-			if *listenerCA != "" {
-				c.Logger.Warnf("Using CA \"%s\" for TLS client verification", *listenerCA)
-				caPem, rfErr := os.ReadFile(*listenerCA)
-				if rfErr != nil {
-					c.Logger.Fatalf("Failed to read CA file: %v", rfErr)
-				}
-				if len(caPem) == 0 {
-					c.Logger.Fatalf("CA file is empty")
-				}
-				tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
-			}
-		}
-
-		go func() {
-			handler := http.Handler(http.HandlerFunc(c.handleHTTPConn))
-
-			if tlsOn {
-				httpSrv := &http.Server{
-					Addr:      clientAddr.String(),
-					TLSConfig: tlsConfig,
-					ErrorLog:  slog.NewDummyLog(),
-				}
-				httpSrv.Handler = handler
-				if sErr := httpSrv.ListenAndServeTLS(*listenerCert, *listenerKey); sErr != nil {
-					c.Logger.Fatalf("TLS Listener error: %s", sErr)
-				}
-				return
-			}
-			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
-				c.Logger.Fatalf("Listener error: %s", sErr)
-			}
-
-		}()
-		c.Logger.Infof("Listening on %s://%s", listenerProto, clientAddr.String())
-		<-shutdown
-	} else {
-		argNumber := len(clientFlags.Set.Args())
-		if argNumber != 1 {
-			fmt.Println("Client requires exactly one valid server address as an argument")
-			return
-		}
-		serverURL := clientFlags.Set.Args()[0]
-		su, uErr := conf.ResolveURL(serverURL)
-		if uErr != nil {
-			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", serverURL)
-		}
-
-		c.serverURL = su
-		c.wsConfig = conf.DefaultWebSocketDialer
-		if *clientTlsCert != "" || *clientTlsKey != "" {
-			tlsCert, lErr := tls.LoadX509KeyPair(*clientTlsCert, *clientTlsKey)
-			if lErr != nil {
-				c.Logger.Fatalf("Failed to load TLS certificate: %v", lErr)
-			}
-			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
-		}
-
-		for loop := true; loop; {
-			c.startConnection(*customDNS)
-
-			// When the Client is not Listener a Server disconnection
-			// will shut down the Client
-			select {
-			case <-shutdown:
-				loop = false
-			default:
-				if !*retry || c.firstRun {
-					loop = false
-					continue
-				}
-				time.Sleep(c.keepalive)
-			}
-		}
-	}
-
-	c.Logger.Printf("Client down...")
-}
 
 func (c *client) startConnection(customDNS string) {
 	wsURL, wErr := conf.FormatToWS(c.serverURL)
