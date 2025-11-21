@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"slices"
 	"slider/pkg/conf"
@@ -20,9 +19,9 @@ func (c *PortFwdCommand) Name() string        { return portFwdCmd }
 func (c *PortFwdCommand) Description() string { return portFwdDesc }
 func (c *PortFwdCommand) Usage() string       { return portFwdUsage }
 
-func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *PortFwdCommand) Run(s *server, args []string, ui UserInterface) error {
 	portFwdFlags := pflag.NewFlagSet(portFwdCmd, pflag.ContinueOnError)
-	portFwdFlags.SetOutput(out)
+	portFwdFlags.SetOutput(ui.Writer())
 
 	pSession := portFwdFlags.IntP("session", "s", 0, "Session ID to add or remove Port Forwarding")
 	pLocal := portFwdFlags.BoolP("local", "L", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
@@ -30,8 +29,8 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 	pRemove := portFwdFlags.BoolP("remove", "r", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
 
 	portFwdFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", portFwdUsage)
-		fmt.Fprintf(out, "%s\n\n", portFwdDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", portFwdUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", portFwdDesc)
 		portFwdFlags.PrintDefaults()
 	}
 
@@ -39,27 +38,27 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
 	// Validate mutual exclusion
 	if portFwdFlags.Changed("local") && portFwdFlags.Changed("reverse") {
-		s.console.PrintlnErrorStep("flags --local and --reverse cannot be used together")
+		ui.PrintError("flags --local and --reverse cannot be used together")
 		return nil
 	}
 
 	// Validate flag requires args
 	if portFwdFlags.Changed("reverse") && portFwdFlags.NArg() != 1 {
-		s.console.PrintlnErrorStep("flag --reverse requires exactly 1 argument(s)")
+		ui.PrintError("flag --reverse requires exactly 1 argument(s)")
 		return nil
 	}
 	if portFwdFlags.Changed("local") && portFwdFlags.NArg() != 1 {
-		s.console.PrintlnErrorStep("flag --local requires exactly 1 argument(s)")
+		ui.PrintError("flag --local requires exactly 1 argument(s)")
 		return nil
 	}
 	if portFwdFlags.Changed("remove") && portFwdFlags.NArg() != 1 {
-		s.console.PrintlnErrorStep("flag --remove requires exactly 1 argument(s)")
+		ui.PrintError("flag --remove requires exactly 1 argument(s)")
 		return nil
 	}
 
@@ -68,7 +67,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 		var sErr error
 		session, sErr = s.getSession(*pSession)
 		if sErr != nil {
-			s.console.PrintlnErrorStep("Unknown Session ID %d", *pSession)
+			ui.PrintError("Unknown Session ID %d", *pSession)
 			return nil
 		}
 	}
@@ -76,7 +75,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 	if portFwdFlags.NArg() == 0 {
 		// List of the Port Forwarding
 		tw := new(tabwriter.Writer)
-		tw.Init(out, 0, 4, 2, ' ', 0)
+		tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 
 		totalGlobalTcpIp := 0
 		sessionList := slices.Collect(maps.Values(s.sessionTrack.Sessions))
@@ -138,38 +137,38 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 				_ = tw.Flush()
 			}
 		}
-		s.console.PrintlnDebugStep("Active Port Forwards: %d\n", totalGlobalTcpIp)
+		ui.PrintInfo("Active Port Forwards: %d\n", totalGlobalTcpIp)
 		return nil
 	}
 
 	if *pLocal {
 		if session == nil {
-			s.console.PrintlnErrorStep("Session ID not specified")
+			ui.PrintError("Session ID not specified")
 			return nil
 		}
 		if *pRemove {
 			port, pErr := parsePort(portFwdFlags.Args()[0])
 			if pErr != nil {
-				s.console.PrintlnErrorStep("Error: %v", pErr)
+				ui.PrintError("Error: %v", pErr)
 				return nil
 			}
 			mapping, mErr := session.SSHInstance.GetLocalPortMapping(port)
 			if mErr != nil {
-				s.console.PrintlnErrorStep("Error: %v", mErr)
+				ui.PrintError("Error: %v", mErr)
 				return nil
 			}
 			mapping.DoneChan <- true
-			s.console.PrintlnOkStep("Local Port forwarding (port %d) removed successfully", port)
+			ui.PrintSuccess("Local Port forwarding (port %d) removed successfully", port)
 			return nil
 
 		}
 		fwdItem := portFwdFlags.Args()[0]
 		msg, pErr := parseForwarding(fwdItem)
 		if pErr != nil {
-			s.console.PrintlnErrorStep("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
+			ui.PrintError("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
 			return nil
 		}
-		s.console.PrintlnDebugStep("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+		ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
 
 		// Receive Errors from Instance
 		notifier := make(chan error, 1)
@@ -184,7 +183,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					s.console.PrintlnErrorStep("Local Port Forward error: %v", nErr)
+					ui.PrintError("Local Port Forward error: %v", nErr)
 					return nil
 				}
 			case <-ticker.C:
@@ -195,10 +194,10 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 						fmt.Printf(".")
 						continue
 					}
-					s.console.PrintlnOkStep("Local Port Forward Endpoint running on port: %d", port)
+					ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
 					return nil
 				} else {
-					s.console.PrintlnErrorStep("Local Port Forward reached Timeout trying to start")
+					ui.PrintError("Local Port Forward reached Timeout trying to start")
 					return nil
 				}
 			}
@@ -207,22 +206,22 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 
 	if *pReverse {
 		if session == nil {
-			s.console.PrintlnErrorStep("Session ID not specified")
+			ui.PrintError("Session ID not specified")
 			return nil
 		}
 
 		if *pRemove {
 			port, pErr := parsePort(portFwdFlags.Args()[0])
 			if pErr != nil {
-				s.console.PrintlnErrorStep("Error: %v", pErr)
+				ui.PrintError("Error: %v", pErr)
 				return nil
 			}
 			sErr := session.SSHInstance.CancelMsgRemoteFwd(port)
 			if sErr != nil {
-				s.console.PrintlnErrorStep("Failed to remove: %v", sErr)
+				ui.PrintError("Failed to remove: %v", sErr)
 				return nil
 			}
-			s.console.PrintlnOkStep("Remote Port forwarding (port %d) removed successfully", port)
+			ui.PrintSuccess("Remote Port forwarding (port %d) removed successfully", port)
 			return nil
 		}
 
@@ -230,10 +229,10 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 		fwdItem := portFwdFlags.Args()[0]
 		msg, pErr := parseForwarding(fwdItem)
 		if pErr != nil {
-			s.console.PrintlnErrorStep("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
+			ui.PrintError("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
 			return nil
 		}
-		s.console.PrintlnDebugStep("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+		ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
 
 		notifier := make(chan error, 1)
 		defer close(notifier)
@@ -246,7 +245,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					s.console.PrintlnErrorStep("Remote Port Forward error: %v", nErr)
+					ui.PrintError("Remote Port Forward error: %v", nErr)
 					return nil
 				}
 			case <-ticker.C:
@@ -257,10 +256,10 @@ func (c *PortFwdCommand) Run(s *server, args []string, out io.Writer) error {
 						fmt.Printf(".")
 						continue
 					}
-					s.console.PrintlnOkStep("Remote Port Forward Endpoint running on port: %d", port)
+					ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
 					return nil
 				} else {
-					s.console.PrintlnErrorStep("Remote Port Forward reached Timeout trying to start")
+					ui.PrintError("Remote Port Forward reached Timeout trying to start")
 					return nil
 				}
 			}

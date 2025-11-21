@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"text/tabwriter"
 
@@ -17,18 +16,18 @@ func (c *SessionsCommand) Name() string        { return sessionsCmd }
 func (c *SessionsCommand) Description() string { return sessionsDesc }
 func (c *SessionsCommand) Usage() string       { return sessionsUsage }
 
-func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error {
 	var list bool
 	sessionsFlags := pflag.NewFlagSet(sessionsCmd, pflag.ContinueOnError)
-	sessionsFlags.SetOutput(out)
+	sessionsFlags.SetOutput(ui.Writer())
 
 	sInteract := sessionsFlags.IntP("interactive", "i", 0, "Start Interactive Slider Shell on a Session ID")
 	sDisconnect := sessionsFlags.IntP("disconnect", "d", 0, "Disconnect Session ID")
 	sKill := sessionsFlags.IntP("kill", "k", 0, "Kill Session ID")
 
 	sessionsFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", sessionsUsage)
-		fmt.Fprintf(out, "%s\n\n", executeDesc) // Note: Original code used executeDesc here, might be a copy-paste error in original code, but keeping it for now or should I fix it? sessionsDesc is better.
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sessionsUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc) // Note: Original code used executeDesc here, might be a copy-paste error in original code, but keeping it for now or should I fix it? sessionsDesc is better.
 		sessionsFlags.PrintDefaults()
 	}
 
@@ -36,7 +35,7 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
@@ -52,7 +51,7 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 		changedCount++
 	}
 	if changedCount > 1 {
-		s.console.PrintlnErrorStep("flags --interactive, --disconnect and --kill cannot be used together")
+		ui.PrintError("flags --interactive, --disconnect and --kill cannot be used together")
 		return nil
 	}
 
@@ -69,7 +68,7 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 			sort.Ints(keys)
 
 			tw := new(tabwriter.Writer)
-			tw.Init(out, 0, 4, 2, ' ', 0)
+			tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 			_, _ = fmt.Fprintf(tw, "\n\tID\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t")
 			_, _ = fmt.Fprintf(tw, "\n\t--\t------\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
 
@@ -135,20 +134,20 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		s.console.PrintlnDebugStep("Active sessions: %d\n", s.sessionTrack.SessionActive)
+		ui.PrintInfo("Active sessions: %d\n", s.sessionTrack.SessionActive)
 		return nil
 	}
 
 	if *sInteract > 0 {
 		session, sessErr := s.getSession(*sInteract)
 		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *sInteract)
+			ui.PrintInfo("Unknown Session ID %d", *sInteract)
 			return nil
 		}
 
 		sftpCli, sErr := session.newSftpClient()
 		if sErr != nil {
-			s.console.PrintlnDebugStep("Failed to create SFTP Client: %v", sErr)
+			ui.PrintInfo("Failed to create SFTP Client: %v", sErr)
 		}
 		defer func() { _ = sftpCli.Close() }()
 		s.newSftpConsole(session, sftpCli)
@@ -168,21 +167,21 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 	if *sDisconnect > 0 {
 		session, sessErr := s.getSession(*sDisconnect)
 		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *sDisconnect)
+			ui.PrintInfo("Unknown Session ID %d", *sDisconnect)
 			return nil
 		}
 		if cErr := session.wsConn.Close(); cErr != nil {
-			s.console.PrintlnErrorStep("Failed to close connection to Session ID %d", session.sessionID)
+			ui.PrintError("Failed to close connection to Session ID %d", session.sessionID)
 			return nil
 		}
-		s.console.PrintlnOkStep("Closed connection to Session ID %d", session.sessionID)
+		ui.PrintSuccess("Closed connection to Session ID %d", session.sessionID)
 		return nil
 	}
 
 	if *sKill > 0 {
 		session, sessErr := s.getSession(*sKill)
 		if sessErr != nil {
-			s.console.PrintlnDebugStep("Unknown Session ID %d", *sKill)
+			ui.PrintInfo("Unknown Session ID %d", *sKill)
 			return nil
 		}
 		var err error
@@ -191,10 +190,10 @@ func (c *SessionsCommand) Run(s *server, args []string, out io.Writer) error {
 			true,
 			nil,
 		); err != nil {
-			s.console.PrintlnErrorStep("Client did not answer properly to the request: %s", err)
+			ui.PrintError("Client did not answer properly to the request: %s", err)
 			return nil
 		}
-		s.console.PrintlnOkStep("SessionID %d terminated gracefully", *sKill)
+		ui.PrintSuccess("SessionID %d terminated gracefully", *sKill)
 
 		return nil
 	}

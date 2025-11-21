@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"io"
 	"text/tabwriter"
 )
 
@@ -12,7 +11,7 @@ type BgCommand struct{}
 func (c *BgCommand) Name() string        { return bgCmd }
 func (c *BgCommand) Description() string { return bgDesc }
 func (c *BgCommand) Usage() string       { return bgCmd }
-func (c *BgCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *BgCommand) Run(s *server, args []string, ui UserInterface) error {
 	s.console.PrintlnInfo("Logging...\n\r")
 	return ErrBackgroundConsole
 }
@@ -23,7 +22,7 @@ type ExitCommand struct{}
 func (c *ExitCommand) Name() string        { return exitCmd }
 func (c *ExitCommand) Description() string { return exitDesc }
 func (c *ExitCommand) Usage() string       { return exitCmd }
-func (c *ExitCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *ExitCommand) Run(s *server, args []string, ui UserInterface) error {
 	return ErrExitConsole
 }
 
@@ -33,9 +32,9 @@ type HelpCommand struct{}
 func (c *HelpCommand) Name() string        { return helpCmd }
 func (c *HelpCommand) Description() string { return helpDesc }
 func (c *HelpCommand) Usage() string       { return helpCmd }
-func (c *HelpCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *HelpCommand) Run(s *server, args []string, ui UserInterface) error {
 	tw := new(tabwriter.Writer)
-	tw.Init(out, 0, 4, 2, ' ', 0)
+	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 

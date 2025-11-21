@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"slider/pkg/conf"
 	"time"
 
@@ -17,9 +16,9 @@ func (c *ConnectCommand) Name() string        { return connectCmd }
 func (c *ConnectCommand) Description() string { return connectDesc }
 func (c *ConnectCommand) Usage() string       { return connectUsage }
 
-func (c *ConnectCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *ConnectCommand) Run(s *server, args []string, ui UserInterface) error {
 	connectFlags := pflag.NewFlagSet(connectCmd, pflag.ContinueOnError)
-	connectFlags.SetOutput(out)
+	connectFlags.SetOutput(ui.Writer())
 
 	cCert := connectFlags.Int64P("cert-id", "i", 0, "Specify certID for SSH key authentication")
 	cDNS := connectFlags.StringP("dns", "d", "", "Use custom DNS resolver")
@@ -28,8 +27,8 @@ func (c *ConnectCommand) Run(s *server, args []string, out io.Writer) error {
 	cTlsKey := connectFlags.StringP("tls-key", "k", "", "Use custom client TLS key")
 
 	connectFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", connectUsage)
-		fmt.Fprintf(out, "%s\n\n", connectDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", connectDesc)
 		connectFlags.PrintDefaults()
 	}
 
@@ -37,24 +36,24 @@ func (c *ConnectCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
 	// Validate exact args
 	if connectFlags.NArg() != 1 {
-		s.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", connectFlags.NArg())
+		ui.PrintError("exactly 1 argument(s) required, got %d", connectFlags.NArg())
 		return nil
 	}
 
 	clientURL := connectFlags.Args()[0]
 	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
-		s.console.PrintlnErrorStep("Failed to resolve URL: %v", uErr)
+		ui.PrintError("Failed to resolve URL: %v", uErr)
 		return nil
 	}
 
-	s.console.PrintlnDebugStep("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
+	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
 	notifier := make(chan bool, 1)
 	timeout := time.Now().Add(conf.Timeout)
@@ -66,17 +65,17 @@ func (c *ConnectCommand) Run(s *server, args []string, out io.Writer) error {
 		select {
 		case success := <-notifier:
 			if success {
-				s.console.PrintlnOkStep("Connection established")
+				ui.PrintSuccess("Connection established")
 				return nil
 			}
-			s.console.PrintlnErrorStep("Connection failed")
+			ui.PrintError("Connection failed")
 			return nil
 		case <-ticker.C:
 			if time.Now().Before(timeout) {
 				fmt.Printf(".")
 				continue
 			} else {
-				s.console.PrintlnErrorStep("Connection Timeout")
+				ui.PrintError("Connection Timeout")
 				return nil
 			}
 		}

@@ -139,7 +139,7 @@ func (s *server) NewConsole() string {
 			}
 		}
 
-		err = s.commandRegistry.Execute(s, fCmd, args[1:], s.console.Term)
+		err = s.commandRegistry.Execute(s, fCmd, args[1:], &s.console)
 		if err != nil {
 			if errors.Is(err, ErrExitConsole) {
 				out = exitCmd

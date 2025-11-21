@@ -20,9 +20,9 @@ func (c *ShellCommand) Name() string        { return shellCmd }
 func (c *ShellCommand) Description() string { return shellDesc }
 func (c *ShellCommand) Usage() string       { return shellUsage }
 
-func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 	shellFlags := pflag.NewFlagSet(shellCmd, pflag.ContinueOnError)
-	shellFlags.SetOutput(out)
+	shellFlags.SetOutput(ui.Writer())
 
 	sSession := shellFlags.IntP("session", "s", 0, "Target Session ID for the shell")
 	sPort := shellFlags.IntP("port", "p", 0, "Use this port number as local Listener, otherwise randomly selected")
@@ -32,8 +32,8 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 	sExpose := shellFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	shellFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", shellUsage)
-		fmt.Fprintf(out, "%s\n\n", shellDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", shellUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", shellDesc)
 		shellFlags.PrintDefaults()
 	}
 
@@ -41,43 +41,43 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
 	// Validate one required
 	if !shellFlags.Changed("session") && !shellFlags.Changed("kill") {
-		s.console.PrintlnErrorStep("one of the flags --session or --kill must be set")
+		ui.PrintError("one of the flags --session or --kill must be set")
 		return nil
 	}
 
 	// Validate mutual exclusion
 	if shellFlags.Changed("session") && shellFlags.Changed("kill") {
-		s.console.PrintlnErrorStep("flags --session and --kill cannot be used together")
+		ui.PrintError("flags --session and --kill cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("port") {
-		s.console.PrintlnErrorStep("flags --kill and --port cannot be used together")
+		ui.PrintError("flags --kill and --port cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("interactive") {
-		s.console.PrintlnErrorStep("flags --kill and --interactive cannot be used together")
+		ui.PrintError("flags --kill and --interactive cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("tls") {
-		s.console.PrintlnErrorStep("flags --kill and --tls cannot be used together")
+		ui.PrintError("flags --kill and --tls cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("expose") {
-		s.console.PrintlnErrorStep("flags --kill and --expose cannot be used together")
+		ui.PrintError("flags --kill and --expose cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("interactive") && shellFlags.Changed("expose") {
-		s.console.PrintlnErrorStep("flags --interactive and --expose cannot be used together")
+		ui.PrintError("flags --interactive and --expose cannot be used together")
 		return nil
 	}
 	if shellFlags.Changed("interactive") && shellFlags.Changed("tls") {
-		s.console.PrintlnErrorStep("flags --interactive and --tls cannot be used together")
+		ui.PrintError("flags --interactive and --tls cannot be used together")
 		return nil
 	}
 
@@ -86,36 +86,36 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 	sessionID := *sSession + *sKill
 	session, sessErr = s.getSession(sessionID)
 	if sessErr != nil {
-		s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
+		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
 	}
 
 	if *sKill > 0 {
 		if session.ShellInstance.IsEnabled() {
 			if err := session.ShellInstance.Stop(); err != nil {
-				s.console.PrintlnErrorStep("%v", err)
+				ui.PrintError("%v", err)
 				return nil
 			}
-			s.console.PrintlnOkStep("Shell Endpoint gracefully stopped")
+			ui.PrintSuccess("Shell Endpoint gracefully stopped")
 			return nil
 		}
-		s.console.PrintlnDebugStep("No Shell Server on Session ID %d", *sKill)
+		ui.PrintInfo("No Shell Server on Session ID %d", *sKill)
 		return nil
 	}
 
 	if *sSession > 0 {
 		if session.ShellInstance.IsEnabled() {
 			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
-				s.console.PrintlnErrorStep("Shell Endpoint already running on port: %d", port)
+				ui.PrintError("Shell Endpoint already running on port: %d", port)
 			}
 			return nil
 		}
 
 		if *sInteractive {
-			s.console.PrintlnDebugStep("Enabling Interactive Shell Endpoint in the background")
+			ui.PrintInfo("Enabling Interactive Shell Endpoint in the background")
 			*sTls = true
 		} else {
-			s.console.PrintlnDebugStep("Enabling Shell Endpoint in the background")
+			ui.PrintInfo("Enabling Shell Endpoint in the background")
 		}
 
 		// Receive Errors from Endpoint
@@ -131,7 +131,7 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					s.console.PrintlnErrorStep("Endpoint error: %v", nErr)
+					ui.PrintError("Endpoint error: %v", nErr)
 					return nil
 				}
 			case <-shellTicker.C:
@@ -141,14 +141,14 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 						fmt.Printf(".")
 						continue
 					}
-					s.console.PrintlnOkStep("Shell Endpoint running on port: %d", port)
+					ui.PrintSuccess("Shell Endpoint running on port: %d", port)
 					if *sInteractive {
-						s.console.PrintlnInfo("Connecting to Shell...")
-						c.interactiveShell(s, port)
+						ui.PrintInfo("Connecting to Shell...")
+						c.interactiveShell(s, port, ui)
 					}
 					return nil
 				} else {
-					s.console.PrintlnErrorStep("Shell Endpoint reached Timeout trying to start")
+					ui.PrintError("Shell Endpoint reached Timeout trying to start")
 					return nil
 				}
 			}
@@ -157,13 +157,13 @@ func (c *ShellCommand) Run(s *server, args []string, out io.Writer) error {
 	return nil
 }
 
-func (c *ShellCommand) interactiveShell(s *server, port int) {
+func (c *ShellCommand) interactiveShell(s *server, port int, ui UserInterface) {
 	// Wait for the server to start
 	time.Sleep(1 * time.Second)
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
-		s.console.PrintlnErrorStep("Failed to connect to shell: %v", err)
+		ui.PrintError("Failed to connect to shell: %v", err)
 		return
 	}
 	defer conn.Close()
@@ -171,7 +171,7 @@ func (c *ShellCommand) interactiveShell(s *server, port int) {
 	// Set console to raw mode
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		s.console.PrintlnErrorStep("Failed to set raw mode: %v", err)
+		ui.PrintError("Failed to set raw mode: %v", err)
 		return
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)

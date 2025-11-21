@@ -3,6 +3,7 @@ package server
 import (
 	"flag"
 	"fmt"
+	"io"
 	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
 	"strings"
@@ -72,8 +73,11 @@ func (c *Console) PrintWarnSelect(selected string, args ...string) {
 	c.Output.Printf("\r%s%s\r\n", msg, strings.Join(args, " "))
 }
 
-func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
-	msg := fmt.Sprintf(m, args...)
+// UserInterface implementation - new interface methods
+
+// PrintInfo displays an informational message with [*] prefix
+func (c *Console) PrintInfo(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	c.Output.Printf(
 		"\r[%s*%s] %s\r\n",
 		blueBrightBold,
@@ -82,8 +86,9 @@ func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
 	)
 }
 
-func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
-	msg := fmt.Sprintf(m, args...)
+// PrintWarn displays a warning message with [!] prefix
+func (c *Console) PrintWarn(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	c.Output.Printf(
 		"\r[%s!%s] %s\r\n",
 		yellowBright,
@@ -92,8 +97,9 @@ func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
 	)
 }
 
-func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
-	msg := fmt.Sprintf(m, args...)
+// PrintError displays an error message with [-] prefix
+func (c *Console) PrintError(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	c.Output.Printf(
 		"\r[%s-%s] %s\r\n",
 		redBold,
@@ -102,14 +108,48 @@ func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
 	)
 }
 
-func (c *Console) PrintlnOkStep(m string, args ...interface{}) {
-	msg := fmt.Sprintf(m, args...)
+// PrintSuccess displays a success message with [+] prefix
+func (c *Console) PrintSuccess(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
 	c.Output.Printf(
 		"\r[%s+%s] %s\r\n",
 		greenBold,
 		resetColor,
 		msg,
 	)
+}
+
+// PrintDebug displays a debug message (alias for PrintInfo)
+func (c *Console) PrintDebug(format string, args ...interface{}) {
+	c.PrintInfo(format, args...)
+}
+
+// Writer returns the underlying writer for structured output
+func (c *Console) Writer() io.Writer {
+	return c.Term
+}
+
+// Deprecated methods - kept temporarily for backward compatibility
+// These will be removed in a follow-up PR
+
+// Deprecated: Use PrintInfo instead
+func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
+	c.PrintInfo(m, args...)
+}
+
+// Deprecated: Use PrintWarn instead
+func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
+	c.PrintWarn(m, args...)
+}
+
+// Deprecated: Use PrintError instead
+func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
+	c.PrintError(m, args...)
+}
+
+// Deprecated: Use PrintSuccess instead
+func (c *Console) PrintlnOkStep(m string, args ...interface{}) {
+	c.PrintSuccess(m, args...)
 }
 
 func (c *Console) Println(m string) {

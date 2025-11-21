@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"slider/pkg/conf"
 	"time"
 
@@ -17,9 +16,9 @@ func (c *SSHCommand) Name() string        { return sshCmd }
 func (c *SSHCommand) Description() string { return sshDesc }
 func (c *SSHCommand) Usage() string       { return sshUsage }
 
-func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *SSHCommand) Run(s *server, args []string, ui UserInterface) error {
 	sshFlags := pflag.NewFlagSet(sshCmd, pflag.ContinueOnError)
-	sshFlags.SetOutput(out)
+	sshFlags.SetOutput(ui.Writer())
 
 	sSession := sshFlags.IntP("session", "s", 0, "Session ID to establish SSH connection with")
 	sPort := sshFlags.IntP("port", "p", 0, "Local port to forward SSH connection to")
@@ -27,8 +26,8 @@ func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
 	sExpose := sshFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	sshFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", sshUsage)
-		fmt.Fprintf(out, "%s\n\n", sshDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sshUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", sshDesc)
 		sshFlags.PrintDefaults()
 	}
 
@@ -36,27 +35,27 @@ func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
 	// Validate one required
 	if !sshFlags.Changed("session") && !sshFlags.Changed("kill") {
-		s.console.PrintlnErrorStep("one of the flags --session or --kill must be set")
+		ui.PrintError("one of the flags --session or --kill must be set")
 		return nil
 	}
 
 	// Validate mutual exclusion
 	if sshFlags.Changed("session") && sshFlags.Changed("kill") {
-		s.console.PrintlnErrorStep("flags --session and --kill cannot be used together")
+		ui.PrintError("flags --session and --kill cannot be used together")
 		return nil
 	}
 	if sshFlags.Changed("kill") && sshFlags.Changed("port") {
-		s.console.PrintlnErrorStep("flags --kill and --port cannot be used together")
+		ui.PrintError("flags --kill and --port cannot be used together")
 		return nil
 	}
 	if sshFlags.Changed("kill") && sshFlags.Changed("expose") {
-		s.console.PrintlnErrorStep("flags --kill and --expose cannot be used together")
+		ui.PrintError("flags --kill and --expose cannot be used together")
 		return nil
 	}
 
@@ -65,31 +64,31 @@ func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
 	sessionID := *sSession + *sKill
 	session, sessErr = s.getSession(sessionID)
 	if sessErr != nil {
-		s.console.PrintlnDebugStep("Unknown Session ID %d", sessionID)
+		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
 	}
 
 	if *sKill > 0 {
 		if session.SSHInstance.IsEnabled() {
 			if err := session.SSHInstance.Stop(); err != nil {
-				s.console.PrintlnErrorStep("%v", err)
+				ui.PrintError("%v", err)
 				return nil
 			}
-			s.console.PrintlnOkStep("SSH Endpoint gracefully stopped")
+			ui.PrintSuccess("SSH Endpoint gracefully stopped")
 			return nil
 		}
-		s.console.PrintlnDebugStep("No SSH Server on Session ID %d", *sKill)
+		ui.PrintInfo("No SSH Server on Session ID %d", *sKill)
 		return nil
 	}
 
 	if *sSession > 0 {
 		if session.SSHInstance.IsEnabled() {
 			if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
-				s.console.PrintlnErrorStep("SSH Endpoint already running on port: %d", port)
+				ui.PrintError("SSH Endpoint already running on port: %d", port)
 			}
 			return nil
 		}
-		s.console.PrintlnDebugStep("Enabling SSH Endpoint in the background")
+		ui.PrintInfo("Enabling SSH Endpoint in the background")
 
 		// Receive Errors from Endpoint
 		notifier := make(chan error, 1)
@@ -104,7 +103,7 @@ func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					s.console.PrintlnErrorStep("Endpoint error: %v", nErr)
+					ui.PrintError("Endpoint error: %v", nErr)
 					return nil
 				}
 			case <-sshTicker.C:
@@ -114,10 +113,10 @@ func (c *SSHCommand) Run(s *server, args []string, out io.Writer) error {
 						fmt.Printf(".")
 						continue
 					}
-					s.console.PrintlnOkStep("SSH Endpoint running on port: %d", port)
+					ui.PrintSuccess("SSH Endpoint running on port: %d", port)
 					return nil
 				} else {
-					s.console.PrintlnErrorStep("SSH Endpoint reached Timeout trying to start")
+					ui.PrintError("SSH Endpoint reached Timeout trying to start")
 					return nil
 				}
 			}

@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 )
@@ -21,9 +20,10 @@ type Command interface {
 	Description() string
 	Usage() string
 	// Run executes the command.
+	// s: server instance providing access to sessions and state
 	// args: the arguments passed to the command
-	// out: writer for command output (decoupling from direct console access)
-	Run(s *server, args []string, out io.Writer) error
+	// ui: user interface for displaying output
+	Run(s *server, args []string, ui UserInterface) error
 }
 
 // CommandRegistry holds the registered commands
@@ -60,9 +60,9 @@ func (r *CommandRegistry) List() []string {
 }
 
 // Execute runs a command if found
-func (r *CommandRegistry) Execute(s *server, name string, args []string, out io.Writer) error {
+func (r *CommandRegistry) Execute(s *server, name string, args []string, ui UserInterface) error {
 	if cmd, ok := r.commands[name]; ok {
-		return cmd.Run(s, args, out)
+		return cmd.Run(s, args, ui)
 	}
 	return fmt.Errorf("unknown command: %s", name)
 }
@@ -98,3 +98,6 @@ func (r *CommandRegistry) Autocomplete(input string) (string, int) {
 // BaseCommand is a helper struct to embed in commands to avoid implementing all methods if not needed
 // (Though currently all methods are needed, this is just a placeholder for future extensibility)
 type BaseCommand struct{}
+
+// Compile-time check to ensure Console implements UserInterface
+var _ UserInterface = (*Console)(nil)

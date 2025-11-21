@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/pflag"
@@ -16,9 +15,9 @@ func (c *CertsCommand) Name() string        { return certsCmd }
 func (c *CertsCommand) Description() string { return certsDesc }
 func (c *CertsCommand) Usage() string       { return certsUsage }
 
-func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 	certsFlags := pflag.NewFlagSet(certsCmd, pflag.ContinueOnError)
-	certsFlags.SetOutput(out)
+	certsFlags.SetOutput(ui.Writer())
 
 	cNew := certsFlags.BoolP("new", "n", false, "Generate a new Key Pair")
 	cRemove := certsFlags.IntP("remove", "r", 0, "Remove matching index from the Certificate Jar")
@@ -26,8 +25,8 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 	cCA := certsFlags.BoolP("dump-ca", "c", false, "Dump CA Certificate and key")
 
 	certsFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", certsUsage)
-		fmt.Fprintf(out, "%s\n\n", certsDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", certsUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", certsDesc)
 		certsFlags.PrintDefaults()
 	}
 
@@ -35,7 +34,7 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
@@ -55,7 +54,7 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 	}
 
 	if changedCount > 1 {
-		s.console.PrintlnErrorStep("flags --new, --remove, --dump-ssh and --dump-ca cannot be used together")
+		ui.PrintError("flags --new, --remove, --dump-ssh and --dump-ca cannot be used together")
 		return nil
 	}
 
@@ -67,7 +66,7 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 
 			if len(s.certTrack.Certs) > 0 {
 				tw := new(tabwriter.Writer)
-				tw.Init(out, 0, 4, 2, ' ', 0)
+				tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 				_, _ = fmt.Fprintf(tw, "\n\tID\tFingerprint\t")
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
@@ -77,7 +76,7 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 				_, _ = fmt.Fprintln(tw)
 				_ = tw.Flush()
 			} else {
-				s.console.PrintlnDebugStep("No certificates found")
+				ui.PrintInfo("No certificates found")
 			}
 		}
 		return nil
@@ -86,7 +85,7 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 	if *cCA {
 		if s.CertificateAuthority != nil {
 			twn := new(tabwriter.Writer)
-			twn.Init(out, 0, 4, 2, ' ', 0)
+			twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 			_, _ = fmt.Fprintln(twn)
 			_, _ = fmt.Fprintf(twn, "\tCA Certificate:\t%s\t\n", s.CertificateAuthority.CertPEM)
 			_, _ = fmt.Fprintf(twn, "\tCA Private Key:\t%s\t\n", s.CertificateAuthority.KeyPEM)
@@ -100,11 +99,11 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 		// Dump SSH keys for a cert ID
 		keypair, err := s.getCert(int64(*cSSH))
 		if err != nil {
-			s.console.PrintlnErrorStep("%s", err)
+			ui.PrintError("%s", err)
 			return nil
 		}
 		twn := new(tabwriter.Writer)
-		twn.Init(out, 0, 4, 2, ' ', 0)
+		twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(twn)
 		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
 		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
@@ -117,11 +116,11 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 		// Generate new key pair
 		keypair, err := s.newCertItem()
 		if err != nil {
-			s.console.PrintlnErrorStep("Failed to generate certificate - %s", err)
+			ui.PrintError("Failed to generate certificate - %s", err)
 			return nil
 		}
 		twn := new(tabwriter.Writer)
-		twn.Init(out, 0, 4, 2, ' ', 0)
+		twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 		_, _ = fmt.Fprintln(twn)
 		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
 		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
@@ -132,10 +131,10 @@ func (c *CertsCommand) Run(s *server, args []string, out io.Writer) error {
 
 	if *cRemove > 0 {
 		if err := s.dropCertItem(int64(*cRemove)); err != nil {
-			s.console.PrintlnErrorStep("%s", err)
+			ui.PrintError("%s", err)
 			return nil
 		}
-		s.console.PrintlnOkStep("Certificate successfully removed")
+		ui.PrintSuccess("Certificate successfully removed")
 		return nil
 	}
 	return nil

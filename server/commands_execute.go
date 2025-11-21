@@ -3,7 +3,6 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -16,17 +15,17 @@ func (c *ExecuteCommand) Name() string        { return executeCmd }
 func (c *ExecuteCommand) Description() string { return executeDesc }
 func (c *ExecuteCommand) Usage() string       { return executeUsage }
 
-func (c *ExecuteCommand) Run(s *server, args []string, out io.Writer) error {
+func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
 	executeFlags := pflag.NewFlagSet(executeCmd, pflag.ContinueOnError)
-	executeFlags.SetOutput(out)
+	executeFlags.SetOutput(ui.Writer())
 	executeFlags.SetInterspersed(false) // Stop parsing flags after first non-flag argument
 
 	eSession := executeFlags.IntP("session", "s", 0, "Run command passed as an argument on a session id")
 	eAll := executeFlags.BoolP("all", "a", false, "Run command passed as an argument on all sessions")
 
 	executeFlags.Usage = func() {
-		fmt.Fprintf(out, "Usage: %s\n\n", executeUsage)
-		fmt.Fprintf(out, "%s\n\n", executeDesc)
+		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", executeUsage)
+		fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc)
 		executeFlags.PrintDefaults()
 	}
 
@@ -34,25 +33,25 @@ func (c *ExecuteCommand) Run(s *server, args []string, out io.Writer) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ui.PrintError("Flag error: %v", pErr)
 		return nil
 	}
 
 	// Validate mutual exclusion
 	if executeFlags.Changed("session") && executeFlags.Changed("all") {
-		s.console.PrintlnErrorStep("flags --session and --all cannot be used together")
+		ui.PrintError("flags --session and --all cannot be used together")
 		return nil
 	}
 
 	// Validate one required
 	if !executeFlags.Changed("session") && !executeFlags.Changed("all") {
-		s.console.PrintlnErrorStep("one of the flags --session or --all must be set")
+		ui.PrintError("one of the flags --session or --all must be set")
 		return nil
 	}
 
 	// Validate minimum args
 	if executeFlags.NArg() < 1 {
-		s.console.PrintlnErrorStep("at least 1 argument(s) required, got %d", executeFlags.NArg())
+		ui.PrintError("at least 1 argument(s) required, got %d", executeFlags.NArg())
 		return nil
 	}
 
@@ -62,7 +61,7 @@ func (c *ExecuteCommand) Run(s *server, args []string, out io.Writer) error {
 	if *eSession > 0 {
 		session, sessErr := s.getSession(*eSession)
 		if sessErr != nil {
-			s.console.PrintlnErrorStep("Unknown Session ID %d", *eSession)
+			ui.PrintError("Unknown Session ID %d", *eSession)
 			return nil
 		}
 		sessions = []*Session{session}
@@ -76,7 +75,7 @@ func (c *ExecuteCommand) Run(s *server, args []string, out io.Writer) error {
 
 	for _, session := range sessions {
 		if *eAll {
-			s.console.PrintlnInfo("Executing Command on SessionID %d", session.sessionID)
+			ui.PrintInfo("Executing Command on SessionID %d", session.sessionID)
 		}
 
 		var envVarList []struct{ Key, Value string }
@@ -84,7 +83,7 @@ func (c *ExecuteCommand) Run(s *server, args []string, out io.Writer) error {
 		i := session.newExecInstance(envVarList)
 
 		if err := i.ExecuteCommand(command, s.console.InitState); err != nil {
-			s.console.PrintlnErrorStep("%v", err)
+			ui.PrintError("%v", err)
 		}
 		s.console.Println("")
 	}
