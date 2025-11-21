@@ -55,6 +55,7 @@ type server struct {
 	httpHealth           bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
+	commandRegistry      *CommandRegistry
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {

@@ -165,7 +165,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			return
 		case "shell":
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), "-i"}
-			s.shellCommand(eArgs...)
+			_ = s.commandRegistry.Execute(s, "shell", eArgs, s.console.Term)
 		case "execute":
 			if len(args) < 1 {
 				s.console.PrintlnWarnStep("Nothing to execute\n")
@@ -175,7 +175,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			commandStr := strings.Join(args, " ")
 			commandWithCd := fmt.Sprintf("cd %s && %s", remoteCwd, commandStr)
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), commandWithCd}
-			s.executeCommand(eArgs...)
+			_ = s.commandRegistry.Execute(s, "execute", eArgs, s.console.Term)
 			continue
 		default:
 			// This is meant to be a command to execute locally

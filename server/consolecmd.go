@@ -1,11 +1,5 @@
 package server
 
-import (
-	"fmt"
-	"sort"
-	"text/tabwriter"
-)
-
 const (
 	// Console CyanBold Commands
 	bgCmd    = "bg"
@@ -58,80 +52,20 @@ const (
 	portFwdUsage = "Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>"
 )
 
-type commandStruct struct {
-	desc    string
-	cmdFunc func(args ...string)
-}
-
-func (s *server) initCommands() map[string]commandStruct {
-	var commands = map[string]commandStruct{
-		bgCmd: {
-			desc: bgDesc,
-		},
-		exitCmd: {
-			desc: exitDesc,
-		},
-		helpCmd: {
-			desc: helpDesc,
-		},
-		executeCmd: {
-			desc:    executeDesc,
-			cmdFunc: s.executeCommand,
-		},
-		sessionsCmd: {
-			desc:    sessionsDesc,
-			cmdFunc: s.sessionsCommand,
-		},
-		socksCmd: {
-			desc:    socksDesc,
-			cmdFunc: s.socksCommand,
-		},
-		sshCmd: {
-			desc:    sshDesc,
-			cmdFunc: s.sshCommand,
-		},
-		connectCmd: {
-			desc:    connectDesc,
-			cmdFunc: s.connectCommand,
-		},
-		shellCmd: {
-			desc:    shellDesc,
-			cmdFunc: s.shellCommand,
-		},
-		portFwdCmd: {
-			desc:    portFwdDesc,
-			cmdFunc: s.portFwdCommand,
-		},
-	}
-
+func (s *server) initRegistry() {
+	s.commandRegistry = NewCommandRegistry()
+	s.commandRegistry.Register(&BgCommand{})
+	s.commandRegistry.Register(&ExitCommand{})
+	s.commandRegistry.Register(&HelpCommand{})
+	s.commandRegistry.Register(&ExecuteCommand{})
+	s.commandRegistry.Register(&SessionsCommand{})
+	s.commandRegistry.Register(&SocksCommand{})
+	s.commandRegistry.Register(&SSHCommand{})
+	s.commandRegistry.Register(&ConnectCommand{})
+	s.commandRegistry.Register(&ShellCommand{})
+	s.commandRegistry.Register(&PortFwdCommand{})
 	if s.authOn {
-		commands[certsCmd] = commandStruct{
-			desc:    certsDesc,
-			cmdFunc: s.certsCommand,
-		}
+		s.commandRegistry.Register(&CertsCommand{})
 	}
-
-	return commands
-}
-
-func (s *server) printConsoleHelp() {
-	tw := new(tabwriter.Writer)
-	tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
-	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
-	commands := s.initCommands()
-	var cmdNames []string
-
-	for k := range commands {
-		cmdNames = append(cmdNames, k)
-	}
-	sort.Strings(cmdNames)
-
-	for _, cmd := range cmdNames {
-		_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", cmd, commands[cmd].desc)
-	}
-	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "!command", "Execute \"command\" in local shell (non-interactive)")
-	_, _ = fmt.Fprintln(tw)
-	_, _ = fmt.Fprintln(tw)
-	_ = tw.Flush()
+	// Register other commands here as they are refactored
 }
