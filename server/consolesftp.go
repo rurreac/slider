@@ -3,16 +3,18 @@ package server
 import (
 	"errors"
 	"fmt"
-	"github.com/pkg/sftp"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
-	"slider/pkg/sflag"
 	"slider/pkg/spath"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/pkg/sftp"
+	"github.com/spf13/pflag"
 )
 
 type sftpConsole struct {
@@ -169,8 +171,10 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 				s.console.PrintlnWarnStep("Nothing to execute\n")
 				continue
 			}
-			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID)}
-			eArgs = append(eArgs, args...)
+			// Prepend cd command to execute from remoteCwd
+			commandStr := strings.Join(args, " ")
+			commandWithCd := fmt.Sprintf("cd %s && %s", remoteCwd, commandStr)
+			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), commandWithCd}
 			s.executeCommand(eArgs...)
 			continue
 		default:
@@ -179,7 +183,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 				if len(command) > 1 {
 					fullCommand := []string{strings.TrimPrefix(command, "!")}
 					fullCommand = append(fullCommand, args...)
-					s.notConsoleCommand(fullCommand)
+					s.notConsoleCommandWithDir(fullCommand, localCwd)
 					continue
 				}
 			}
@@ -202,6 +206,28 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			s.console.Println("")
 		}
 	}
+}
+
+// notConsoleCommandWithDir executes a local command from a specified working directory (SFTP-specific)
+func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
+	// If a Shell was not set, just return
+	if s.serverInterpreter.Shell == "" {
+		s.console.PrintlnErrorStep("No Shell set")
+		return
+	}
+
+	// Else, we'll try to execute the command locally from the specified directory
+	s.console.PrintlnWarnStep("Executing local Command: %s", fCmd)
+	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
+
+	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
+	cmd.Dir = workingDir                                    // Set working directory
+	cmd.Stdout = s.console.Term
+	cmd.Stderr = s.console.Term
+	if err := cmd.Run(); err != nil {
+		s.console.PrintlnErrorStep("%v", err)
+	}
+	s.console.Println("")
 }
 
 func fieldsWithQuotes(input string) []string {
@@ -534,27 +560,30 @@ func (ic *sftpConsole) commandSftpCd(c *sftpCommandRequest) {
 
 func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	commands := ic.initSftpCommands()
-	mkdirFlags := sflag.NewFlagPack(
-		[]string{c.command},
-		commands[c.command].usage,
-		commands[c.command].description,
-		ic.console.Term,
-	)
-	mkdirFlags.SetExactArgs(1)
-	mkdirFlags.Set.Usage = func() {
-		mkdirFlags.PrintUsage(true)
+	mkdirFlags := pflag.NewFlagSet(c.command, pflag.ContinueOnError)
+	mkdirFlags.SetOutput(ic.console.Term)
+
+	mkdirFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", commands[c.command].usage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", commands[c.command].description)
+		mkdirFlags.PrintDefaults()
 	}
 
 	if pErr := mkdirFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := mkdirFlags.Set.Args()
-	dirPath := flagArgs[0]
+	// Validate exact args
+	if mkdirFlags.NArg() != 1 {
+		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", mkdirFlags.NArg())
+		return
+	}
+
+	dirPath := mkdirFlags.Args()[0]
 
 	// Process directory path
 	if !ic.pathIsAbs(dirPath, *c.isRemote) {
@@ -579,23 +608,32 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
-	rmFlags := sflag.NewFlagPack(ic.initSftpCommands()[rmCmd].alias, rmUsage, rmDesc, ic.console.Term)
-	recursive, _ := rmFlags.NewBoolFlag("r", "", false, "Remove directory and their contents recursively")
-	rmFlags.SetExactArgs(1)
-	rmFlags.Set.Usage = func() {
-		rmFlags.PrintUsage(true)
+	rmFlags := pflag.NewFlagSet(rmCmd, pflag.ContinueOnError)
+	rmFlags.SetOutput(ic.console.Term)
+
+	recursive := rmFlags.BoolP("recursive", "r", false, "Remove directory and their contents recursively")
+
+	rmFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", rmUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", rmDesc)
+		rmFlags.PrintDefaults()
 	}
 
 	if pErr := rmFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := rmFlags.Set.Args()
-	path := flagArgs[0]
+	// Validate exact args
+	if rmFlags.NArg() != 1 {
+		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", rmFlags.NArg())
+		return
+	}
+
+	path := rmFlags.Args()[0]
 
 	if !spath.IsAbs(ic.cliSystem, path) {
 		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
@@ -667,23 +705,32 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
-	getFlags := sflag.NewFlagPack(ic.initSftpCommands()[getCmd].alias, getUsage, getDesc, ic.console.Term)
-	recursive, _ := getFlags.NewBoolFlag("r", "", false, "Download directories recursively")
-	getFlags.SetExactArgs(1)
-	getFlags.Set.Usage = func() {
-		getFlags.PrintUsage(true)
+	getFlags := pflag.NewFlagSet(getCmd, pflag.ContinueOnError)
+	getFlags.SetOutput(ic.console.Term)
+
+	recursive := getFlags.BoolP("recursive", "r", false, "Download directories recursively")
+
+	getFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", getUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", getDesc)
+		getFlags.PrintDefaults()
 	}
 
 	if pErr := getFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := getFlags.Set.Args()
-	remotePath := flagArgs[0]
+	// Validate exact args
+	if getFlags.NArg() != 1 {
+		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", getFlags.NArg())
+		return
+	}
+
+	remotePath := getFlags.Args()[0]
 	localPath := *c.localCwd
 
 	if !spath.IsAbs(ic.cliSystem, remotePath) {
@@ -840,23 +887,32 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
-	putFlags := sflag.NewFlagPack(ic.initSftpCommands()[putCmd].alias, putUsage, putDesc, ic.console.Term)
-	recursive, _ := putFlags.NewBoolFlag("r", "", false, "Upload directory recursively")
-	putFlags.SetExactArgs(1)
-	putFlags.Set.Usage = func() {
-		putFlags.PrintUsage(true)
+	putFlags := pflag.NewFlagSet(putCmd, pflag.ContinueOnError)
+	putFlags.SetOutput(ic.console.Term)
+
+	recursive := putFlags.BoolP("recursive", "r", false, "Upload directory recursively")
+
+	putFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", putUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", putDesc)
+		putFlags.PrintDefaults()
 	}
 
 	if pErr := putFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := putFlags.Set.Args()
-	localPath := flagArgs[0]
+	// Validate exact args
+	if putFlags.NArg() != 1 {
+		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", putFlags.NArg())
+		return
+	}
+
+	localPath := putFlags.Args()[0]
 
 	if !spath.IsAbs(c.svrSystem, localPath) {
 		localPath = spath.Join(c.svrSystem, []string{*c.localCwd, localPath})
@@ -1018,23 +1074,31 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
-	chmodFlags := sflag.NewFlagPack(ic.initSftpCommands()[chmodCmd].alias, chmodUsage, chmodDesc, ic.console.Term)
-	chmodFlags.SetExactArgs(2)
-	chmodFlags.Set.Usage = func() {
-		chmodFlags.PrintUsage(true)
+	chmodFlags := pflag.NewFlagSet(chmodCmd, pflag.ContinueOnError)
+	chmodFlags.SetOutput(ic.console.Term)
+
+	chmodFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", chmodUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", chmodDesc)
+		chmodFlags.PrintDefaults()
 	}
 
 	if pErr := chmodFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := chmodFlags.Set.Args()
-	modeStr := flagArgs[0]
-	path := flagArgs[1]
+	// Validate exact args
+	if chmodFlags.NArg() != 2 {
+		ic.console.PrintlnErrorStep("exactly 2 argument(s) required, got %d", chmodFlags.NArg())
+		return
+	}
+
+	modeStr := chmodFlags.Args()[0]
+	path := chmodFlags.Args()[1]
 
 	// Handle relative path
 	if !spath.IsAbs(ic.cliSystem, path) {
@@ -1078,22 +1142,30 @@ func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
-	statFlags := sflag.NewFlagPack(ic.initSftpCommands()[statCmd].alias, statUsage, statDesc, ic.console.Term)
-	statFlags.SetExactArgs(1)
-	statFlags.Set.Usage = func() {
-		statFlags.PrintUsage(true)
+	statFlags := pflag.NewFlagSet(statCmd, pflag.ContinueOnError)
+	statFlags.SetOutput(ic.console.Term)
+
+	statFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", statUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", statDesc)
+		statFlags.PrintDefaults()
 	}
 
 	if pErr := statFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := statFlags.Set.Args()
-	path := flagArgs[0]
+	// Validate exact args
+	if statFlags.NArg() != 1 {
+		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", statFlags.NArg())
+		return
+	}
+
+	path := statFlags.Args()[0]
 
 	if !spath.IsAbs(ic.cliSystem, path) {
 		path = spath.Join(ic.cliSystem, []string{*c.remoteCwd, path})
@@ -1158,23 +1230,31 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 }
 
 func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
-	mvFlags := sflag.NewFlagPack(ic.initSftpCommands()[mvCmd].alias, mvUsage, mvDesc, ic.console.Term)
-	mvFlags.SetExactArgs(2)
-	mvFlags.Set.Usage = func() {
-		mvFlags.PrintUsage(true)
+	mvFlags := pflag.NewFlagSet(mvCmd, pflag.ContinueOnError)
+	mvFlags.SetOutput(ic.console.Term)
+
+	mvFlags.Usage = func() {
+		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", mvUsage)
+		fmt.Fprintf(ic.console.Term, "%s\n\n", mvDesc)
+		mvFlags.PrintDefaults()
 	}
 
 	if pErr := mvFlags.Parse(c.args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	flagArgs := mvFlags.Set.Args()
-	srcPath := flagArgs[0]
-	dstPath := flagArgs[1]
+	// Validate exact args
+	if mvFlags.NArg() != 2 {
+		ic.console.PrintlnErrorStep("exactly 2 argument(s) required, got %d", mvFlags.NArg())
+		return
+	}
+
+	srcPath := mvFlags.Args()[0]
+	dstPath := mvFlags.Args()[1]
 
 	// Handle relative paths
 	if !spath.IsAbs(ic.cliSystem, srcPath) {

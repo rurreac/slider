@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +13,6 @@ import (
 	"os/signal"
 	"slices"
 	"slider/pkg/conf"
-	"slider/pkg/sflag"
 	"slider/pkg/types"
 	"sort"
 	"strconv"
@@ -21,6 +21,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/spf13/pflag"
 	"golang.org/x/term"
 )
 
@@ -236,23 +237,46 @@ func (s *server) notConsoleCommand(fCmd []string) {
 }
 
 func (s *server) executeCommand(args ...string) {
-	executeFlags := sflag.NewFlagPack([]string{executeCmd}, executeUsage, executeDesc, s.console.Term)
-	eSession, _ := executeFlags.NewIntFlag("s", "session", 0, "Run command passed as an argument on a session id")
-	eAll, _ := executeFlags.NewBoolFlag("a", "all", false, "Run command passed as an argument on all sessions")
-	executeFlags.MarkFlagsMutuallyExclusive("s", "a")
-	executeFlags.MarkFlagsOneRequired("s", "a")
-	executeFlags.SetMinArgs(1)
-	executeFlags.Set.Usage = func() {
-		executeFlags.PrintUsage(true)
+	executeFlags := pflag.NewFlagSet(executeCmd, pflag.ContinueOnError)
+	executeFlags.SetOutput(s.console.Term)
+	executeFlags.SetInterspersed(false) // Stop parsing flags after first non-flag argument
+
+	eSession := executeFlags.IntP("session", "s", 0, "Run command passed as an argument on a session id")
+	eAll := executeFlags.BoolP("all", "a", false, "Run command passed as an argument on all sessions")
+
+	executeFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", executeUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", executeDesc)
+		executeFlags.PrintDefaults()
 	}
 
 	if pErr := executeFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
+
+	// Validate mutual exclusion
+	if executeFlags.Changed("session") && executeFlags.Changed("all") {
+		s.console.PrintlnErrorStep("flags --session and --all cannot be used together")
+		return
+	}
+
+	// Validate one required
+	if !executeFlags.Changed("session") && !executeFlags.Changed("all") {
+		s.console.PrintlnErrorStep("one of the flags --session or --all must be set")
+		return
+	}
+
+	// Validate minimum args
+	if executeFlags.NArg() < 1 {
+		s.console.PrintlnErrorStep("at least 1 argument(s) required, got %d", executeFlags.NArg())
+		return
+	}
+
+	command := strings.Join(executeFlags.Args(), " ")
 
 	var sessions []*Session
 	if *eSession > 0 {
@@ -275,7 +299,6 @@ func (s *server) executeCommand(args ...string) {
 			s.console.PrintlnInfo("Executing Command on SessionID %d", session.sessionID)
 		}
 
-		command := strings.Join(executeFlags.Set.Args(), " ")
 		var envVarList []struct{ Key, Value string }
 
 		i := session.newExecInstance(envVarList)
@@ -289,20 +312,40 @@ func (s *server) executeCommand(args ...string) {
 
 func (s *server) sessionsCommand(args ...string) {
 	var list bool
-	sessionsFlags := sflag.NewFlagPack([]string{sessionsCmd}, sessionsUsage, executeDesc, s.console.Term)
-	sInteract, _ := sessionsFlags.NewIntFlag("i", "interactive", 0, "Start Interactive Slider Shell on a Session ID")
-	sDisconnect, _ := sessionsFlags.NewIntFlag("d", "disconnect", 0, "Disconnect Session ID")
-	sKill, _ := sessionsFlags.NewIntFlag("k", "kill", 0, "Kill Session ID")
-	sessionsFlags.MarkFlagsMutuallyExclusive("i", "d", "k")
-	sessionsFlags.Set.Usage = func() {
-		sessionsFlags.PrintUsage(true)
+	sessionsFlags := pflag.NewFlagSet(sessionsCmd, pflag.ContinueOnError)
+	sessionsFlags.SetOutput(s.console.Term)
+
+	sInteract := sessionsFlags.IntP("interactive", "i", 0, "Start Interactive Slider Shell on a Session ID")
+	sDisconnect := sessionsFlags.IntP("disconnect", "d", 0, "Disconnect Session ID")
+	sKill := sessionsFlags.IntP("kill", "k", 0, "Kill Session ID")
+
+	sessionsFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", sessionsUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", executeDesc)
+		sessionsFlags.PrintDefaults()
 	}
 
 	if pErr := sessionsFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate mutual exclusion
+	changedCount := 0
+	if sessionsFlags.Changed("interactive") {
+		changedCount++
+	}
+	if sessionsFlags.Changed("disconnect") {
+		changedCount++
+	}
+	if sessionsFlags.Changed("kill") {
+		changedCount++
+	}
+	if changedCount > 1 {
+		s.console.PrintlnErrorStep("flags --interactive, --disconnect and --kill cannot be used together")
 		return
 	}
 
@@ -447,24 +490,45 @@ func (s *server) sessionsCommand(args ...string) {
 }
 
 func (s *server) socksCommand(args ...string) {
-	socksFlags := sflag.NewFlagPack([]string{socksCmd}, socksUsage, socksDesc, s.console.Term)
-	sSession, _ := socksFlags.NewIntFlag("s", "session", 0, "Run a Socks5 server over an SSH Channel on a Session ID")
-	sPort, _ := socksFlags.NewIntFlag("p", "port", 0, "Use this port number as local Listener, otherwise randomly selected")
-	sKill, _ := socksFlags.NewIntFlag("k", "kill", 0, "Kill Socks5 Listener and Server on a Session ID")
-	sExpose, _ := socksFlags.NewBoolFlag("e", "expose", false, "Expose port to all interfaces")
-	socksFlags.MarkFlagsOneRequired("s", "k")
-	socksFlags.MarkFlagsMutuallyExclusive("k", "s")
-	socksFlags.MarkFlagsMutuallyExclusive("k", "p")
-	socksFlags.MarkFlagsMutuallyExclusive("k", "e")
-	socksFlags.Set.Usage = func() {
-		socksFlags.PrintUsage(true)
+	socksFlags := pflag.NewFlagSet(socksCmd, pflag.ContinueOnError)
+	socksFlags.SetOutput(s.console.Term)
+
+	sSession := socksFlags.IntP("session", "s", 0, "Run a Socks5 server over an SSH Channel on a Session ID")
+	sPort := socksFlags.IntP("port", "p", 0, "Use this port number as local Listener, otherwise randomly selected")
+	sKill := socksFlags.IntP("kill", "k", 0, "Kill Socks5 Listener and Server on a Session ID")
+	sExpose := socksFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
+
+	socksFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", socksUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", socksDesc)
+		socksFlags.PrintDefaults()
 	}
 
 	if pErr := socksFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate one required
+	if !socksFlags.Changed("session") && !socksFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("one of the flags --session or --kill must be set")
+		return
+	}
+
+	// Validate mutual exclusion
+	if socksFlags.Changed("session") && socksFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("flags --session and --kill cannot be used together")
+		return
+	}
+	if socksFlags.Changed("kill") && socksFlags.Changed("port") {
+		s.console.PrintlnErrorStep("flags --kill and --port cannot be used together")
+		return
+	}
+	if socksFlags.Changed("kill") && socksFlags.Changed("expose") {
+		s.console.PrintlnErrorStep("flags --kill and --expose cannot be used together")
 		return
 	}
 
@@ -535,21 +599,44 @@ func (s *server) socksCommand(args ...string) {
 }
 
 func (s *server) certsCommand(args ...string) {
-	certsFlags := sflag.NewFlagPack([]string{certsCmd}, certsUsage, certsDesc, s.console.Term)
-	cNew, _ := certsFlags.NewBoolFlag("n", "new", false, "Generate a new Key Pair")
-	cRemove, _ := certsFlags.NewIntFlag("r", "remove", 0, "Remove matching index from the Certificate Jar")
-	cSSH, _ := certsFlags.NewIntFlag("d", "dump-ssh", 0, "Dump corresponding CertID SSH keys")
-	cCA, _ := certsFlags.NewBoolFlag("c", "dump-ca", false, "Dump CA Certificate and key")
-	certsFlags.MarkFlagsMutuallyExclusive("n", "r", "d", "c")
-	certsFlags.Set.Usage = func() {
-		certsFlags.PrintUsage(true)
+	certsFlags := pflag.NewFlagSet(certsCmd, pflag.ContinueOnError)
+	certsFlags.SetOutput(s.console.Term)
+
+	cNew := certsFlags.BoolP("new", "n", false, "Generate a new Key Pair")
+	cRemove := certsFlags.IntP("remove", "r", 0, "Remove matching index from the Certificate Jar")
+	cSSH := certsFlags.IntP("dump-ssh", "d", 0, "Dump corresponding CertID SSH keys")
+	cCA := certsFlags.BoolP("dump-ca", "c", false, "Dump CA Certificate and key")
+
+	certsFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", certsUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", certsDesc)
+		certsFlags.PrintDefaults()
 	}
 
 	if pErr := certsFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate mutual exclusion
+	changedCount := 0
+	if certsFlags.Changed("new") {
+		changedCount++
+	}
+	if certsFlags.Changed("remove") {
+		changedCount++
+	}
+	if certsFlags.Changed("dump-ssh") {
+		changedCount++
+	}
+	if certsFlags.Changed("dump-ca") {
+		changedCount++
+	}
+	if changedCount > 1 {
+		s.console.PrintlnErrorStep("flags --new, --remove, --dump-ssh and --dump-ca cannot be used together")
 		return
 	}
 
@@ -666,26 +753,36 @@ func (s *server) certsCommand(args ...string) {
 }
 
 func (s *server) connectCommand(args ...string) {
-	connectFlags := sflag.NewFlagPack([]string{connectCmd}, connectUsage, connectDesc, s.console.Term)
-	cCert, _ := connectFlags.NewInt64Flag("i", "cert-id", 0, "Specify certID for SSH key authentication")
-	cDNS, _ := connectFlags.NewStringFlag("d", "dns", "", "Use custom DNS resolver")
-	cProto, _ := connectFlags.NewStringFlag("p", "proto", conf.Proto, "Use custom proto")
-	cTlsCert, _ := connectFlags.NewStringFlag("c", "tls-cert", "", "Use custom client TLS certificate")
-	cTlsKey, _ := connectFlags.NewStringFlag("k", "tls-key", "", "Use custom client TLS key")
-	connectFlags.SetExactArgs(1)
-	connectFlags.Set.Usage = func() {
-		connectFlags.PrintUsage(true)
+	connectFlags := pflag.NewFlagSet(connectCmd, pflag.ContinueOnError)
+	connectFlags.SetOutput(s.console.Term)
+
+	cCert := connectFlags.Int64P("cert-id", "i", 0, "Specify certID for SSH key authentication")
+	cDNS := connectFlags.StringP("dns", "d", "", "Use custom DNS resolver")
+	cProto := connectFlags.StringP("proto", "p", conf.Proto, "Use custom proto")
+	cTlsCert := connectFlags.StringP("tls-cert", "c", "", "Use custom client TLS certificate")
+	cTlsKey := connectFlags.StringP("tls-key", "k", "", "Use custom client TLS key")
+
+	connectFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", connectUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", connectDesc)
+		connectFlags.PrintDefaults()
 	}
 
 	if pErr := connectFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
 		return
 	}
 
-	clientURL := connectFlags.Set.Args()[0]
+	// Validate exact args
+	if connectFlags.NArg() != 1 {
+		s.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", connectFlags.NArg())
+		return
+	}
+
+	clientURL := connectFlags.Args()[0]
 	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
 		s.console.PrintlnErrorStep("Failed to resolve URL: %v", uErr)
@@ -723,24 +820,45 @@ func (s *server) connectCommand(args ...string) {
 }
 
 func (s *server) sshCommand(args ...string) {
-	sshFlags := sflag.NewFlagPack([]string{sshCmd}, sshUsage, sshDesc, s.console.Term)
-	sSession, _ := sshFlags.NewIntFlag("s", "session", 0, "Session ID to establish SSH connection with")
-	sPort, _ := sshFlags.NewIntFlag("p", "port", 0, "Local port to forward SSH connection to")
-	sKill, _ := sshFlags.NewIntFlag("k", "kill", 0, "Kill SSH port forwarding to a Session ID")
-	sExpose, _ := sshFlags.NewBoolFlag("e", "expose", false, "Expose port to all interfaces")
-	sshFlags.MarkFlagsOneRequired("s", "k")
-	sshFlags.MarkFlagsMutuallyExclusive("k", "s")
-	sshFlags.MarkFlagsMutuallyExclusive("k", "p")
-	sshFlags.MarkFlagsMutuallyExclusive("k", "e")
-	sshFlags.Set.Usage = func() {
-		sshFlags.PrintUsage(true)
+	sshFlags := pflag.NewFlagSet(sshCmd, pflag.ContinueOnError)
+	sshFlags.SetOutput(s.console.Term)
+
+	sSession := sshFlags.IntP("session", "s", 0, "Session ID to establish SSH connection with")
+	sPort := sshFlags.IntP("port", "p", 0, "Local port to forward SSH connection to")
+	sKill := sshFlags.IntP("kill", "k", 0, "Kill SSH port forwarding to a Session ID")
+	sExpose := sshFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
+
+	sshFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", sshUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", sshDesc)
+		sshFlags.PrintDefaults()
 	}
 
 	if pErr := sshFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate one required
+	if !sshFlags.Changed("session") && !sshFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("one of the flags --session or --kill must be set")
+		return
+	}
+
+	// Validate mutual exclusion
+	if sshFlags.Changed("session") && sshFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("flags --session and --kill cannot be used together")
+		return
+	}
+	if sshFlags.Changed("kill") && sshFlags.Changed("port") {
+		s.console.PrintlnErrorStep("flags --kill and --port cannot be used together")
+		return
+	}
+	if sshFlags.Changed("kill") && sshFlags.Changed("expose") {
+		s.console.PrintlnErrorStep("flags --kill and --expose cannot be used together")
 		return
 	}
 
@@ -799,10 +917,10 @@ func (s *server) sshCommand(args ...string) {
 						fmt.Printf(".")
 						continue
 					}
-					s.console.PrintlnOkStep("Socks Endpoint running on port: %d", port)
+					s.console.PrintlnOkStep("SSH Endpoint running on port: %d", port)
 					return
 				} else {
-					s.console.PrintlnErrorStep("Socks Endpoint reached Timeout trying to start")
+					s.console.PrintlnErrorStep("SSH Endpoint reached Timeout trying to start")
 					return
 				}
 			}
@@ -811,30 +929,63 @@ func (s *server) sshCommand(args ...string) {
 }
 
 func (s *server) shellCommand(args ...string) {
-	shellFlags := sflag.NewFlagPack([]string{shellCmd}, shellUsage, shellDesc, s.console.Term)
-	sSession, _ := shellFlags.NewIntFlag("s", "session", 0, "Target Session ID for the shell")
-	sPort, _ := shellFlags.NewIntFlag("p", "port", 0, "Use this port number as local Listener, otherwise randomly selected")
-	sKill, _ := shellFlags.NewIntFlag("k", "kill", 0, "Kill Shell Listener and Server on a Session ID")
-	sInteractive, _ := shellFlags.NewBoolFlag("i", "interactive", false, "Interactive mode, enters shell directly. Always TLS")
-	sTls, _ := shellFlags.NewBoolFlag("t", "tls", false, "Enable TLS for the Shell")
-	sExpose, _ := shellFlags.NewBoolFlag("e", "expose", false, "Expose port to all interfaces")
-	shellFlags.MarkFlagsOneRequired("s", "k")
-	shellFlags.MarkFlagsMutuallyExclusive("k", "s")
-	shellFlags.MarkFlagsMutuallyExclusive("k", "p")
-	shellFlags.MarkFlagsMutuallyExclusive("k", "i")
-	shellFlags.MarkFlagsMutuallyExclusive("k", "t")
-	shellFlags.MarkFlagsMutuallyExclusive("k", "e")
-	shellFlags.MarkFlagsMutuallyExclusive("i", "e")
-	shellFlags.MarkFlagsMutuallyExclusive("i", "t")
-	shellFlags.Set.Usage = func() {
-		shellFlags.PrintUsage(true)
+	shellFlags := pflag.NewFlagSet(shellCmd, pflag.ContinueOnError)
+	shellFlags.SetOutput(s.console.Term)
+
+	sSession := shellFlags.IntP("session", "s", 0, "Target Session ID for the shell")
+	sPort := shellFlags.IntP("port", "p", 0, "Use this port number as local Listener, otherwise randomly selected")
+	sKill := shellFlags.IntP("kill", "k", 0, "Kill Shell Listener and Server on a Session ID")
+	sInteractive := shellFlags.BoolP("interactive", "i", false, "Interactive mode, enters shell directly. Always TLS")
+	sTls := shellFlags.BoolP("tls", "t", false, "Enable TLS for the Shell")
+	sExpose := shellFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
+
+	shellFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", shellUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", shellDesc)
+		shellFlags.PrintDefaults()
 	}
 
 	if pErr := shellFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate one required
+	if !shellFlags.Changed("session") && !shellFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("one of the flags --session or --kill must be set")
+		return
+	}
+
+	// Validate mutual exclusion
+	if shellFlags.Changed("session") && shellFlags.Changed("kill") {
+		s.console.PrintlnErrorStep("flags --session and --kill cannot be used together")
+		return
+	}
+	if shellFlags.Changed("kill") && shellFlags.Changed("port") {
+		s.console.PrintlnErrorStep("flags --kill and --port cannot be used together")
+		return
+	}
+	if shellFlags.Changed("kill") && shellFlags.Changed("interactive") {
+		s.console.PrintlnErrorStep("flags --kill and --interactive cannot be used together")
+		return
+	}
+	if shellFlags.Changed("kill") && shellFlags.Changed("tls") {
+		s.console.PrintlnErrorStep("flags --kill and --tls cannot be used together")
+		return
+	}
+	if shellFlags.Changed("kill") && shellFlags.Changed("expose") {
+		s.console.PrintlnErrorStep("flags --kill and --expose cannot be used together")
+		return
+	}
+	if shellFlags.Changed("interactive") && shellFlags.Changed("expose") {
+		s.console.PrintlnErrorStep("flags --interactive and --expose cannot be used together")
+		return
+	}
+	if shellFlags.Changed("interactive") && shellFlags.Changed("tls") {
+		s.console.PrintlnErrorStep("flags --interactive and --tls cannot be used together")
 		return
 	}
 
@@ -987,24 +1138,45 @@ func (s *server) shellCommand(args ...string) {
 }
 
 func (s *server) portFwdCommand(args ...string) {
-	portFwdFlags := sflag.NewFlagPack([]string{portFwdCmd}, portFwdUsage, portFwdDesc, s.console.Term)
-	pSession, _ := portFwdFlags.NewIntFlag("s", "session", 0, "Session ID to add or remove Port Forwarding")
-	pLocal, _ := portFwdFlags.NewBoolFlag("L", "local", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
-	pReverse, _ := portFwdFlags.NewBoolFlag("R", "reverse", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
-	pRemove, _ := portFwdFlags.NewBoolFlag("r", "remove", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
-	portFwdFlags.MarkFlagsRequireArgs("R", 1)
-	portFwdFlags.MarkFlagsRequireArgs("L", 1)
-	portFwdFlags.MarkFlagsRequireArgs("r", 1)
-	portFwdFlags.MarkFlagsMutuallyExclusive("L", "R")
-	portFwdFlags.Set.Usage = func() {
-		portFwdFlags.PrintUsage(true)
+	portFwdFlags := pflag.NewFlagSet(portFwdCmd, pflag.ContinueOnError)
+	portFwdFlags.SetOutput(s.console.Term)
+
+	pSession := portFwdFlags.IntP("session", "s", 0, "Session ID to add or remove Port Forwarding")
+	pLocal := portFwdFlags.BoolP("local", "L", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
+	pReverse := portFwdFlags.BoolP("reverse", "R", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
+	pRemove := portFwdFlags.BoolP("remove", "r", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
+
+	portFwdFlags.Usage = func() {
+		fmt.Fprintf(s.console.Term, "Usage: %s\n\n", portFwdUsage)
+		fmt.Fprintf(s.console.Term, "%s\n\n", portFwdDesc)
+		portFwdFlags.PrintDefaults()
 	}
 
 	if pErr := portFwdFlags.Parse(args); pErr != nil {
-		if fmt.Sprintf("%v", pErr) == "flag: help requested" {
+		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
 		s.console.PrintlnErrorStep("Flag error: %v", pErr)
+		return
+	}
+
+	// Validate mutual exclusion
+	if portFwdFlags.Changed("local") && portFwdFlags.Changed("reverse") {
+		s.console.PrintlnErrorStep("flags --local and --reverse cannot be used together")
+		return
+	}
+
+	// Validate flag requires args
+	if portFwdFlags.Changed("reverse") && portFwdFlags.NArg() != 1 {
+		s.console.PrintlnErrorStep("flag --reverse requires exactly 1 argument(s)")
+		return
+	}
+	if portFwdFlags.Changed("local") && portFwdFlags.NArg() != 1 {
+		s.console.PrintlnErrorStep("flag --local requires exactly 1 argument(s)")
+		return
+	}
+	if portFwdFlags.Changed("remove") && portFwdFlags.NArg() != 1 {
+		s.console.PrintlnErrorStep("flag --remove requires exactly 1 argument(s)")
 		return
 	}
 
@@ -1018,7 +1190,7 @@ func (s *server) portFwdCommand(args ...string) {
 		}
 	}
 
-	if len(portFwdFlags.Set.Args()) == 0 {
+	if portFwdFlags.NArg() == 0 {
 		// List of the Port Forwarding
 		tw := new(tabwriter.Writer)
 		tw.Init(s.console.Term, 0, 4, 2, ' ', 0)
@@ -1093,7 +1265,7 @@ func (s *server) portFwdCommand(args ...string) {
 			return
 		}
 		if *pRemove {
-			port, pErr := parsePort(portFwdFlags.Set.Args()[0])
+			port, pErr := parsePort(portFwdFlags.Args()[0])
 			if pErr != nil {
 				s.console.PrintlnErrorStep("Error: %v", pErr)
 				return
@@ -1108,7 +1280,7 @@ func (s *server) portFwdCommand(args ...string) {
 			return
 
 		}
-		fwdItem := portFwdFlags.Set.Args()[0]
+		fwdItem := portFwdFlags.Args()[0]
 		msg, pErr := parseForwarding(fwdItem)
 		if pErr != nil {
 			s.console.PrintlnErrorStep("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
@@ -1157,7 +1329,7 @@ func (s *server) portFwdCommand(args ...string) {
 		}
 
 		if *pRemove {
-			port, pErr := parsePort(portFwdFlags.Set.Args()[0])
+			port, pErr := parsePort(portFwdFlags.Args()[0])
 			if pErr != nil {
 				s.console.PrintlnErrorStep("Error: %v", pErr)
 				return
@@ -1172,7 +1344,7 @@ func (s *server) portFwdCommand(args ...string) {
 		}
 
 		// Create Reverse Port Forwarding
-		fwdItem := portFwdFlags.Set.Args()[0]
+		fwdItem := portFwdFlags.Args()[0]
 		msg, pErr := parseForwarding(fwdItem)
 		if pErr != nil {
 			s.console.PrintlnErrorStep("Failed to parse Port Forwarding %s: %s", fwdItem, pErr)
