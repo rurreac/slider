@@ -46,13 +46,13 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	localCwd, clErr := os.Getwd()
 	if clErr != nil {
 		localCwd = ""
-		s.console.PrintlnErrorStep("Unable to determine local directory: %v", clErr)
+		s.console.PrintError("Unable to determine local directory: %v", clErr)
 	}
 	// Get current remote directory for prompt
 	remoteCwd, crErr := sftpClient.Getwd()
 	if crErr != nil {
 		remoteCwd = ""
-		s.console.PrintlnErrorStep("Unable to determine remote directory: %v", crErr)
+		s.console.PrintError("Unable to determine remote directory: %v", crErr)
 	}
 
 	// Set client and server info
@@ -109,9 +109,9 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	}
 
 	// Print welcome message and help info
-	s.console.PrintlnDebugStep("Starting interactive session")
-	s.console.PrintlnDebugStep("Type \"help\" for available commands")
-	s.console.PrintlnDebugStep("Type \"exit\" or press \"CTRL^C\" to return to Console")
+	s.console.PrintInfo("Starting interactive session")
+	s.console.PrintInfo("Type \"help\" for available commands")
+	s.console.PrintInfo("Type \"exit\" or press \"CTRL^C\" to return to Console")
 
 	// Set the terminal prompt
 	commands := ic.initSftpCommands()
@@ -148,13 +148,13 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			ic.printConsoleHelp()
 		case "pwd", "getwd":
 			if len(args) > 0 {
-				s.console.PrintlnErrorStep("Too many arguments")
+				s.console.PrintError("Too many arguments")
 				return
 			}
 			s.console.TermPrintf("%s\n\n", remoteCwd)
 		case "lpwd", "lgetwd":
 			if len(args) > 0 {
-				s.console.PrintlnErrorStep("Too many arguments")
+				s.console.PrintError("Too many arguments")
 				return
 			}
 			s.console.TermPrintf("%s\n\n", localCwd)
@@ -168,7 +168,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			_ = s.commandRegistry.Execute(s, "shell", eArgs, &s.console)
 		case "execute":
 			if len(args) < 1 {
-				s.console.PrintlnWarnStep("Nothing to execute\n")
+				s.console.PrintWarn("Nothing to execute\n")
 				continue
 			}
 			// Prepend cd command to execute from remoteCwd
@@ -190,7 +190,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			// Look for a regular command and execute
 			cmdIndex, cmdErr := ic.isCommand(command)
 			if cmdErr != nil {
-				s.console.PrintlnErrorStep("%v\n", cmdErr)
+				s.console.PrintError("%v\n", cmdErr)
 				continue
 			}
 			isRemote = commands[cmdIndex].isRemote
@@ -212,12 +212,12 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
 	// If a Shell was not set, just return
 	if s.serverInterpreter.Shell == "" {
-		s.console.PrintlnErrorStep("No Shell set")
+		s.console.PrintError("No Shell set")
 		return
 	}
 
 	// Else, we'll try to execute the command locally from the specified directory
-	s.console.PrintlnWarnStep("Executing local Command: %s", fCmd)
+	s.console.PrintWarn("Executing local Command: %s", fCmd)
 	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
@@ -225,7 +225,7 @@ func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
-		s.console.PrintlnErrorStep("%v", err)
+		s.console.PrintError("%v", err)
 	}
 	s.console.Println("")
 }
@@ -411,7 +411,7 @@ func (ic *sftpConsole) commandSftpList(c *sftpCommandRequest) {
 	path := c.getScopedPath()
 
 	if len(c.args) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
+		ic.console.PrintError("Too many arguments")
 		return
 	}
 
@@ -426,12 +426,12 @@ func (ic *sftpConsole) commandSftpList(c *sftpCommandRequest) {
 
 	entries, err := c.readDir(path)
 	if err != nil {
-		ic.console.PrintlnErrorStep("Failed to list directory \"%s\": %v", path, err)
+		ic.console.PrintError("Failed to list directory \"%s\": %v", path, err)
 		return
 	}
 
 	if len(entries) == 0 {
-		ic.console.PrintlnDebugStep("Directory is empty")
+		ic.console.PrintInfo("Directory is empty")
 		return
 	}
 
@@ -514,7 +514,7 @@ func (ic *sftpConsole) commandSftpCd(c *sftpCommandRequest) {
 	}
 
 	if len(c.args) > 1 {
-		ic.console.PrintlnErrorStep("Too many arguments")
+		ic.console.PrintError("Too many arguments")
 		return
 	}
 
@@ -541,12 +541,12 @@ func (ic *sftpConsole) commandSftpCd(c *sftpCommandRequest) {
 	// Check if directory exists and is accessible
 	fi, err := c.pathStat(newPath)
 	if err != nil {
-		ic.console.PrintlnErrorStep("Failed to stat \"%s\": %v", newPath, err)
+		ic.console.PrintError("Failed to stat \"%s\": %v", newPath, err)
 		return
 	}
 
 	if !fi.IsDir() {
-		ic.console.PrintlnErrorStep("Not a directory: %s", newPath)
+		ic.console.PrintError("Not a directory: %s", newPath)
 		return
 	}
 
@@ -554,7 +554,7 @@ func (ic *sftpConsole) commandSftpCd(c *sftpCommandRequest) {
 	c.updateCwd(newPath)
 	// Notify the new path only if "lcd"
 	if !*c.isRemote {
-		c.console.PrintlnOkStep("Current local path: %s", newPath)
+		c.console.PrintSuccess("Current local path: %s", newPath)
 	}
 }
 
@@ -573,13 +573,13 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if mkdirFlags.NArg() != 1 {
-		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", mkdirFlags.NArg())
+		ic.console.PrintError("exactly 1 argument(s) required, got %d", mkdirFlags.NArg())
 		return
 	}
 
@@ -593,18 +593,18 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	// Check if the directory already exists
 	_, err := c.pathStat(dirPath)
 	if err == nil {
-		ic.console.PrintlnErrorStep("directory or file already exists: %s", dirPath)
+		ic.console.PrintError("directory or file already exists: %s", dirPath)
 		return
 	}
 
 	// Create the directory
 	err = c.pathMkDir(dirPath)
 	if err != nil {
-		ic.console.PrintlnErrorStep("failed to create directory: %v", err)
+		ic.console.PrintError("failed to create directory: %v", err)
 		return
 	}
 
-	ic.console.PrintlnOkStep("Created directory: %s", dirPath)
+	ic.console.PrintSuccess("Created directory: %s", dirPath)
 }
 
 func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
@@ -623,13 +623,13 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if rmFlags.NArg() != 1 {
-		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", rmFlags.NArg())
+		ic.console.PrintError("exactly 1 argument(s) required, got %d", rmFlags.NArg())
 		return
 	}
 
@@ -642,7 +642,7 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 	// Check if path exists
 	fi, sErr := c.sftpCli.Stat(path)
 	if sErr != nil {
-		ic.console.PrintlnErrorStep("File or directory not found")
+		ic.console.PrintError("File or directory not found")
 		return
 	}
 
@@ -664,7 +664,7 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 			})
 
 			if wdErr != nil {
-				ic.console.PrintlnErrorStep("Error scanning directory: %v", wdErr)
+				ic.console.PrintError("Error scanning directory: %v", wdErr)
 				return
 			}
 
@@ -673,17 +673,17 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 			ic.console.Term.SetPrompt("")
 			confirmation, rlErr := ic.console.Term.ReadLine()
 			if rlErr != nil || strings.ToLower(confirmation) != "y" {
-				ic.console.PrintlnDebugStep("Deletion cancelled")
+				ic.console.PrintInfo("Deletion cancelled")
 				return
 			}
 
 			// Perform recursive removal
 			rmErr := ic.removeDirectoryRecursive(c.sftpCli, path)
 			if rmErr != nil {
-				ic.console.PrintlnErrorStep("Failed to remove directory recursively: %v", rmErr)
+				ic.console.PrintError("Failed to remove directory recursively: %v", rmErr)
 				return
 			}
-			ic.console.PrintlnOkStep("Removed directory %s (%d files, %d directories)", path, fileCount, dirCount)
+			ic.console.PrintSuccess("Removed directory %s (%d files, %d directories)", path, fileCount, dirCount)
 		} else {
 			// Try to remove empty directory
 			rdErr := c.sftpCli.RemoveDirectory(path)
@@ -691,16 +691,16 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 				ic.console.TermPrintf("Directory remove error (use '-r' flag): %v", rdErr)
 				return
 			}
-			ic.console.PrintlnOkStep("Removed directory: %s", path)
+			ic.console.PrintSuccess("Removed directory: %s", path)
 		}
 	} else {
 		// It's a file
 		rmErr := c.sftpCli.Remove(path)
 		if rmErr != nil {
-			ic.console.PrintlnErrorStep("Failed to remove file: %v", rmErr)
+			ic.console.PrintError("Failed to remove file: %v", rmErr)
 			return
 		}
-		ic.console.PrintlnOkStep("Removed file: %s", path)
+		ic.console.PrintSuccess("Removed file: %s", path)
 	}
 }
 
@@ -720,13 +720,13 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if getFlags.NArg() != 1 {
-		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", getFlags.NArg())
+		ic.console.PrintError("exactly 1 argument(s) required, got %d", getFlags.NArg())
 		return
 	}
 
@@ -740,14 +740,14 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 	// Get file info to check if it exists
 	rpFi, sErr := c.sftpCli.Stat(remotePath)
 	if sErr != nil {
-		ic.console.PrintlnErrorStep("Failed to access remote path: %v", sErr)
+		ic.console.PrintError("Failed to access remote path: %v", sErr)
 		return
 	}
 
 	// Handle differently based on whether it's a directory or file
 	if rpFi.IsDir() {
 		if !*recursive {
-			ic.console.PrintlnErrorStep("Can not download a directory without \"-r\" flag")
+			ic.console.PrintError("Can not download a directory without \"-r\" flag")
 			return
 		}
 
@@ -773,7 +773,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		})
 
 		if wsErr != nil {
-			ic.console.PrintlnErrorStep("Error scanning directory: %v", wsErr)
+			ic.console.PrintError("Error scanning directory: %v", wsErr)
 			return
 		}
 
@@ -786,7 +786,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		// Create the target directory for the download
 		targetDir := spath.Join(ic.svrSystem, []string{localPath, spath.Base(ic.cliSystem, remotePath)})
 		if err := ensureLocalDir(targetDir); err != nil {
-			ic.console.PrintlnErrorStep("Failed to create target directory: %v", err)
+			ic.console.PrintError("Failed to create target directory: %v", err)
 			return
 		}
 
@@ -840,7 +840,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		})
 
 		if wrdErr != nil {
-			ic.console.PrintlnErrorStep("Error during download: %v", wrdErr)
+			ic.console.PrintError("Error during download: %v", wrdErr)
 			processingError = true
 		}
 
@@ -865,7 +865,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		// Open remote file
 		rFile, rErr := c.sftpCli.Open(remotePath)
 		if rErr != nil {
-			ic.console.PrintlnErrorStep("Failed to open remote file: %v", rErr)
+			ic.console.PrintError("Failed to open remote file: %v", rErr)
 			return
 		}
 		defer func() { _ = rFile.Close() }()
@@ -873,7 +873,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		// Create local file
 		lFile, cErr := os.Create(localFilePath)
 		if cErr != nil {
-			ic.console.PrintlnErrorStep("Failed to create local file: %v", cErr)
+			ic.console.PrintError("Failed to create local file: %v", cErr)
 			return
 		}
 		defer func() { _ = lFile.Close() }()
@@ -881,7 +881,7 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 		// Copy file with progress
 		_, cpErr := ic.copyFileWithProgress(rFile, lFile, remotePath, localFilePath, rpFi.Size(), "Download")
 		if cpErr != nil {
-			ic.console.PrintlnErrorStep("Failed to download file: %v", cpErr)
+			ic.console.PrintError("Failed to download file: %v", cpErr)
 		}
 	}
 }
@@ -902,13 +902,13 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if putFlags.NArg() != 1 {
-		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", putFlags.NArg())
+		ic.console.PrintError("exactly 1 argument(s) required, got %d", putFlags.NArg())
 		return
 	}
 
@@ -921,7 +921,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	// Get local file info to check if it exists
 	localFileInfo, ls1Err := os.Stat(localPath)
 	if ls1Err != nil {
-		ic.console.PrintlnErrorStep("Failed to access local path \"%s\"", localPath)
+		ic.console.PrintError("Failed to access local path \"%s\"", localPath)
 		return
 	}
 
@@ -935,7 +935,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
 		if !*recursive {
-			ic.console.PrintlnErrorStep("Cannot upload a directory without -r flag")
+			ic.console.PrintError("Cannot upload a directory without -r flag")
 			return
 		}
 
@@ -961,7 +961,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		})
 
 		if wl1Err != nil {
-			ic.console.PrintlnErrorStep("Error scanning directory: %v", wl1Err)
+			ic.console.PrintError("Error scanning directory: %v", wl1Err)
 			return
 		}
 
@@ -973,7 +973,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 
 		// Create the target directory for the upload
 		if err := ensureRemoteDir(c.sftpCli, remotePath); err != nil {
-			ic.console.PrintlnErrorStep("Failed to create target directory: %v", err)
+			ic.console.PrintError("Failed to create target directory: %v", err)
 			return
 		}
 
@@ -1033,7 +1033,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		})
 
 		if wl2Err != nil {
-			ic.console.PrintlnErrorStep("Error during upload: %v", wl2Err)
+			ic.console.PrintError("Error during upload: %v", wl2Err)
 			processingError = true
 		}
 
@@ -1052,7 +1052,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		// Open local file
 		lFile, err := os.Open(localPath)
 		if err != nil {
-			ic.console.PrintlnErrorStep("Failed to open local file \"%s\": %v", localPath, err)
+			ic.console.PrintError("Failed to open local file \"%s\": %v", localPath, err)
 			return
 		}
 		defer func() { _ = lFile.Close() }()
@@ -1060,7 +1060,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		// Create remote file
 		rFile, cErr := c.sftpCli.Create(remotePath)
 		if cErr != nil {
-			ic.console.PrintlnErrorStep("Failed to create remote file \"%s\": %v", remotePath, cErr)
+			ic.console.PrintError("Failed to create remote file \"%s\": %v", remotePath, cErr)
 			return
 		}
 		defer func() { _ = rFile.Close() }()
@@ -1068,7 +1068,7 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 		// Copy file with progress
 		_, err = ic.copyFileWithProgress(lFile, rFile, localPath, remotePath, fileSize, "Upload")
 		if err != nil {
-			ic.console.PrintlnErrorStep("Failed to upload file \"%s\": %v", localPath, err)
+			ic.console.PrintError("Failed to upload file \"%s\": %v", localPath, err)
 		}
 	}
 }
@@ -1087,13 +1087,13 @@ func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if chmodFlags.NArg() != 2 {
-		ic.console.PrintlnErrorStep("exactly 2 argument(s) required, got %d", chmodFlags.NArg())
+		ic.console.PrintError("exactly 2 argument(s) required, got %d", chmodFlags.NArg())
 		return
 	}
 
@@ -1117,25 +1117,25 @@ func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 	}
 
 	if err != nil {
-		ic.console.PrintlnErrorStep("Invalid permission format (use octal, e.g. 0755): %v", err)
+		ic.console.PrintError("Invalid permission format (use octal, e.g. 0755): %v", err)
 		return
 	}
 
 	// Check if file exists
 	_, err = c.sftpCli.Stat(path)
 	if err != nil {
-		ic.console.PrintlnErrorStep("File or directory \"%s\" not found: %v", path, err)
+		ic.console.PrintError("File or directory \"%s\" not found: %v", path, err)
 		return
 	}
 
 	// Change permissions
 	err = c.sftpCli.Chmod(path, os.FileMode(mode))
 	if err != nil {
-		ic.console.PrintlnErrorStep("Failed to change \"%s\" permissions: %v", path, err)
+		ic.console.PrintError("Failed to change \"%s\" permissions: %v", path, err)
 		return
 	}
 
-	ic.console.PrintlnOkStep("Changed permissions of %s to %s (%s)",
+	ic.console.PrintSuccess("Changed permissions of %s to %s (%s)",
 		path,
 		modeStr,
 		os.FileMode(mode).String())
@@ -1155,13 +1155,13 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if statFlags.NArg() != 1 {
-		ic.console.PrintlnErrorStep("exactly 1 argument(s) required, got %d", statFlags.NArg())
+		ic.console.PrintError("exactly 1 argument(s) required, got %d", statFlags.NArg())
 		return
 	}
 
@@ -1174,7 +1174,7 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 	// Get file info
 	fi, err := c.sftpCli.Stat(path)
 	if err != nil {
-		ic.console.PrintlnErrorStep("Failed to get file information: %v", err)
+		ic.console.PrintError("Failed to get file information: %v", err)
 		return
 	}
 
@@ -1210,7 +1210,7 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 	}
 
 	// Print file information
-	ic.console.PrintlnOkStep("File Information for: %s\n", path)
+	ic.console.PrintSuccess("File Information for: %s\n", path)
 	tw := new(tabwriter.Writer)
 	tw.Init(ic.console.Term, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\tName:\t%s\n", filepath.Base(path))
@@ -1243,13 +1243,13 @@ func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return
 		}
-		ic.console.PrintlnErrorStep("Flag error: %v", pErr)
+		ic.console.PrintError("Flag error: %v", pErr)
 		return
 	}
 
 	// Validate exact args
 	if mvFlags.NArg() != 2 {
-		ic.console.PrintlnErrorStep("exactly 2 argument(s) required, got %d", mvFlags.NArg())
+		ic.console.PrintError("exactly 2 argument(s) required, got %d", mvFlags.NArg())
 		return
 	}
 
@@ -1267,27 +1267,27 @@ func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
 	// Check if source exists
 	srcFi, err := c.sftpCli.Stat(srcPath)
 	if err != nil {
-		ic.console.PrintlnErrorStep("Source file or directory \"%s\" not found: %v", srcPath, err)
+		ic.console.PrintError("Source file or directory \"%s\" not found: %v", srcPath, err)
 		return
 	}
 
 	// Check if destination already exists
 	_, err = c.sftpCli.Stat(dstPath)
 	if err == nil {
-		ic.console.PrintlnErrorStep("Destination already exists, cannot overwrite")
+		ic.console.PrintError("Destination already exists, cannot overwrite")
 		return
 	}
 
 	// Rename file or directory
 	err = c.sftpCli.Rename(srcPath, dstPath)
 	if err != nil {
-		ic.console.PrintlnErrorStep("Failed to rename \"%s\": %v", srcPath, err)
+		ic.console.PrintError("Failed to rename \"%s\": %v", srcPath, err)
 		return
 	}
 
 	if srcFi.IsDir() {
-		ic.console.PrintlnOkStep("Renamed directory from %s to %s", srcPath, dstPath)
+		ic.console.PrintSuccess("Renamed directory from %s to %s", srcPath, dstPath)
 	} else {
-		ic.console.PrintlnOkStep("Renamed file from %s to %s", srcPath, dstPath)
+		ic.console.PrintSuccess("Renamed file from %s to %s", srcPath, dstPath)
 	}
 }

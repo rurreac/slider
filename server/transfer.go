@@ -172,7 +172,7 @@ func CopyWithProgress(dst io.Writer, src io.Reader, console Console, srcName, ds
 
 	// Log completion
 	if err == nil {
-		console.PrintlnOkStep("%s complete: %s to %s (%.1f MB) in %.1f seconds (%.1f KB/s)",
+		console.PrintSuccess("%s complete: %s to %s (%.1f MB) in %.1f seconds (%.1f KB/s)",
 			operation,
 			srcName,
 			dstName,

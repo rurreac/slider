@@ -129,29 +129,6 @@ func (c *Console) Writer() io.Writer {
 	return c.Term
 }
 
-// Deprecated methods - kept temporarily for backward compatibility
-// These will be removed in a follow-up PR
-
-// Deprecated: Use PrintInfo instead
-func (c *Console) PrintlnDebugStep(m string, args ...interface{}) {
-	c.PrintInfo(m, args...)
-}
-
-// Deprecated: Use PrintWarn instead
-func (c *Console) PrintlnWarnStep(m string, args ...interface{}) {
-	c.PrintWarn(m, args...)
-}
-
-// Deprecated: Use PrintError instead
-func (c *Console) PrintlnErrorStep(m string, args ...interface{}) {
-	c.PrintError(m, args...)
-}
-
-// Deprecated: Use PrintSuccess instead
-func (c *Console) PrintlnOkStep(m string, args ...interface{}) {
-	c.PrintSuccess(m, args...)
-}
-
 func (c *Console) Println(m string) {
 	c.Output.Printf("\r%s\n", m)
 }

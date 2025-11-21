@@ -31,9 +31,9 @@ type screenIO struct {
 func (s *server) consoleBanner() {
 	s.console.clearScreen()
 	s.console.Printf("%s%s%s\n\n", greyBold, conf.Banner, resetColor)
-	s.console.PrintlnDebugStep("Type \"bg\" to return to logging.")
-	s.console.PrintlnDebugStep("Type \"help\" to see available commands.")
-	s.console.PrintlnDebugStep("Type \"exit\" to exit the console.\n")
+	s.console.PrintInfo("Type \"bg\" to return to logging.")
+	s.console.PrintInfo("Type \"help\" to see available commands.")
+	s.console.PrintInfo("Type \"exit\" to exit the console.\n")
 }
 
 func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
@@ -148,7 +148,7 @@ func (s *server) NewConsole() string {
 				out = bgCmd
 				consoleInput = false
 			} else {
-				s.console.PrintlnErrorStep("%v", err)
+				s.console.PrintError("%v", err)
 			}
 		} else {
 			s.console.Term.SetPrompt(getPrompt())
@@ -202,19 +202,19 @@ func autocompleteCommand(input string, cmdList []string) (string, int) {
 func (s *server) notConsoleCommand(fCmd []string) {
 	// If a Shell was not set, just return
 	if s.serverInterpreter.Shell == "" {
-		s.console.PrintlnErrorStep("No Shell set")
+		s.console.PrintError("No Shell set")
 		return
 	}
 
 	// Else, we'll try to execute the command locally
-	s.console.PrintlnWarnStep("Executing local Command: %s", fCmd)
+	s.console.PrintWarn("Executing local Command: %s", fCmd)
 	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
-		s.console.PrintlnErrorStep("%v", err)
+		s.console.PrintError("%v", err)
 	}
 	s.console.Println("")
 
