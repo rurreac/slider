@@ -26,8 +26,8 @@ func (c *SSHCommand) Run(s *server, args []string, ui UserInterface) error {
 	sExpose := sshFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	sshFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sshUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", sshDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sshUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", sshDesc)
 		sshFlags.PrintDefaults()
 	}
 

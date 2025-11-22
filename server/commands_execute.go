@@ -24,8 +24,8 @@ func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
 	eAll := executeFlags.BoolP("all", "a", false, "Run command passed as an argument on all sessions")
 
 	executeFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", executeUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", executeUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc)
 		executeFlags.PrintDefaults()
 	}
 

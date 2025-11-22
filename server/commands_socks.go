@@ -26,8 +26,8 @@ func (c *SocksCommand) Run(s *server, args []string, ui UserInterface) error {
 	sExpose := socksFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	socksFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", socksUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", socksDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", socksUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", socksDesc)
 		socksFlags.PrintDefaults()
 	}
 

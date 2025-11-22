@@ -32,8 +32,8 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 	sExpose := shellFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	shellFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", shellUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", shellDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", shellUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", shellDesc)
 		shellFlags.PrintDefaults()
 	}
 
@@ -158,15 +158,12 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 }
 
 func (c *ShellCommand) interactiveShell(s *server, port int, ui UserInterface) {
-	// Wait for the server to start
-	time.Sleep(1 * time.Second)
-
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		ui.PrintError("Failed to connect to shell: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Set console to raw mode
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -174,7 +171,7 @@ func (c *ShellCommand) interactiveShell(s *server, port int, ui UserInterface) {
 		ui.PrintError("Failed to set raw mode: %v", err)
 		return
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }()
 
 	// Pipe stdin/stdout/stderr
 	go func() {

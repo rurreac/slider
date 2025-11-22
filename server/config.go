@@ -90,27 +90,27 @@ func RunServer(cfg *ServerConfig) {
 	if cfg.TemplatePath != "" {
 		tErr := conf.CheckTemplate(cfg.TemplatePath)
 		if tErr != nil {
-			s.Logger.Fatalf("Wrong template: %s", tErr)
+			s.Fatalf("Wrong template: %s", tErr)
 		}
 		s.templatePath = cfg.TemplatePath
 	}
 
 	s.statusCode = cfg.StatusCode
 	if !conf.CheckStatusCode(cfg.StatusCode) {
-		s.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
+		s.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
 		s.statusCode = http.StatusOK
 	}
 
 	// Ensure a minimum keepalive
 	if cfg.Keepalive < conf.MinKeepAlive {
-		s.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
+		s.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
 		cfg.Keepalive = conf.MinKeepAlive
 	}
 	s.keepalive = cfg.Keepalive
 
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {
-		s.Logger.Fatalf("%v", iErr)
+		s.Fatalf("%v", iErr)
 	}
 	s.serverInterpreter = i
 
@@ -126,29 +126,29 @@ func RunServer(cfg *ServerConfig) {
 		}
 
 		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !cfg.CaStore && cfg.CaStorePath != "" {
-			s.Logger.Fatalf("Failed load Server Key, %s does not exist", kp)
+			s.Fatalf("Failed load Server Key, %s does not exist", kp)
 		} else if os.IsNotExist(sErr) && cfg.CaStore {
-			s.Logger.Debugf("Storing New Server Certificate on %s", kp)
+			s.Debugf("Storing New Server Certificate on %s", kp)
 		} else {
-			s.Logger.Infof("Importing existing Server Certificate from %s", kp)
+			s.Infof("Importing existing Server Certificate from %s", kp)
 		}
 
 		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
 		if kErr != nil {
-			s.Logger.Fatalf("Failed to load Server Key: %v", kErr)
+			s.Fatalf("Failed to load Server Key: %v", kErr)
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.Logger.Fatalf("Failed generate SSH signer: %v", prErr)
+			s.Fatalf("Failed generate SSH signer: %v", prErr)
 		}
 	} else {
 		serverKeyPair, kErr = scrypt.NewServerKeyPair()
 		if kErr != nil {
-			s.Logger.Fatalf("Failed to generate Server Key: %v", kErr)
+			s.Fatalf("Failed to generate Server Key: %v", kErr)
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.Logger.Fatalf("failed to create signer: %v", prErr)
+			s.Fatalf("failed to create signer: %v", prErr)
 		}
 
 	}
@@ -158,41 +158,41 @@ func RunServer(cfg *ServerConfig) {
 
 	serverFp, fErr := scrypt.GenerateFingerprint(s.serverKey.PublicKey())
 	if fErr != nil {
-		s.Logger.Fatalf("Failed to generate server fingerprint")
+		s.Fatalf("Failed to generate server fingerprint")
 	}
-	s.Logger.Infof("Server Fingerprint: %s", serverFp)
+	s.Infof("Server Fingerprint: %s", serverFp)
 
 	if cfg.Auth {
-		s.Logger.Warnf("Client Authentication enabled, a valid certificate will be required")
+		s.Warnf("Client Authentication enabled, a valid certificate will be required")
 
 		if s.certJarFile == "" {
 			s.certJarFile = conf.GetSliderHome() + clientCertsFile
 		}
 		if lcErr := s.loadCertJar(); lcErr != nil {
-			s.Logger.Fatalf("%v", lcErr)
+			s.Fatalf("%v", lcErr)
 		}
 
 		s.sshConf.NoClientAuth = false
 		s.sshConf.PublicKeyCallback = s.clientVerification
 	} else {
 		if s.certJarFile != "" {
-			s.Logger.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
+			s.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
 		}
 	}
 
 	if cfg.HttpRedirect != "" {
 		wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
 		if wErr != nil {
-			s.Logger.Fatalf("Bad Redirect URL: %v", wErr)
+			s.Fatalf("Bad Redirect URL: %v", wErr)
 		}
 		s.urlRedirect = wr
-		s.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.urlRedirect)
+		s.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.urlRedirect)
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
 	serverAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 	if rErr != nil {
-		s.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
+		s.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 	}
 
 	tlsOn := false
@@ -202,19 +202,19 @@ func RunServer(cfg *ServerConfig) {
 		tlsOn = true
 		listenerProto = "tls"
 		if cfg.ListenerCA != "" {
-			s.Logger.Warnf("Using CA \"%s\" for TLS client verification", cfg.ListenerCA)
+			s.Warnf("Using CA \"%s\" for TLS client verification", cfg.ListenerCA)
 			caPem, rfErr := os.ReadFile(cfg.ListenerCA)
 			if rfErr != nil {
-				s.Logger.Fatalf("Failed to read CA file: %v", rfErr)
+				s.Fatalf("Failed to read CA file: %v", rfErr)
 			}
 			if len(caPem) == 0 {
-				s.Logger.Fatalf("CA file is empty")
+				s.Fatalf("CA file is empty")
 			}
 			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
 		}
 	}
 
-	s.Logger.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
+	s.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
 	go func() {
 		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
 
@@ -226,16 +226,16 @@ func RunServer(cfg *ServerConfig) {
 			}
 			httpSrv.Handler = handler
 			if sErr := httpSrv.ListenAndServeTLS(cfg.ListenerCert, cfg.ListenerKey); sErr != nil {
-				s.Logger.Fatalf("TLS Listener error: %s", sErr)
+				s.Fatalf("TLS Listener error: %s", sErr)
 			}
 			return
 		}
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
-			s.Logger.Fatalf("Listener error: %s", sErr)
+			s.Fatalf("Listener error: %s", sErr)
 		}
 	}()
 
-	s.Logger.Infof("Press CTR^C to access the Slider Console")
+	s.Infof("Press CTR^C to access the Slider Console")
 
 	// Capture Interrupt Signal to toggle log output and activate Console
 	var cmdOutput string
@@ -247,18 +247,18 @@ func RunServer(cfg *ServerConfig) {
 			signal.Stop(sig)
 			close(sig)
 			// Send logs to a buffer
-			s.Logger.LogToBuffer()
+			s.LogToBuffer()
 			// Run a Slider Console (NewConsole locks until termination),
 			// 'cmdOutput' will always be equal to "bg" or "exit"
 			cmdOutput = s.NewConsole()
 			// Restore logs from buffer and resume output to stdout
-			s.Logger.BufferOut()
-			s.Logger.LogToStdout()
+			s.BufferOut()
+			s.LogToStdout()
 		}
 		if cmdOutput == "exit" {
 			consoleToggle = false
 		}
 	}
 
-	s.Logger.Printf("Server down...")
+	s.Printf("Server down...")
 }

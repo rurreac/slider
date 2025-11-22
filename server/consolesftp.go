@@ -63,15 +63,15 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 
 	// Fixing some path inconsistencies between SFTP client and server
 	if cliSystem == "windows" && svrSystem != "windows" /*&& !session.clientInterpreter.PtyOn*/ {
-		cliHomeDir = strings.Replace(cliHomeDir, "/", "\\", -1)
-		remoteCwd = strings.Replace(strings.TrimPrefix(remoteCwd, "/"), "/", "\\", -1)
+		cliHomeDir = strings.ReplaceAll(cliHomeDir, "/", "\\")
+		remoteCwd = strings.ReplaceAll(strings.TrimPrefix(remoteCwd, "/"), "/", "\\")
 	}
 	if cliSystem == "windows" && svrSystem == "windows" {
-		cliHomeDir = strings.Replace(cliHomeDir, "\\", "/", -1)
+		cliHomeDir = strings.ReplaceAll(cliHomeDir, "\\", "/")
 		remoteCwd = strings.TrimPrefix(remoteCwd, "/")
 	}
 	if cliSystem != "windows" && svrSystem == "windows" {
-		remoteCwd = strings.Replace(remoteCwd, "\\", "/", -1)
+		remoteCwd = strings.ReplaceAll(remoteCwd, "\\", "/")
 	}
 
 	cliUser := strings.ToLower(session.clientInterpreter.User)
@@ -564,8 +564,8 @@ func (ic *sftpConsole) commandSftpMkdir(c *sftpCommandRequest) {
 	mkdirFlags.SetOutput(ic.console.Term)
 
 	mkdirFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", commands[c.command].usage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", commands[c.command].description)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", commands[c.command].usage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", commands[c.command].description)
 		mkdirFlags.PrintDefaults()
 	}
 
@@ -614,8 +614,8 @@ func (ic *sftpConsole) commandSftpRm(c *sftpCommandRequest) {
 	recursive := rmFlags.BoolP("recursive", "r", false, "Remove directory and their contents recursively")
 
 	rmFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", rmUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", rmDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", rmUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", rmDesc)
 		rmFlags.PrintDefaults()
 	}
 
@@ -711,8 +711,8 @@ func (ic *sftpConsole) commandSftpGet(c *sftpCommandRequest) {
 	recursive := getFlags.BoolP("recursive", "r", false, "Download directories recursively")
 
 	getFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", getUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", getDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", getUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", getDesc)
 		getFlags.PrintDefaults()
 	}
 
@@ -893,8 +893,8 @@ func (ic *sftpConsole) commandSftpPut(c *sftpCommandRequest) {
 	recursive := putFlags.BoolP("recursive", "r", false, "Upload directory recursively")
 
 	putFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", putUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", putDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", putUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", putDesc)
 		putFlags.PrintDefaults()
 	}
 
@@ -1078,8 +1078,8 @@ func (ic *sftpConsole) commandSftpChmod(c *sftpCommandRequest) {
 	chmodFlags.SetOutput(ic.console.Term)
 
 	chmodFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", chmodUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", chmodDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", chmodUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", chmodDesc)
 		chmodFlags.PrintDefaults()
 	}
 
@@ -1146,8 +1146,8 @@ func (ic *sftpConsole) commandSftpStat(c *sftpCommandRequest) {
 	statFlags.SetOutput(ic.console.Term)
 
 	statFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", statUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", statDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", statUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", statDesc)
 		statFlags.PrintDefaults()
 	}
 
@@ -1234,8 +1234,8 @@ func (ic *sftpConsole) commandSftpMove(c *sftpCommandRequest) {
 	mvFlags.SetOutput(ic.console.Term)
 
 	mvFlags.Usage = func() {
-		fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", mvUsage)
-		fmt.Fprintf(ic.console.Term, "%s\n\n", mvDesc)
+		_, _ = fmt.Fprintf(ic.console.Term, "Usage: %s\n\n", mvUsage)
+		_, _ = fmt.Fprintf(ic.console.Term, "%s\n\n", mvDesc)
 		mvFlags.PrintDefaults()
 	}
 

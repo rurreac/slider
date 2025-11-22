@@ -25,8 +25,8 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 	cCA := certsFlags.BoolP("dump-ca", "c", false, "Dump CA Certificate and key")
 
 	certsFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", certsUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", certsDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", certsUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", certsDesc)
 		certsFlags.PrintDefaults()
 	}
 

@@ -73,14 +73,14 @@ func (s *server) NewConsole() string {
 	// Only applies to Windows - Best effort to have a successful raw terminal regardless
 	// of the Windows version
 	if piErr := s.serverInterpreter.EnableProcessedInputOutput(); piErr != nil {
-		s.Logger.Errorf("Failed to enable Processed Input/Output")
+		s.Errorf("Failed to enable Processed Input/Output")
 		// Sets Console Colors based on if PTY is enabled on the server.
 		// If it's not on PTY and fails to set Processed IO, disables colors
 		setConsoleColors()
 	}
 	defer func() {
 		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {
-			s.Logger.Errorf("Failed to reset Input/Output modes: %s", ioErr)
+			s.Errorf("Failed to reset Input/Output modes: %s", ioErr)
 		}
 	}()
 
@@ -91,14 +91,14 @@ func (s *server) NewConsole() string {
 	var sErr error
 	s.console.InitState, sErr = term.GetState(int(os.Stdin.Fd()))
 	if sErr != nil {
-		s.Logger.Fatalf("Failed to read terminal size: %v", sErr)
+		s.Fatalf("Failed to read terminal size: %v", sErr)
 	}
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()
 	screen := screenIO{os.Stdin, os.Stdout}
 	if ntErr := s.newTerminal(screen, s.commandRegistry); ntErr != nil {
-		s.Logger.Fatalf("Failed to initialize terminal: %s", ntErr)
+		s.Fatalf("Failed to initialize terminal: %s", ntErr)
 	}
 
 	for consoleInput := true; consoleInput; {
@@ -113,7 +113,7 @@ func (s *server) NewConsole() string {
 			// To avoid an unexpected behavior, we will silently create a new terminal
 			// and continue
 			if ntErr := s.newTerminal(screen, s.commandRegistry); ntErr != nil {
-				s.Logger.Fatalf("Failed to recover terminal: %s", ntErr)
+				s.Fatalf("Failed to recover terminal: %s", ntErr)
 			}
 			_, _ = s.console.Term.Write([]byte{'\n'})
 			continue

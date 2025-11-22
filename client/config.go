@@ -109,20 +109,20 @@ func RunClient(cfg *ClientConfig) {
 
 	if cfg.Listener {
 		c.isListener = cfg.Listener
-		c.listenerConf.serverHeader = cfg.ServerHeader
+		c.serverHeader = cfg.ServerHeader
 
 		if cfg.TemplatePath != "" {
 			tErr := conf.CheckTemplate(cfg.TemplatePath)
 			if tErr != nil {
 				c.Logger.Fatalf("Wrong template: %s", tErr)
 			}
-			c.listenerConf.templatePath = cfg.TemplatePath
+			c.templatePath = cfg.TemplatePath
 		}
 
-		c.listenerConf.statusCode = cfg.StatusCode
+		c.statusCode = cfg.StatusCode
 		if !conf.CheckStatusCode(cfg.StatusCode) {
 			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
-			c.listenerConf.statusCode = http.StatusOK
+			c.statusCode = http.StatusOK
 		}
 
 		if cfg.HttpRedirect != "" {

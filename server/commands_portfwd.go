@@ -29,8 +29,8 @@ func (c *PortFwdCommand) Run(s *server, args []string, ui UserInterface) error {
 	pRemove := portFwdFlags.BoolP("remove", "r", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
 
 	portFwdFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", portFwdUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", portFwdDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", portFwdUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", portFwdDesc)
 		portFwdFlags.PrintDefaults()
 	}
 

@@ -18,7 +18,7 @@ func (w *wsConn) Read(p []byte) (int, error) {
 	if len(w.buff) > 0 {
 		src = w.buff
 		w.buff = nil
-	} else if _, pConn, err := w.Conn.ReadMessage(); err == nil {
+	} else if _, pConn, err := w.ReadMessage(); err == nil {
 		src = pConn
 	} else {
 		return 0, err
@@ -41,7 +41,7 @@ func (w *wsConn) Read(p []byte) (int, error) {
 }
 
 func (w *wsConn) Write(p []byte) (int, error) {
-	if err := w.Conn.WriteMessage(websocket.BinaryMessage, p); err != nil {
+	if err := w.WriteMessage(websocket.BinaryMessage, p); err != nil {
 		return 0, err
 	}
 	return len(p), nil

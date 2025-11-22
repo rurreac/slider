@@ -26,8 +26,8 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 	sKill := sessionsFlags.IntP("kill", "k", 0, "Kill Session ID")
 
 	sessionsFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sessionsUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc) // Note: Original code used executeDesc here, might be a copy-paste error in original code, but keeping it for now or should I fix it? sessionsDesc is better.
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sessionsUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc) // Note: Original code used executeDesc here, might be a copy-paste error in original code, but keeping it for now or should I fix it? sessionsDesc is better.
 		sessionsFlags.PrintDefaults()
 	}
 

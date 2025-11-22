@@ -14,7 +14,7 @@ import (
 func (s *server) NewSSHServer(session *Session) {
 	netConn := sconn.WsConnToNetConn(session.wsConn)
 
-	s.Logger.Debugf(
+	s.Debugf(
 		"Established WebSocket connection with client \"%s\"",
 		netConn.RemoteAddr().String(),
 	)
@@ -33,7 +33,7 @@ func (s *server) NewSSHServer(session *Session) {
 
 	sshServerConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
-		s.Logger.Errorf("Failed to create SSH server %v", err)
+		s.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
 			session.notifier <- false
 		}
@@ -52,7 +52,7 @@ func (s *server) NewSSHServer(session *Session) {
 
 	}
 
-	s.Logger.Debugf(
+	s.Debugf(
 		"Upgraded Websocket transport to SSH Connection: address: %s, client version: %s, session: %v",
 		session.sshConn.RemoteAddr().String(),
 		session.sshConn.ClientVersion(),
@@ -139,7 +139,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "client-info":
 			ci := &conf.ClientInfo{}
 			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
-				s.Logger.Errorf("Failed to parse Client Info - %v", jErr)
+				s.Errorf("Failed to parse Client Info - %v", jErr)
 			}
 			session.setInterpreter(ci.Interpreter)
 
@@ -152,7 +152,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				var jErr error
 				interpreterPayload, jErr = json.Marshal(ci.Interpreter)
 				if jErr != nil {
-					s.Logger.Errorf("Session ID %d - Error marshaling Client Info", session.sessionID)
+					s.Errorf("Session ID %d - Error marshaling Client Info", session.sessionID)
 				}
 			}
 			_ = session.replyConnRequest(r, true, interpreterPayload)

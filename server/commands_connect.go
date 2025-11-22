@@ -27,8 +27,8 @@ func (c *ConnectCommand) Run(s *server, args []string, ui UserInterface) error {
 	cTlsKey := connectFlags.StringP("tls-key", "k", "", "Use custom client TLS key")
 
 	connectFlags.Usage = func() {
-		fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
-		fmt.Fprintf(ui.Writer(), "%s\n\n", connectDesc)
+		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", connectDesc)
 		connectFlags.PrintDefaults()
 	}
 
