@@ -12,6 +12,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console Port Forwarding Command
+	portFwdCmd   = "portfwd"
+	portFwdDesc  = "Creates a port forwarding tunnel to / from a client"
+	portFwdUsage = "Usage: portfwd [flags] <[local_addr]:local_port:[remote_addr]:remote_port>"
+)
+
 // PortFwdCommand implements the 'portfwd' command
 type PortFwdCommand struct{}
 

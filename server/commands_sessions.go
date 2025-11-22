@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console Sessions Command
+	sessionsCmd   = "sessions"
+	sessionsDesc  = "Interacts with Client Sessions"
+	sessionsUsage = "Usage: sessions [flags]"
+)
+
 // SessionsCommand implements the 'sessions' command
 type SessionsCommand struct{}
 

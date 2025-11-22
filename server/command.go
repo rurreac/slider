@@ -43,6 +43,24 @@ func (r *CommandRegistry) Register(cmd Command) {
 	r.commands[cmd.Name()] = cmd
 }
 
+func (s *server) initRegistry() {
+	s.commandRegistry = NewCommandRegistry()
+	s.commandRegistry.Register(&BgCommand{})
+	s.commandRegistry.Register(&ExitCommand{})
+	s.commandRegistry.Register(&HelpCommand{})
+	s.commandRegistry.Register(&ExecuteCommand{})
+	s.commandRegistry.Register(&SessionsCommand{})
+	s.commandRegistry.Register(&SocksCommand{})
+	s.commandRegistry.Register(&SSHCommand{})
+	s.commandRegistry.Register(&ConnectCommand{})
+	s.commandRegistry.Register(&ShellCommand{})
+	s.commandRegistry.Register(&PortFwdCommand{})
+	if s.authOn {
+		s.commandRegistry.Register(&CertsCommand{})
+	}
+	// Register other commands here as they are refactored
+}
+
 // Get retrieves a command by name
 func (r *CommandRegistry) Get(name string) (Command, bool) {
 	cmd, ok := r.commands[name]

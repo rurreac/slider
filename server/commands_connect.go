@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console Connect Command
+	connectCmd   = "connect"
+	connectDesc  = "Establishes a connection to a Client"
+	connectUsage = "Usage: connect [flags] <client_address:port>"
+)
+
 // ConnectCommand implements the 'connect' command
 type ConnectCommand struct{}
 

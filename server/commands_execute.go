@@ -8,6 +8,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console Execute Command
+	executeCmd   = "execute"
+	executeDesc  = "Runs a command remotely and returns the output"
+	executeUsage = "Usage: execute [flags] [command]"
+)
+
 // ExecuteCommand implements the 'execute' command
 type ExecuteCommand struct{}
 

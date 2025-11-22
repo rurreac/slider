@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console SSH Command
+	sshCmd   = "ssh"
+	sshDesc  = "Runs a Socks5 server over an SSH Channel on a Session ID"
+	sshUsage = "Usage: ssh [flags]"
+)
+
 // SSHCommand implements the 'ssh' command
 type SSHCommand struct{}
 

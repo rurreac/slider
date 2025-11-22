@@ -10,6 +10,13 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// Console Certs Command
+	certsCmd   = "certs"
+	certsDesc  = "Interacts with Client Certificates"
+	certsUsage = "Usage: certs [flags]"
+)
+
 // CertsCommand implements the 'certs' command
 type CertsCommand struct{}
 

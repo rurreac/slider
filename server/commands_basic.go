@@ -5,6 +5,16 @@ import (
 	"text/tabwriter"
 )
 
+const (
+	// Console Basic Commands
+	bgCmd    = "bg"
+	bgDesc   = "Puts Console into background and returns to logging output"
+	exitCmd  = "exit"
+	exitDesc = "Exits Console and terminates the Server"
+	helpCmd  = "help"
+	helpDesc = "Shows this output"
+)
+
 // BgCommand implements the 'bg' command
 type BgCommand struct{}
 
