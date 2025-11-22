@@ -3,6 +3,8 @@ package server
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/spf13/pflag"
@@ -65,13 +67,22 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 			defer s.certTrackMutex.Unlock()
 
 			if len(s.certTrack.Certs) > 0 {
+				ids := slices.Collect(maps.Keys(s.certTrack.Certs))
+				slices.Sort(ids)
 				tw := new(tabwriter.Writer)
 				tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 				_, _ = fmt.Fprintf(tw, "\n\tID\tFingerprint\t")
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
-				for id, cert := range s.certTrack.Certs {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, cert.FingerPrint)
+				for _, id := range ids {
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, s.certTrack.Certs[id].FingerPrint)
+				}
+				_, _ = fmt.Fprintln(tw)
+				_, _ = fmt.Fprintf(tw, "\n\tID\tPrivate Key\t")
+				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
+
+				for _, id := range ids {
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, s.certTrack.Certs[id].PrivateKey)
 				}
 				_, _ = fmt.Fprintln(tw)
 				_ = tw.Flush()
@@ -83,15 +94,27 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	if *cCA {
-		if s.CertificateAuthority != nil {
-			twn := new(tabwriter.Writer)
-			twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
-			_, _ = fmt.Fprintln(twn)
-			_, _ = fmt.Fprintf(twn, "\tCA Certificate:\t%s\t\n", s.CertificateAuthority.CertPEM)
-			_, _ = fmt.Fprintf(twn, "\tCA Private Key:\t%s\t\n", s.CertificateAuthority.KeyPEM)
-			_, _ = fmt.Fprintln(twn)
-			_ = twn.Flush()
+		if s.CertificateAuthority == nil {
+			ui.PrintInfo("No CA certificate found")
+			return nil
 		}
+		if s.caStoreOn {
+			caCertPath, cErr := s.saveCACert()
+			if cErr != nil {
+				ui.PrintError("Failed to save CA certificate - %s", cErr)
+				return nil
+			}
+			caKeyPath, kErr := s.saveCAKey()
+			if kErr != nil {
+				ui.PrintError("Failed to save CA key - %s", kErr)
+				return nil
+			}
+			ui.PrintSuccess("CA Certificate saved to %s", caCertPath)
+			ui.PrintSuccess("CA Private Key saved to %s", caKeyPath)
+			return nil
+		}
+		ui.PrintInfo("CA Certificate:\n%s", s.CertificateAuthority.CertPEM)
+		ui.PrintInfo("CA Private Key:\n%s", s.CertificateAuthority.KeyPEM)
 		return nil
 	}
 
@@ -99,16 +122,27 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 		// Dump SSH keys for a cert ID
 		keypair, err := s.getCert(int64(*cSSH))
 		if err != nil {
-			ui.PrintError("%s", err)
+			ui.PrintError("Failed to get certificate - %s", err)
 			return nil
 		}
-		twn := new(tabwriter.Writer)
-		twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(twn)
-		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
-		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
-		_, _ = fmt.Fprintln(twn)
-		_ = twn.Flush()
+		if s.certSaveOn {
+			pvKeyPath, pvErr := s.savePrivateKey(int64(*cSSH))
+			if pvErr != nil {
+				ui.PrintError("Failed to save private key - %s", pvErr)
+				return nil
+			}
+			pbKeyPath, pbErr := s.savePublicKey(int64(*cSSH))
+			if pbErr != nil {
+				ui.PrintError("Failed to save private key - %s", pbErr)
+				return nil
+			}
+			ui.PrintInfo("Private Key saved to %s", pvKeyPath)
+			ui.PrintInfo("Public Key saved to %s", pbKeyPath)
+			return nil
+		}
+		ui.PrintWarn("Current Certificates are not persistent, dumping to console")
+		ui.PrintInfo("Private Key: %s", keypair.PrivateKey)
+		ui.PrintInfo("Fingerprint: %s", keypair.FingerPrint)
 		return nil
 	}
 
@@ -119,22 +153,17 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 			ui.PrintError("Failed to generate certificate - %s", err)
 			return nil
 		}
-		twn := new(tabwriter.Writer)
-		twn.Init(ui.Writer(), 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(twn)
-		_, _ = fmt.Fprintf(twn, "\tPrivate Key:\t%s\t\n", keypair.PrivateKey)
-		_, _ = fmt.Fprintf(twn, "\tFingerprint:\t%s\t\n", keypair.FingerPrint)
-		_, _ = fmt.Fprintln(twn)
-		_ = twn.Flush()
+		ui.PrintInfo("Private Key: %s", keypair.PrivateKey)
+		ui.PrintInfo("Fingerprint: %s", keypair.FingerPrint)
 		return nil
 	}
 
 	if *cRemove > 0 {
 		if err := s.dropCertItem(int64(*cRemove)); err != nil {
-			ui.PrintError("%s", err)
+			ui.PrintError("Failed to remove certificate ID %d - %s", *cRemove, err)
 			return nil
 		}
-		ui.PrintSuccess("Certificate successfully removed")
+		ui.PrintSuccess("Certificate ID %d successfully removed", *cRemove)
 		return nil
 	}
 	return nil

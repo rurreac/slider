@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"slider/pkg/conf"
 	"slider/pkg/scrypt"
 	"sync/atomic"
 )
@@ -140,4 +141,82 @@ func (s *server) getCert(certID int64) (*scrypt.KeyPair, error) {
 		return kp, nil
 	}
 	return &scrypt.KeyPair{}, fmt.Errorf("certID %d not found in cert jar", certID)
+}
+
+func (s *server) savePrivateKey(certID int64) (string, error) {
+	keyPair, err := s.getCert(certID)
+	if err != nil {
+		return "", fmt.Errorf("certID %d not found in cert jar", certID)
+	}
+	privateKeyPath := fmt.Sprintf("%sid_ed25519_cert%d", conf.GetSliderHome(), certID)
+	privateKey, pvOErr := os.OpenFile(
+		privateKeyPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0600)
+	if pvOErr != nil {
+		return "", fmt.Errorf("failed to open private key file")
+	}
+	defer func() { _ = privateKey.Close() }()
+	_, pvWErr := privateKey.Write([]byte(keyPair.SSHPrivateKey))
+	if pvWErr != nil {
+		return "", fmt.Errorf("failed to write private key file")
+	}
+	return privateKeyPath, nil
+}
+
+func (s *server) savePublicKey(certID int64) (string, error) {
+	keyPair, err := s.getCert(certID)
+	if err != nil {
+		return "", fmt.Errorf("certID %d not found in cert jar", certID)
+	}
+	publicKeyPath := fmt.Sprintf("%sid_ed25519_cert%d.pub", conf.GetSliderHome(), certID)
+	publicKey, pvOErr := os.OpenFile(
+		publicKeyPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0644)
+	if pvOErr != nil {
+		return "", fmt.Errorf("failed to open public key file")
+	}
+	defer func() { _ = publicKey.Close() }()
+	_, pvWErr := publicKey.Write([]byte(keyPair.SSHPublicKey))
+	if pvWErr != nil {
+		return "", fmt.Errorf("failed to write public key file")
+	}
+	return publicKeyPath, nil
+}
+
+func (s *server) saveCACert() (string, error) {
+	pem := s.CertificateAuthority.CertPEM
+	caCertPath := fmt.Sprintf("%sca_cert.pem", conf.GetSliderHome())
+	caCert, cErr := os.OpenFile(
+		caCertPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0600)
+	if cErr != nil {
+		return "", fmt.Errorf("failed to open CA pem file")
+	}
+	defer func() { _ = caCert.Close() }()
+	_, pWErr := caCert.Write(pem)
+	if pWErr != nil {
+		return "", fmt.Errorf("failed to write CA cert file")
+	}
+	return caCertPath, nil
+}
+
+func (s *server) saveCAKey() (string, error) {
+	pem := s.CertificateAuthority.KeyPEM
+	caKeyPath := fmt.Sprintf("%sca_key.pem", conf.GetSliderHome())
+	caKey, cErr := os.OpenFile(
+		caKeyPath,
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+		0600)
+	if cErr != nil {
+		return "", fmt.Errorf("failed to open CA key file")
+	}
+	defer func() { _ = caKey.Close() }()
+	_, pWErr := caKey.Write(pem)
+	if pWErr != nil {
+		return "", fmt.Errorf("failed to write CA key file")
+	}
+	return caKeyPath, nil
 }
