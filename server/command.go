@@ -43,6 +43,7 @@ func (r *CommandRegistry) Register(cmd Command) {
 	r.commands[cmd.Name()] = cmd
 }
 
+// initRegistry initializes the command registry. Commands will be unavailable until registered
 func (s *server) initRegistry() {
 	s.commandRegistry = NewCommandRegistry()
 	s.commandRegistry.Register(&BgCommand{})
