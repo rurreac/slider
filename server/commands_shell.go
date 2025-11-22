@@ -1,20 +1,38 @@
 package server
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"slider/pkg/conf"
+	"syscall"
 	"time"
 
 	"github.com/spf13/pflag"
 	"golang.org/x/term"
 )
 
+const (
+	// Console Shell Command
+	shellCmd   = "shell"
+	shellDesc  = "Binds to a client Shell"
+	shellUsage = "Usage: shell [flags]"
+)
+
 // ShellCommand implements the 'shell' command
 type ShellCommand struct{}
+
+type InteractiveConsole struct {
+	*Console
+	*Session
+	port      int
+	tlsConfig *tls.Config
+	ui        UserInterface
+}
 
 func (c *ShellCommand) Name() string        { return shellCmd }
 func (c *ShellCommand) Description() string { return shellDesc }
@@ -143,8 +161,22 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 					}
 					ui.PrintSuccess("Shell Endpoint running on port: %d", port)
 					if *sInteractive {
+						tlsConfig, ccErr := s.NewClientTlsConfig()
+						if ccErr != nil {
+							ui.PrintError("Failed to create Client TLS certificate - %v", ccErr)
+							return nil
+						}
+						interactiveConf := &InteractiveConsole{
+							Console:   &s.console,
+							Session:   session,
+							port:      port,
+							tlsConfig: tlsConfig,
+							ui:        ui,
+						}
 						ui.PrintInfo("Connecting to Shell...")
-						c.interactiveShell(s, port, ui)
+						if intErr := interactiveConf.Run(); intErr != nil {
+							ui.PrintError("%s", intErr)
+						}
 					}
 					return nil
 				} else {
@@ -157,25 +189,77 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 	return nil
 }
 
-func (c *ShellCommand) interactiveShell(s *server, port int, ui UserInterface) {
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-	if err != nil {
-		ui.PrintError("Failed to connect to shell: %v", err)
-		return
+func (s *server) NewClientTlsConfig() (*tls.Config, error) {
+	cert, ccErr := s.CertificateAuthority.CreateCertificate(false)
+	if ccErr != nil {
+		return nil, ccErr
 	}
-	defer func() { _ = conn.Close() }()
+	tlsConfig := s.CertificateAuthority.GetTLSClientConfig(cert)
+	return tlsConfig, nil
+}
 
-	// Set console to raw mode
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		ui.PrintError("Failed to set raw mode: %v", err)
-		return
-	}
-	defer func() { _ = term.Restore(int(os.Stdin.Fd()), oldState) }()
+func (ic *InteractiveConsole) Run() error {
+	var conn net.Conn
+	var dErr error
 
-	// Pipe stdin/stdout/stderr
-	go func() {
-		_, _ = io.Copy(conn, os.Stdin)
+	// When Shell is interactive, we want it to stop once we are done
+	defer func() {
+		if ssErr := ic.ShellInstance.Stop(); ssErr != nil {
+			ic.ui.PrintError("Failed to stop shell session: %v", ssErr)
+		}
+		ic.ui.PrintInfo("Shell Endpoint gracefully stopped\n")
 	}()
-	_, _ = io.Copy(os.Stdout, conn)
+
+	conn, dErr = tls.Dial(
+		"tcp",
+		fmt.Sprintf("127.0.0.1:%d", ic.port),
+		ic.tlsConfig,
+	)
+	if dErr != nil {
+		ic.ui.PrintError("Failed to bind to port %d - %v", ic.port, dErr)
+		return nil
+	}
+	ic.ui.PrintInfo("Authenticated with mTLS")
+
+	// If session doesn't support PTY revert Raw Terminal
+	if !ic.IsPtyOn() {
+		ic.ui.PrintWarn("Client does not support PTY")
+		ic.ui.PrintWarn("Pressing CTR^C will interrupt the shell")
+
+		conState, _ := term.GetState(int(os.Stdin.Fd()))
+		if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
+			ic.ui.PrintError("Failed to revert console state, aborting to avoid inconsistent shell")
+			return nil
+		}
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
+
+		// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
+		go func() {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+			for range sig {
+				// Stop capture
+				signal.Stop(sig)
+				close(sig)
+				if cErr := conn.Close(); cErr != nil {
+					ic.ui.PrintError("Failed to close Shell connection - %v", cErr)
+				}
+			}
+		}()
+	}
+
+	// Clear screen (Windows Command Prompt already does that)
+	if string(ic.clientInterpreter.System) != "windows" || !ic.clientInterpreter.PtyOn {
+		ic.clearScreen()
+	}
+
+	// os.StdIn is blocking and will be waiting for any input even if the connection is closed.
+	// After pressing a key, io.Copy will fail due to the attempt of copying to a closed writer,
+	// which will do the unlocking
+	go func() {
+		_, _ = io.Copy(os.Stdout, conn)
+		ic.ui.PrintWarn("Press ENTER until get back to console")
+	}()
+	_, _ = io.Copy(conn, os.Stdin)
+	return nil
 }
