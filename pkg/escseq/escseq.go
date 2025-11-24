@@ -1,37 +1,37 @@
 package escseq
 
-type conEscChars struct {
-	GreenBold, GreyBold, BlueBrightBold, YellowBright, Yellow, RedBold, CyanBrightBoldB, CyanBold, Clear, Home []byte
-}
-
 type logColors struct {
 	Info, Debug, Warn, Error, Fatal []byte
 }
 
-// All terminals that support Colors will support 8 / 16 colors
-const keyEscape = 27
+const KeyEscape = 27
 
 var (
-	ResetScreen = []byte{keyEscape, 'c'}
-	ResetColor  = []byte{keyEscape, '[', '0', 'm'}
-	EraseLine   = []byte{keyEscape, '[', 'K'}
-	CursorClear = []byte{keyEscape, '[', '2', 'J'}
-	CursorHome  = []byte{keyEscape, '[', '2', 'H'}
-	Console     = conEscChars{
-		GreenBold:       []byte{keyEscape, '[', '1', ';', '3', '2', 'm'},
-		GreyBold:        []byte{keyEscape, '[', '1', ';', '9', '0', 'm'},
-		RedBold:         []byte{keyEscape, '[', '1', ';', '9', '1', 'm'},
-		YellowBright:    []byte{keyEscape, '[', '0', ';', '9', '3', 'm'},
-		Yellow:          []byte{keyEscape, '[', '0', ';', '3', '3', 'm'},
-		BlueBrightBold:  []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
-		CyanBold:        []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
-		CyanBrightBoldB: []byte{keyEscape, '[', '1', ';', '9', '6', 'm'},
-	}
-	Log = logColors{
-		Info:  []byte{keyEscape, '[', '1', ';', '3', '6', 'm'},
-		Debug: []byte{keyEscape, '[', '1', ';', '9', '4', 'm'},
-		Warn:  []byte{keyEscape, '[', '1', ';', '9', '3', 'm'},
-		Error: []byte{keyEscape, '[', '1', ';', '3', '1', 'm'},
-		Fatal: []byte{keyEscape, '[', '1', ';', '9', '1', 'm'},
+	// Terminal Escape Sequences
+	ResetColor  = []byte{KeyEscape, '[', '0', 'm'}
+	EraseLine   = []byte{KeyEscape, '[', '2', 'K'}
+	EraseScreen = []byte{KeyEscape, '[', '2', 'J'}
+	CursorClear = []byte{KeyEscape, '[', '0', 'J'}
+	CursorHome  = []byte{KeyEscape, '[', '2', 'H'}
+	CursorUp    = []byte{KeyEscape, '[', '1', 'A'}
+	Blink       = []byte{KeyEscape, '[', '5', 'm'}
+	ResetBlink  = []byte{KeyEscape, '[', '2', '5', 'm'}
+	// Colors
+	GreenBold        = []byte{KeyEscape, '[', '1', ';', '3', '2', 'm'}
+	GreyBold         = []byte{KeyEscape, '[', '1', ';', '9', '0', 'm'}
+	RedBrightBold    = []byte{KeyEscape, '[', '1', ';', '9', '1', 'm'}
+	RedBold          = []byte{KeyEscape, '[', '1', ';', '3', '1', 'm'}
+	YellowBright     = []byte{KeyEscape, '[', '0', ';', '9', '3', 'm'}
+	YellowBrightBold = []byte{KeyEscape, '[', '1', ';', '9', '3', 'm'}
+	Yellow           = []byte{KeyEscape, '[', '0', ';', '3', '3', 'm'}
+	BlueBrightBold   = []byte{KeyEscape, '[', '1', ';', '9', '4', 'm'}
+	CyanBold         = []byte{KeyEscape, '[', '1', ';', '3', '6', 'm'}
+	CyanBrightBold   = []byte{KeyEscape, '[', '1', ';', '9', '6', 'm'}
+	Log              = logColors{
+		Info:  CyanBold,
+		Debug: BlueBrightBold,
+		Warn:  YellowBrightBold,
+		Error: RedBold,
+		Fatal: RedBrightBold,
 	}
 )

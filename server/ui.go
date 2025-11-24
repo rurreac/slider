@@ -12,6 +12,10 @@ type UserInterface interface {
 	PrintSuccess(format string, args ...interface{})
 	PrintDebug(format string, args ...interface{})
 
+	// Direct output methods
+	Printf(format string, args ...interface{})
+	Println(m string)
+
 	// Writer returns the underlying writer for structured data (tables, etc.)
 	Writer() io.Writer
 }

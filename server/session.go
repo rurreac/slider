@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"github.com/pkg/sftp"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -10,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/sftp"
 
 	"golang.org/x/crypto/ssh"
 

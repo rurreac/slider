@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"slider/pkg/conf"
@@ -18,7 +17,6 @@ import (
 type Console struct {
 	Term      *term.Terminal
 	InitState *term.State
-	Output    *log.Logger
 	FirstRun  bool
 	History   *CustomHistory
 }
@@ -48,7 +46,6 @@ func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
 	// Set Console
 	s.console.Term = term.NewTerminal(screen, getPrompt())
 	s.console.setConsoleAutoComplete(registry)
-	s.console.Output = log.New(s.console.Term, "", 0)
 	s.console.Term.History = s.console.History
 
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))

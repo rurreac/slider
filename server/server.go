@@ -49,6 +49,8 @@ type server struct {
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry
+	sftpCommandRegistry  *CommandRegistry
+	sftpContext          *SftpCommandContext
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {

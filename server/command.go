@@ -29,18 +29,29 @@ type Command interface {
 // CommandRegistry holds the registered commands
 type CommandRegistry struct {
 	commands map[string]Command
+	aliases  map[string][]string // Maps command name to its aliases
 }
 
 // NewCommandRegistry creates a new CommandRegistry
 func NewCommandRegistry() *CommandRegistry {
 	return &CommandRegistry{
 		commands: make(map[string]Command),
+		aliases:  make(map[string][]string),
 	}
 }
 
 // Register adds a command to the registry
 func (r *CommandRegistry) Register(cmd Command) {
 	r.commands[cmd.Name()] = cmd
+	r.aliases[cmd.Name()] = []string{cmd.Name()} // Primary name is first alias
+}
+
+// RegisterAlias adds an alias for an existing command
+func (r *CommandRegistry) RegisterAlias(alias, commandName string) {
+	if cmd, ok := r.commands[commandName]; ok {
+		r.commands[alias] = cmd
+		r.aliases[commandName] = append(r.aliases[commandName], alias)
+	}
 }
 
 // initRegistry initializes the command registry. Commands will be unavailable until registered
@@ -84,6 +95,11 @@ func (r *CommandRegistry) Execute(s *server, name string, args []string, ui User
 		return cmd.Run(s, args, ui)
 	}
 	return fmt.Errorf("unknown command: %s", name)
+}
+
+// GetPrimaryCommands returns a map of primary command names to their aliases
+func (r *CommandRegistry) GetPrimaryCommands() map[string][]string {
+	return r.aliases
 }
 
 // Autocomplete suggests commands based on input
