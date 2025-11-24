@@ -26,8 +26,12 @@ func (c *SftpStatCommand) Description() string { return statDesc }
 func (c *SftpStatCommand) Usage() string       { return statUsage }
 func (c *SftpStatCommand) IsRemote() bool      { return true }
 
-func (c *SftpStatCommand) Run(s *server, args []string, ui UserInterface) error {
-	ctx := s.sftpContext
+func (c *SftpStatCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpStatCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}

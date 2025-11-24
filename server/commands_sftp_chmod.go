@@ -24,8 +24,12 @@ func (c *SftpChmodCommand) Description() string { return chmodDesc }
 func (c *SftpChmodCommand) Usage() string       { return chmodUsage }
 func (c *SftpChmodCommand) IsRemote() bool      { return true }
 
-func (c *SftpChmodCommand) Run(s *server, args []string, ui UserInterface) error {
-	ctx := s.sftpContext
+func (c *SftpChmodCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpChmodCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}

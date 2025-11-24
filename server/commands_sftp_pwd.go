@@ -38,12 +38,16 @@ func (c *SftpPwdCommand) IsRemote() bool {
 	return c.isRemote
 }
 
-func (c *SftpPwdCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SftpPwdCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpPwdCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
 	if len(args) > 0 {
 		return fmt.Errorf("too many arguments")
 	}
 
-	ctx := s.sftpContext
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}

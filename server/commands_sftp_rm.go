@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"slider/pkg/spath"
-	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -24,8 +23,12 @@ func (c *SftpRmCommand) Description() string { return rmDesc }
 func (c *SftpRmCommand) Usage() string       { return rmUsage }
 func (c *SftpRmCommand) IsRemote() bool      { return true }
 
-func (c *SftpRmCommand) Run(s *server, args []string, ui UserInterface) error {
-	ctx := s.sftpContext
+func (c *SftpRmCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpRmCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -65,19 +68,6 @@ func (c *SftpRmCommand) Run(s *server, args []string, ui UserInterface) error {
 
 	if fi.IsDir() {
 		if *recursive {
-			// Confirm deletion - write directly to terminal without \r
-			_, _ = fmt.Fprintf(ui.Writer(), "Enter \"y\" to remove directory %s recursively: ", path)
-
-			// Clear the SFTP prompt for clean input
-			s.console.Term.SetPrompt("")
-
-			// Read confirmation from terminal
-			confirmation, rlErr := s.console.Term.ReadLine()
-			if rlErr != nil || strings.ToLower(strings.TrimSpace(confirmation)) != "y" {
-				ui.PrintInfo("Deletion cancelled\n")
-				return nil
-			}
-
 			// Perform recursive removal using SFTP RemoveAll
 			// Note: pkg/sftp doesn't have RemoveAll, so we need to implement it
 			err := removeDirectoryRecursive(ctx.sftpCli, path)

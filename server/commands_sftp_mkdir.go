@@ -43,12 +43,14 @@ func (c *SftpMkdirCommand) Usage() string {
 	return lMkdirUsage
 }
 
-func (c *SftpMkdirCommand) IsRemote() bool {
-	return c.isRemote
+func (c *SftpMkdirCommand) IsRemote() bool { return c.isRemote }
+
+func (c *SftpMkdirCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
 }
 
-func (c *SftpMkdirCommand) Run(s *server, args []string, ui UserInterface) error {
-	ctx := s.sftpContext
+func (c *SftpMkdirCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}

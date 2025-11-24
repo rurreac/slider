@@ -15,14 +15,18 @@ func (c *SftpHelpCommand) Description() string { return helpDesc }
 func (c *SftpHelpCommand) Usage() string       { return helpCmd }
 func (c *SftpHelpCommand) IsRemote() bool      { return false }
 
-func (c *SftpHelpCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SftpHelpCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpHelpCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
 	tw := new(tabwriter.Writer)
 	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 
 	// Get primary commands with their aliases
-	primaryCommands := s.sftpCommandRegistry.GetPrimaryCommands()
+	primaryCommands := session.sftpCommandRegistry.GetPrimaryCommands()
 
 	// Create a sorted list of primary command names
 	var cmdNames []string
@@ -34,7 +38,7 @@ func (c *SftpHelpCommand) Run(s *server, args []string, ui UserInterface) error 
 	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
-		if cmd, ok := s.sftpCommandRegistry.Get(cmdName); ok {
+		if cmd, ok := session.sftpCommandRegistry.Get(cmdName); ok {
 			aliases := primaryCommands[cmdName]
 			aliasStr := strings.Join(aliases, ", ")
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", aliasStr, cmd.Description())

@@ -75,7 +75,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 
 	// Set the terminal prompt and autocomplete
 	s.console.Term.SetPrompt(sftpPrompt())
-	s.console.setSftpConsoleAutoComplete(s.sftpCommandRegistry)
+	s.console.setSftpConsoleAutoComplete(session.sftpCommandRegistry)
 
 	// Replace Console History with own History for SFTP Session
 	s.console.Term.History = session.SftpHistory
@@ -129,7 +129,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			}
 
 			// Try to execute command from SFTP registry
-			err := s.sftpCommandRegistry.Execute(s, command, args, &s.console)
+			err := session.sftpCommandRegistry.ExecuteSftp(session, command, args, &s.console)
 			if err != nil {
 				if errors.Is(err, ErrExitConsole) {
 					// Set Console History back

@@ -49,8 +49,12 @@ func (c *SftpLsCommand) IsRemote() bool {
 	return c.isRemote
 }
 
-func (c *SftpLsCommand) Run(s *server, args []string, ui UserInterface) error {
-	ctx := s.sftpContext
+func (c *SftpLsCommand) Run(server *server, args []string, ui UserInterface) error {
+	return nil
+}
+
+func (c *SftpLsCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
+	ctx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -151,9 +155,9 @@ func (c *SftpLsCommand) Run(s *server, args []string, ui UserInterface) error {
 func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInfo, path string) string {
 	var nameField string
 	if entry.IsDir() {
-		nameField = fmt.Sprintf("%s", blueBrightBoldText(entry.Name()))
+		nameField = blueBrightBoldText(entry.Name())
 	} else if entry.Mode()&os.ModeSymlink != 0 {
-		nameField = fmt.Sprintf("%s", cyanBoldText(entry.Name()))
+		nameField = cyanBoldText(entry.Name())
 		target, lErr := ctx.readLink(
 			spath.Join(ctx.getContextSystem(c.isRemote), []string{path, entry.Name()}),
 			c.isRemote,
@@ -166,10 +170,10 @@ func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInf
 		// Check if target exists
 		tI, tErr := ctx.pathStat(target, c.isRemote)
 		if tErr != nil {
-			target = fmt.Sprintf("%s", blinkText(redBoldText(target)))
+			target = blinkText(redBoldText(target))
 		} else {
 			if tI.IsDir() {
-				target = fmt.Sprintf("%s", blueBrightBoldText(target))
+				target = blueBrightBoldText(target)
 			}
 		}
 		nameField = fmt.Sprintf("%s -> %s", cyanBoldText(entry.Name()), target)

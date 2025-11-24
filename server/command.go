@@ -97,6 +97,18 @@ func (r *CommandRegistry) Execute(s *server, name string, args []string, ui User
 	return fmt.Errorf("unknown command: %s", name)
 }
 
+// ExecuteSftp executes an SFTP command with session context
+func (r *CommandRegistry) ExecuteSftp(session *Session, name string, args []string, ui UserInterface) error {
+	if cmd, ok := r.commands[name]; ok {
+		// Type assert to SftpCommand to access RunSftp
+		if sftpCmd, isSftp := cmd.(SftpCommand); isSftp {
+			return sftpCmd.RunSftp(session, args, ui)
+		}
+		return fmt.Errorf("command %s is not an SFTP command", name)
+	}
+	return fmt.Errorf("unknown command: %s", name)
+}
+
 // GetPrimaryCommands returns a map of primary command names to their aliases
 func (r *CommandRegistry) GetPrimaryCommands() map[string][]string {
 	return r.aliases
