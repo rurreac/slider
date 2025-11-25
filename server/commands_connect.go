@@ -23,7 +23,10 @@ func (c *ConnectCommand) Name() string        { return connectCmd }
 func (c *ConnectCommand) Description() string { return connectDesc }
 func (c *ConnectCommand) Usage() string       { return connectUsage }
 
-func (c *ConnectCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	connectFlags := pflag.NewFlagSet(connectCmd, pflag.ContinueOnError)
 	connectFlags.SetOutput(ui.Writer())
 
@@ -66,7 +69,7 @@ func (c *ConnectCommand) Run(s *server, args []string, ui UserInterface) error {
 	timeout := time.Now().Add(conf.Timeout)
 	ticker := time.NewTicker(500 * time.Millisecond)
 
-	go s.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
+	go server.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
 
 	for {
 		select {

@@ -45,12 +45,13 @@ func (c *SftpMkdirCommand) Usage() string {
 
 func (c *SftpMkdirCommand) IsRemote() bool { return c.isRemote }
 
-func (c *SftpMkdirCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpMkdirCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpMkdirCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -78,14 +79,14 @@ func (c *SftpMkdirCommand) RunSftp(session *Session, args []string, ui UserInter
 	}
 
 	dirPath := mkdirFlags.Args()[0]
-	system := ctx.getContextSystem(c.isRemote)
-	cwd := ctx.getCwd(c.isRemote)
+	system := sftpCtx.getContextSystem(c.isRemote)
+	cwd := sftpCtx.getCwd(c.isRemote)
 	if !spath.IsAbs(system, dirPath) {
 		dirPath = spath.Join(system, []string{cwd, dirPath})
 	}
 
 	// Create the directory
-	if err := ctx.pathMkDir(dirPath, c.isRemote, *parents); err != nil {
+	if err := sftpCtx.pathMkDir(dirPath, c.isRemote, *parents); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 

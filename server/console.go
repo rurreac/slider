@@ -136,7 +136,19 @@ func (s *server) NewConsole() string {
 			}
 		}
 
-		err = s.commandRegistry.Execute(s, fCmd, args[1:], &s.console)
+		cmdParts := args
+		command := strings.ToLower(cmdParts[0])
+		cmdArgs := cmdParts[1:]
+
+		// Create execution context for regular console (no session)
+		ctx := &ExecutionContext{
+			server:  s,
+			session: nil,
+			ui:      &s.console,
+		}
+
+		// Try to execute command from registry
+		err = s.commandRegistry.Execute(ctx, command, cmdArgs)
 		if err != nil {
 			if errors.Is(err, ErrExitConsole) {
 				out = exitCmd

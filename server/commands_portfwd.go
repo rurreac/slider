@@ -26,7 +26,10 @@ func (c *PortFwdCommand) Name() string        { return portFwdCmd }
 func (c *PortFwdCommand) Description() string { return portFwdDesc }
 func (c *PortFwdCommand) Usage() string       { return portFwdUsage }
 
-func (c *PortFwdCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	portFwdFlags := pflag.NewFlagSet(portFwdCmd, pflag.ContinueOnError)
 	portFwdFlags.SetOutput(ui.Writer())
 
@@ -72,7 +75,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, ui UserInterface) error {
 	var session *Session
 	if *pSession > 0 {
 		var sErr error
-		session, sErr = s.getSession(*pSession)
+		session, sErr = server.getSession(*pSession)
 		if sErr != nil {
 			ui.PrintError("Unknown Session ID %d", *pSession)
 			return nil
@@ -85,7 +88,7 @@ func (c *PortFwdCommand) Run(s *server, args []string, ui UserInterface) error {
 		tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 
 		totalGlobalTcpIp := 0
-		sessionList := slices.Collect(maps.Values(s.sessionTrack.Sessions))
+		sessionList := slices.Collect(maps.Values(server.sessionTrack.Sessions))
 
 		for _, sItem := range sessionList {
 			reverseMappings := sItem.SSHInstance.GetRemoteMappings()

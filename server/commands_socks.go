@@ -23,7 +23,10 @@ func (c *SocksCommand) Name() string        { return socksCmd }
 func (c *SocksCommand) Description() string { return socksDesc }
 func (c *SocksCommand) Usage() string       { return socksUsage }
 
-func (c *SocksCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	socksFlags := pflag.NewFlagSet(socksCmd, pflag.ContinueOnError)
 	socksFlags.SetOutput(ui.Writer())
 
@@ -69,7 +72,7 @@ func (c *SocksCommand) Run(s *server, args []string, ui UserInterface) error {
 	var session *Session
 	var sessErr error
 	sessionID := *sSession + *sKill
-	session, sessErr = s.getSession(sessionID)
+	session, _ = server.getSession(*sSession)
 	if sessErr != nil {
 		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
@@ -77,15 +80,15 @@ func (c *SocksCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	if *sKill > 0 {
-		if session.SocksInstance.IsEnabled() {
-			if err := session.SocksInstance.Stop(); err != nil {
-				ui.PrintError("%v", err)
-				return nil
-			}
-			ui.PrintSuccess("Socks Endpoint gracefully stopped")
+		if session.SocksInstance == nil {
+			ui.PrintWarn("No SOCKS5 server running on session %d", sessionID)
 			return nil
 		}
-		ui.PrintInfo("No Socks Server on Session ID %d", *sKill)
+		if err := session.SocksInstance.Stop(); err != nil { // Added error check for Stop()
+			ui.PrintError("Error stopping SOCKS5 server: %v", err)
+			return nil
+		}
+		ui.PrintSuccess("SOCKS5 server stopped on session %d", sessionID)
 		return nil
 	}
 
@@ -116,13 +119,15 @@ func (c *SocksCommand) Run(s *server, args []string, ui UserInterface) error {
 				}
 			case <-socksTicker.C:
 				if time.Now().Before(timeout) {
-					port, sErr := session.SocksInstance.GetEndpointPort()
-					if port == 0 || sErr != nil {
-						fmt.Printf(".")
-						continue
+					if session.SocksInstance != nil {
+						port, portErr := session.SocksInstance.GetEndpointPort()
+						if port == 0 || portErr != nil {
+							fmt.Printf(".")
+							continue
+						}
+						ui.PrintSuccess("Socks Endpoint running on port: %d", port)
+						return nil
 					}
-					ui.PrintSuccess("Socks Endpoint running on port: %d", port)
-					return nil
 				} else {
 					ui.PrintError("Socks Endpoint reached Timeout trying to start")
 					return nil

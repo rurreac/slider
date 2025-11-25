@@ -39,19 +39,20 @@ func (c *SftpCdCommand) IsRemote() bool {
 	return c.isRemote
 }
 
-func (c *SftpCdCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpCdCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
 
 	// No args - go to home directory
 	if len(args) < 1 {
-		ctx.getCwd(c.isRemote)
+		sftpCtx.getCwd(c.isRemote)
 		return nil
 	}
 
@@ -67,8 +68,8 @@ func (c *SftpCdCommand) RunSftp(session *Session, args []string, ui UserInterfac
 	}
 
 	// Get current working directory
-	cwd := ctx.getCwd(c.isRemote)
-	system := ctx.getContextSystem(c.isRemote)
+	cwd := sftpCtx.getCwd(c.isRemote)
+	system := sftpCtx.getContextSystem(c.isRemote)
 
 	// Handle ".." (parent directory)
 	if newPath == ".." {
@@ -84,7 +85,7 @@ func (c *SftpCdCommand) RunSftp(session *Session, args []string, ui UserInterfac
 	}
 
 	// Check if directory exists and is accessible
-	stat, err := ctx.pathStat(newPath, c.isRemote)
+	stat, err := sftpCtx.pathStat(newPath, c.isRemote)
 	if err != nil {
 		return fmt.Errorf("failed to stat \"%s\": %w", newPath, err)
 	}
@@ -96,7 +97,7 @@ func (c *SftpCdCommand) RunSftp(session *Session, args []string, ui UserInterfac
 	}
 
 	// Update the current directory
-	ctx.setCwd(newPath, c.isRemote)
+	sftpCtx.setCwd(newPath, c.isRemote)
 	ui.PrintSuccess("Current %s path: %s", c.Name(), newPath)
 
 	return nil

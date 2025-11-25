@@ -23,7 +23,10 @@ func (c *SessionsCommand) Name() string        { return sessionsCmd }
 func (c *SessionsCommand) Description() string { return sessionsDesc }
 func (c *SessionsCommand) Usage() string       { return sessionsUsage }
 
-func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	var list bool
 	sessionsFlags := pflag.NewFlagSet(sessionsCmd, pflag.ContinueOnError)
 	sessionsFlags.SetOutput(ui.Writer())
@@ -67,9 +70,9 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 	}
 
 	if list {
-		if len(s.sessionTrack.Sessions) > 0 {
+		if len(server.sessionTrack.Sessions) > 0 {
 			var keys []int
-			for i := range s.sessionTrack.Sessions {
+			for i := range server.sessionTrack.Sessions {
 				keys = append(keys, int(i))
 			}
 			sort.Ints(keys)
@@ -80,7 +83,7 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 			_, _ = fmt.Fprintf(tw, "\n\t--\t------\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
 
 			for _, i := range keys {
-				session := s.sessionTrack.Sessions[int64(i)]
+				session := server.sessionTrack.Sessions[int64(i)]
 
 				socksPort := "--"
 				if session.SocksInstance.IsEnabled() {
@@ -110,7 +113,7 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 
 				if session.clientInterpreter != nil {
 					certID := "--"
-					if s.authOn && session.certInfo.id != 0 {
+					if server.authOn && session.certInfo.id != 0 {
 						certID = fmt.Sprintf("%d", session.certInfo.id)
 					}
 					var inOut = "<-"
@@ -141,12 +144,12 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		ui.PrintInfo("Active sessions: %d\n", s.sessionTrack.SessionActive)
+		ui.PrintInfo("Active sessions: %d\n", server.sessionTrack.SessionActive)
 		return nil
 	}
 
 	if *sInteract > 0 {
-		session, sessErr := s.getSession(*sInteract)
+		session, sessErr := server.getSession(*sInteract)
 		if sessErr != nil {
 			ui.PrintInfo("Unknown Session ID %d", *sInteract)
 			return nil
@@ -157,22 +160,22 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 			ui.PrintInfo("Failed to create SFTP Client: %v", sErr)
 		}
 		defer func() { _ = sftpCli.Close() }()
-		s.newSftpConsole(session, sftpCli)
+		server.newSftpConsole(session, sftpCli)
 
 		// Reset autocomplete commands - Wait, sftpConsole modifies autocomplete?
-		// Yes, s.newSftpConsole calls s.newSftpTerminal which sets prompt and autocomplete.
+		// Yes, server.newSftpConsole calls server.newSftpTerminal which sets prompt and autocomplete.
 		// When it returns, we need to restore the main console autocomplete.
 		// Original code:
-		// commands := s.initCommands()
-		// s.console.setConsoleAutoComplete(commands)
+		// commands := server.initCommands()
+		// server.console.setConsoleAutoComplete(commands)
 		// New code:
-		s.console.setConsoleAutoComplete(s.commandRegistry)
+		server.console.setConsoleAutoComplete(server.commandRegistry)
 
 		return nil
 	}
 
 	if *sDisconnect > 0 {
-		session, sessErr := s.getSession(*sDisconnect)
+		session, sessErr := server.getSession(*sDisconnect)
 		if sessErr != nil {
 			ui.PrintInfo("Unknown Session ID %d", *sDisconnect)
 			return nil
@@ -186,7 +189,7 @@ func (c *SessionsCommand) Run(s *server, args []string, ui UserInterface) error 
 	}
 
 	if *sKill > 0 {
-		session, sessErr := s.getSession(*sKill)
+		session, sessErr := server.getSession(*sKill)
 		if sessErr != nil {
 			ui.PrintInfo("Unknown Session ID %d", *sKill)
 			return nil

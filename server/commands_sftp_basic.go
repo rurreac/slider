@@ -15,11 +15,13 @@ func (c *SftpHelpCommand) Description() string { return helpDesc }
 func (c *SftpHelpCommand) Usage() string       { return helpCmd }
 func (c *SftpHelpCommand) IsRemote() bool      { return false }
 
-func (c *SftpHelpCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
+func (c *SftpHelpCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
 
-func (c *SftpHelpCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
 	tw := new(tabwriter.Writer)
 	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
@@ -33,8 +35,6 @@ func (c *SftpHelpCommand) RunSftp(session *Session, args []string, ui UserInterf
 	for cmdName := range primaryCommands {
 		cmdNames = append(cmdNames, cmdName)
 	}
-
-	// Sort command names
 	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
@@ -44,6 +44,7 @@ func (c *SftpHelpCommand) RunSftp(session *Session, args []string, ui UserInterf
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", aliasStr, cmd.Description())
 		}
 	}
+
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "execute", "Execute command on remote system")
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "shell", "Enter interactive shell")
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "!command", "Execute \"command\" in local shell (non-interactive)")
@@ -52,7 +53,7 @@ func (c *SftpHelpCommand) RunSftp(session *Session, args []string, ui UserInterf
 	return nil
 }
 
-// SftpExitCommand implements the 'exit' command for SFTP console
+// SftpExitCommand implements the 'exit' command for SFTP
 type SftpExitCommand struct{}
 
 func (c *SftpExitCommand) Name() string        { return exitCmd }
@@ -60,6 +61,6 @@ func (c *SftpExitCommand) Description() string { return exitDesc }
 func (c *SftpExitCommand) Usage() string       { return exitCmd }
 func (c *SftpExitCommand) IsRemote() bool      { return false }
 
-func (c *SftpExitCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SftpExitCommand) Run(ctx *ExecutionContext, args []string) error {
 	return ErrExitConsole
 }

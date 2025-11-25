@@ -24,12 +24,13 @@ func (c *SftpGetCommand) Description() string { return getDesc }
 func (c *SftpGetCommand) Usage() string       { return getUsage }
 func (c *SftpGetCommand) IsRemote() bool      { return true }
 
-func (c *SftpGetCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -58,14 +59,14 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 	}
 
 	remotePath := getFlags.Args()[0]
-	localPath := *ctx.localCwd
+	localPath := *sftpCtx.localCwd
 
-	if !spath.IsAbs(ctx.cliSystem, remotePath) {
-		remotePath = spath.Join(ctx.cliSystem, []string{*ctx.remoteCwd, remotePath})
+	if !spath.IsAbs(sftpCtx.cliSystem, remotePath) {
+		remotePath = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, remotePath})
 	}
 
 	// Get file info to check if it exists
-	rpFi, sErr := ctx.sftpCli.Stat(remotePath)
+	rpFi, sErr := sftpCtx.sftpCli.Stat(remotePath)
 	if sErr != nil {
 		return fmt.Errorf("failed to access remote path: %w", sErr)
 	}
@@ -84,10 +85,10 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		totalSize := int64(0)
 
 		// First pass: count files and total size
-		wsErr := ctx.walkRemoteDir(remotePath, "", func(rPath, localRelPath string, isDir bool) error {
+		wsErr := sftpCtx.walkRemoteDir(remotePath, "", func(rPath, localRelPath string, isDir bool) error {
 			if !isDir {
 				fileCount++
-				fi, err := ctx.sftpCli.Stat(rPath)
+				fi, err := sftpCtx.sftpCli.Stat(rPath)
 				if err != nil {
 					return err
 				}
@@ -107,17 +108,17 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		downloadedSize := int64(0)
 
 		// Create the target directory for the download
-		targetDir := spath.Join(ctx.svrSystem, []string{localPath, spath.Base(ctx.cliSystem, remotePath)})
+		targetDir := spath.Join(sftpCtx.svrSystem, []string{localPath, spath.Base(sftpCtx.cliSystem, remotePath)})
 		if err := ensureLocalDir(targetDir); err != nil {
 			return fmt.Errorf("failed to create target directory: %w", err)
 		}
 
-		wrdErr := ctx.walkRemoteDir(remotePath, "", func(rPath, localRelPath string, isDir bool) error {
+		wrdErr := sftpCtx.walkRemoteDir(remotePath, "", func(rPath, localRelPath string, isDir bool) error {
 			var localFullPath string
 			if localRelPath == "" {
 				localFullPath = targetDir
 			} else {
-				localRelPath = spath.FromToSlash(ctx.svrSystem, localRelPath)
+				localRelPath = spath.FromToSlash(sftpCtx.svrSystem, localRelPath)
 				localFullPath = filepath.Join(targetDir, localRelPath)
 			}
 
@@ -131,14 +132,14 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 			ui.Printf("Downloading file %d/%d: %s\n", currentFile, fileCount, rPath)
 
 			// Open remote file
-			rFile, err := ctx.sftpCli.Open(rPath)
+			rFile, err := sftpCtx.sftpCli.Open(rPath)
 			if err != nil {
 				return fmt.Errorf("failed to open remote file: %w", err)
 			}
 			defer func() { _ = rFile.Close() }()
 
 			// Get file size
-			fi, sErr := ctx.sftpCli.Stat(rPath)
+			fi, sErr := sftpCtx.sftpCli.Stat(rPath)
 			if sErr != nil {
 				return fmt.Errorf("failed to get remote file info: %w", sErr)
 			}
@@ -152,7 +153,7 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 			defer func() { _ = lFile.Close() }()
 
 			// Copy file with progress
-			bytesWritten, cErr := ctx.copyFileWithProgress(rFile, lFile, rPath, localFullPath, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
+			bytesWritten, cErr := sftpCtx.copyFileWithProgress(rFile, lFile, rPath, localFullPath, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
 			if cErr != nil {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
@@ -178,14 +179,14 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 			localPath,
 			// Format path to local format
 			spath.FromToSlash(
-				ctx.svrSystem,
+				sftpCtx.svrSystem,
 				// Basedir from remote format
-				spath.Base(ctx.cliSystem, remotePath)))
+				spath.Base(sftpCtx.cliSystem, remotePath)))
 
 		ui.Printf("Downloading file %s to %s (%.2f KB)\n", remotePath, localFilePath, float64(rpFi.Size())/1024.0)
 
 		// Open remote file
-		rFile, rErr := ctx.sftpCli.Open(remotePath)
+		rFile, rErr := sftpCtx.sftpCli.Open(remotePath)
 		if rErr != nil {
 			return fmt.Errorf("failed to open remote file: %w", rErr)
 		}
@@ -199,7 +200,7 @@ func (c *SftpGetCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		defer func() { _ = lFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := ctx.copyFileWithProgress(rFile, lFile, remotePath, localFilePath, rpFi.Size(), "Download", ui)
+		_, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, remotePath, localFilePath, rpFi.Size(), "Download", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to download file: %w", cpErr)
 		}

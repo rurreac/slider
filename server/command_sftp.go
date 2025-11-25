@@ -22,15 +22,6 @@ type SftpCommandContext struct {
 	srvHomeDir string
 }
 
-// SftpCommand extends the Command interface with SFTP-specific context
-type SftpCommand interface {
-	Command
-	// RunSftp runs the command with SFTP-specific context
-	RunSftp(session *Session, args []string, ui UserInterface) error
-	// IsRemote returns true if this command operates on a remote filesystem
-	IsRemote() bool
-}
-
 // initSftpRegistry initializes the SFTP command registry
 func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string) {
 	session.sftpCommandRegistry = NewCommandRegistry()
@@ -118,7 +109,6 @@ func (ctx *SftpCommandContext) setCwd(path string, isRemote bool) {
 }
 
 func (ctx *SftpCommandContext) readDir(entryName string, isRemote bool) ([]os.FileInfo, error) {
-	var entries []os.FileInfo
 	if isRemote {
 		de, err := ctx.sftpCli.ReadDir(entryName)
 		if err != nil {
@@ -130,12 +120,13 @@ func (ctx *SftpCommandContext) readDir(entryName string, isRemote bool) ([]os.Fi
 	if err != nil {
 		return nil, fmt.Errorf("failed to read directory \"%s\": %v", entryName, err)
 	}
+	var entries []os.FileInfo
 	for _, e := range de {
-		entry, eErr := e.Info()
-		if eErr != nil {
-			return nil, fmt.Errorf("failed to read directory content \"%s\": %v", entryName, err)
+		info, err := e.Info()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get file info for \"%s\": %v", e.Name(), err)
 		}
-		entries = append(entries, entry)
+		entries = append(entries, info)
 	}
 	return entries, nil
 }

@@ -22,7 +22,10 @@ func (c *ExecuteCommand) Name() string        { return executeCmd }
 func (c *ExecuteCommand) Description() string { return executeDesc }
 func (c *ExecuteCommand) Usage() string       { return executeUsage }
 
-func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	executeFlags := pflag.NewFlagSet(executeCmd, pflag.ContinueOnError)
 	executeFlags.SetOutput(ui.Writer())
 	executeFlags.SetInterspersed(false) // Stop parsing flags after first non-flag argument
@@ -66,8 +69,8 @@ func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
 
 	var sessions []*Session
 	if *eSession > 0 {
-		session, sessErr := s.getSession(*eSession)
-		if sessErr != nil {
+		session, sErr := server.getSession(*eSession)
+		if sErr != nil {
 			ui.PrintError("Unknown Session ID %d", *eSession)
 			return nil
 		}
@@ -75,7 +78,7 @@ func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	if *eAll {
-		for _, session := range s.sessionTrack.Sessions {
+		for _, session := range server.sessionTrack.Sessions {
 			sessions = append(sessions, session)
 		}
 	}
@@ -86,13 +89,11 @@ func (c *ExecuteCommand) Run(s *server, args []string, ui UserInterface) error {
 		}
 
 		var envVarList []struct{ Key, Value string }
-
 		i := session.newExecInstance(envVarList)
-
-		if err := i.ExecuteCommand(command, s.console.InitState); err != nil {
+		if err := i.ExecuteCommand(command, server.console.InitState); err != nil {
 			ui.PrintError("%v", err)
 		}
-		s.console.Println("")
+		server.console.Println("")
 	}
 	return nil
 }

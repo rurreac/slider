@@ -23,7 +23,10 @@ func (c *SSHCommand) Name() string        { return sshCmd }
 func (c *SSHCommand) Description() string { return sshDesc }
 func (c *SSHCommand) Usage() string       { return sshUsage }
 
-func (c *SSHCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	sshFlags := pflag.NewFlagSet(sshCmd, pflag.ContinueOnError)
 	sshFlags.SetOutput(ui.Writer())
 
@@ -67,10 +70,10 @@ func (c *SSHCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	var session *Session
-	var sessErr error
+	var sErr error
 	sessionID := *sSession + *sKill
-	session, sessErr = s.getSession(sessionID)
-	if sessErr != nil {
+	session, sErr = server.getSession(sessionID)
+	if sErr != nil {
 		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
 	}

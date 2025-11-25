@@ -26,12 +26,13 @@ func (c *SftpStatCommand) Description() string { return statDesc }
 func (c *SftpStatCommand) Usage() string       { return statUsage }
 func (c *SftpStatCommand) IsRemote() bool      { return true }
 
-func (c *SftpStatCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpStatCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -57,12 +58,12 @@ func (c *SftpStatCommand) RunSftp(session *Session, args []string, ui UserInterf
 	}
 
 	path := statFlags.Args()[0]
-	if !spath.IsAbs(ctx.cliSystem, path) {
-		path = spath.Join(ctx.cliSystem, []string{*ctx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.cliSystem, path) {
+		path = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, path})
 	}
 
 	// Get file info
-	fi, err := ctx.sftpCli.Stat(path)
+	fi, err := sftpCtx.sftpCli.Stat(path)
 	if err != nil {
 		return fmt.Errorf("failed to get file information: %w", err)
 	}
@@ -109,7 +110,7 @@ func (c *SftpStatCommand) RunSftp(session *Session, args []string, ui UserInterf
 	_, _ = fmt.Fprintf(tw, "\tModified:\t%s\n", fi.ModTime().Format("Jan 02, 2006 15:04:05 MST"))
 
 	// Try to get extended information
-	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && ctx.cliSystem != "windows" {
+	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && sftpCtx.cliSystem != "windows" {
 		_, _ = fmt.Fprintf(tw, "\tOwner UID:\t%d\n", sftpStat.UID)
 		_, _ = fmt.Fprintf(tw, "\tGroup GID:\t%d\n", sftpStat.GID)
 	}

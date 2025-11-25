@@ -49,12 +49,13 @@ func (c *SftpLsCommand) IsRemote() bool {
 	return c.isRemote
 }
 
-func (c *SftpLsCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpLsCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -79,22 +80,36 @@ func (c *SftpLsCommand) RunSftp(session *Session, args []string, ui UserInterfac
 		return fmt.Errorf("too many arguments")
 	}
 
-	path := ctx.getCwd(c.isRemote)
+	path := sftpCtx.getCwd(c.isRemote)
 	if lsFlags.NArg() == 1 {
 		path = lsFlags.Args()[0]
 	}
 
-	system := ctx.getContextSystem(c.isRemote)
-	cwd := ctx.getCwd(c.isRemote)
+	system := sftpCtx.getContextSystem(c.isRemote)
+	cwd := sftpCtx.getCwd(c.isRemote)
 	if !spath.IsAbs(system, path) && path != "." {
 		path = spath.Join(system, []string{cwd, path})
 	}
 
-	// List directory contents
+	// Read directory
 	var entries []fs.FileInfo
-	var err error
-
-	entries, err = ctx.readDir(path, c.isRemote)
+	if c.isRemote {
+		entries, err = sftpCtx.sftpCli.ReadDir(path)
+	} else {
+		dirEntries, readErr := os.ReadDir(path)
+		if readErr != nil {
+			return fmt.Errorf("failed to list directory: %w", readErr)
+		}
+		// Convert []fs.DirEntry to []fs.FileInfo
+		entries = make([]fs.FileInfo, 0, len(dirEntries))
+		for _, entry := range dirEntries {
+			info, statErr := entry.Info()
+			if statErr != nil {
+				return fmt.Errorf("failed to get file info: %w", statErr)
+			}
+			entries = append(entries, info)
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list directory: %w", err)
 	}
@@ -115,7 +130,7 @@ func (c *SftpLsCommand) RunSftp(session *Session, args []string, ui UserInterfac
 
 	for _, entry := range entries {
 		// Format name field (colors, symlinks, etc)
-		nameField := c.formatFileName(ctx, entry, path)
+		nameField := c.formatFileName(sftpCtx, entry, path)
 
 		// Format size for better readability
 		var size string
@@ -129,8 +144,8 @@ func (c *SftpLsCommand) RunSftp(session *Session, args []string, ui UserInterfac
 		perms := entry.Mode().String()
 
 		// Do not output uid, gid on Windows as it is always 0
-		if ctx.getContextSystem(c.isRemote) != "windows" {
-			uid, gid := ctx.getFileIdInfo(entry, c.isRemote)
+		if sftpCtx.getContextSystem(c.isRemote) != "windows" {
+			uid, gid := sftpCtx.getFileIdInfo(entry, c.isRemote)
 			_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%s\t%s\t%s\t\n",
 				perms,
 				uid,

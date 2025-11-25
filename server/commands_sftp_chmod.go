@@ -6,6 +6,7 @@ import (
 	"os"
 	"slider/pkg/spath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/pflag"
 )
@@ -24,12 +25,13 @@ func (c *SftpChmodCommand) Description() string { return chmodDesc }
 func (c *SftpChmodCommand) Usage() string       { return chmodUsage }
 func (c *SftpChmodCommand) IsRemote() bool      { return true }
 
-func (c *SftpChmodCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpChmodCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -59,33 +61,36 @@ func (c *SftpChmodCommand) RunSftp(session *Session, args []string, ui UserInter
 	path := chmodFlags.Args()[1]
 
 	// Handle relative path
-	if !spath.IsAbs(ctx.cliSystem, path) {
-		path = spath.Join(ctx.cliSystem, []string{*ctx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.cliSystem, path) {
+		path = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, path})
 	}
 
-	// Parse octal mode
-	var mode uint64
-	var err error
-	if len(modeStr) > 0 && modeStr[0] == '0' {
-		// Parse as octal with leading zero
-		mode, err = strconv.ParseUint(modeStr, 8, 32)
+	// Parse mode
+	var mode os.FileMode
+	if strings.HasPrefix(modeStr, "0") {
+		// Octal mode
+		modeInt, parseErr := strconv.ParseUint(modeStr, 8, 32)
+		if parseErr != nil {
+			return fmt.Errorf("invalid permission format (use octal, e.g. 0755): %w", parseErr)
+		}
+		mode = os.FileMode(modeInt)
 	} else {
-		// Parse as decimal if no leading zero
-		mode, err = strconv.ParseUint(modeStr, 10, 32)
-	}
-
-	if err != nil {
-		return fmt.Errorf("invalid permission format (use octal, e.g. 0755): %w", err)
+		// Decimal mode
+		modeInt, parseErr := strconv.ParseUint(modeStr, 10, 32)
+		if parseErr != nil {
+			return fmt.Errorf("invalid permission format: %w", parseErr)
+		}
+		mode = os.FileMode(modeInt)
 	}
 
 	// Check if file exists
-	_, err = ctx.sftpCli.Stat(path)
+	_, err = sftpCtx.sftpCli.Stat(path)
 	if err != nil {
 		return fmt.Errorf("file or directory \"%s\" not found: %w", path, err)
 	}
 
 	// Change permissions
-	err = ctx.sftpCli.Chmod(path, os.FileMode(mode))
+	err = sftpCtx.sftpCli.Chmod(path, mode)
 	if err != nil {
 		return fmt.Errorf("failed to change \"%s\" permissions: %w", path, err)
 	}
@@ -93,7 +98,7 @@ func (c *SftpChmodCommand) RunSftp(session *Session, args []string, ui UserInter
 	ui.PrintSuccess("Changed permissions of %s to %s (%s)",
 		path,
 		modeStr,
-		os.FileMode(mode).String())
+		mode.String())
 
 	return nil
 }

@@ -14,16 +14,42 @@ var (
 	ErrBackgroundConsole = errors.New("background console")
 )
 
+// ExecutionContext provides execution environment for commands
+type ExecutionContext struct {
+	server  *server
+	session *Session // nil for non-session commands
+	ui      UserInterface
+}
+
+// Server returns the server instance
+func (c *ExecutionContext) Server() *server {
+	return c.server
+}
+
+// Session returns the session instance (may be nil)
+func (c *ExecutionContext) Session() *Session {
+	return c.session
+}
+
+// UI returns the user interface
+func (c *ExecutionContext) UI() UserInterface {
+	return c.ui
+}
+
+// RequireSession returns session or error if nil
+func (c *ExecutionContext) RequireSession() (*Session, error) {
+	if c.session == nil {
+		return nil, fmt.Errorf("command requires an active session")
+	}
+	return c.session, nil
+}
+
 // Command interface defines the structure for all console commands
 type Command interface {
 	Name() string
 	Description() string
 	Usage() string
-	// Run executes the command.
-	// s: server instance providing access to sessions and state
-	// args: the arguments passed to the command
-	// ui: user interface for displaying output
-	Run(s *server, args []string, ui UserInterface) error
+	Run(ctx *ExecutionContext, args []string) error
 }
 
 // CommandRegistry holds the registered commands
@@ -89,22 +115,10 @@ func (r *CommandRegistry) List() []string {
 	return names
 }
 
-// Execute runs a command if found
-func (r *CommandRegistry) Execute(s *server, name string, args []string, ui UserInterface) error {
+// Execute runs a command with the given context
+func (r *CommandRegistry) Execute(ctx *ExecutionContext, name string, args []string) error {
 	if cmd, ok := r.commands[name]; ok {
-		return cmd.Run(s, args, ui)
-	}
-	return fmt.Errorf("unknown command: %s", name)
-}
-
-// ExecuteSftp executes an SFTP command with session context
-func (r *CommandRegistry) ExecuteSftp(session *Session, name string, args []string, ui UserInterface) error {
-	if cmd, ok := r.commands[name]; ok {
-		// Type assert to SftpCommand to access RunSftp
-		if sftpCmd, isSftp := cmd.(SftpCommand); isSftp {
-			return sftpCmd.RunSftp(session, args, ui)
-		}
-		return fmt.Errorf("command %s is not an SFTP command", name)
+		return cmd.Run(ctx, args)
 	}
 	return fmt.Errorf("unknown command: %s", name)
 }

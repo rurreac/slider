@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sort"
 	"text/tabwriter"
 )
 
@@ -21,8 +22,8 @@ type BgCommand struct{}
 func (c *BgCommand) Name() string        { return bgCmd }
 func (c *BgCommand) Description() string { return bgDesc }
 func (c *BgCommand) Usage() string       { return bgCmd }
-func (c *BgCommand) Run(s *server, args []string, ui UserInterface) error {
-	s.console.PrintlnInfo("Logging...\n\r")
+func (c *BgCommand) Run(ctx *ExecutionContext, args []string) error {
+	ctx.Server().console.PrintlnInfo("Logging...\n\r")
 	return ErrBackgroundConsole
 }
 
@@ -32,7 +33,7 @@ type ExitCommand struct{}
 func (c *ExitCommand) Name() string        { return exitCmd }
 func (c *ExitCommand) Description() string { return exitDesc }
 func (c *ExitCommand) Usage() string       { return exitCmd }
-func (c *ExitCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *ExitCommand) Run(ctx *ExecutionContext, args []string) error {
 	return ErrExitConsole
 }
 
@@ -42,18 +43,27 @@ type HelpCommand struct{}
 func (c *HelpCommand) Name() string        { return helpCmd }
 func (c *HelpCommand) Description() string { return helpDesc }
 func (c *HelpCommand) Usage() string       { return helpCmd }
-func (c *HelpCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *HelpCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	tw := new(tabwriter.Writer)
 	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 
-	// We need access to the registry. Since it's on the server struct, we can access it.
-	// Note: This assumes we will add CommandRegistry to the server struct.
-	cmdNames := s.commandRegistry.List()
+	// Get primary commands with their aliases
+	primaryCommands := server.commandRegistry.GetPrimaryCommands()
+
+	// Create a sorted list of primary command names
+	var cmdNames []string
+	for cmdName := range primaryCommands {
+		cmdNames = append(cmdNames, cmdName)
+	}
+	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
-		if cmd, ok := s.commandRegistry.Get(cmdName); ok {
+		if cmd, ok := server.commandRegistry.Get(cmdName); ok {
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", cmdName, cmd.Description())
 		}
 	}

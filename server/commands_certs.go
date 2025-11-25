@@ -24,7 +24,10 @@ func (c *CertsCommand) Name() string        { return certsCmd }
 func (c *CertsCommand) Description() string { return certsDesc }
 func (c *CertsCommand) Usage() string       { return certsUsage }
 
-func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	certsFlags := pflag.NewFlagSet(certsCmd, pflag.ContinueOnError)
 	certsFlags.SetOutput(ui.Writer())
 
@@ -69,12 +72,12 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 
 	if changedCount == 0 {
 		// List certificates
-		if s.certTrack != nil {
-			s.certTrackMutex.Lock()
-			defer s.certTrackMutex.Unlock()
+		if server.certTrack != nil {
+			server.certTrackMutex.Lock()
+			defer server.certTrackMutex.Unlock()
 
-			if len(s.certTrack.Certs) > 0 {
-				ids := slices.Collect(maps.Keys(s.certTrack.Certs))
+			if len(server.certTrack.Certs) > 0 {
+				ids := slices.Collect(maps.Keys(server.certTrack.Certs))
 				slices.Sort(ids)
 				tw := new(tabwriter.Writer)
 				tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
@@ -82,14 +85,14 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
 				for _, id := range ids {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, s.certTrack.Certs[id].FingerPrint)
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, server.certTrack.Certs[id].FingerPrint)
 				}
 				_, _ = fmt.Fprintln(tw)
 				_, _ = fmt.Fprintf(tw, "\n\tID\tPrivate Key\t")
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
 				for _, id := range ids {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, s.certTrack.Certs[id].PrivateKey)
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, server.certTrack.Certs[id].PrivateKey)
 				}
 				_, _ = fmt.Fprintln(tw)
 				_ = tw.Flush()
@@ -101,17 +104,17 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	if *cCA {
-		if s.CertificateAuthority == nil {
+		if server.CertificateAuthority == nil {
 			ui.PrintInfo("No CA certificate found")
 			return nil
 		}
-		if s.caStoreOn {
-			caCertPath, cErr := s.saveCACert()
+		if server.caStoreOn {
+			caCertPath, cErr := server.saveCACert()
 			if cErr != nil {
 				ui.PrintError("Failed to save CA certificate - %s", cErr)
 				return nil
 			}
-			caKeyPath, kErr := s.saveCAKey()
+			caKeyPath, kErr := server.saveCAKey()
 			if kErr != nil {
 				ui.PrintError("Failed to save CA key - %s", kErr)
 				return nil
@@ -120,25 +123,25 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 			ui.PrintSuccess("CA Private Key saved to %s", caKeyPath)
 			return nil
 		}
-		ui.PrintInfo("CA Certificate:\n%s", s.CertificateAuthority.CertPEM)
-		ui.PrintInfo("CA Private Key:\n%s", s.CertificateAuthority.KeyPEM)
+		ui.PrintInfo("CA Certificate:\n%s", server.CertificateAuthority.CertPEM)
+		ui.PrintInfo("CA Private Key:\n%s", server.CertificateAuthority.KeyPEM)
 		return nil
 	}
 
 	if *cSSH > 0 {
 		// Dump SSH keys for a cert ID
-		keypair, err := s.getCert(int64(*cSSH))
+		keypair, err := server.getCert(int64(*cSSH))
 		if err != nil {
 			ui.PrintError("Failed to get certificate - %s", err)
 			return nil
 		}
-		if s.certSaveOn {
-			pvKeyPath, pvErr := s.savePrivateKey(int64(*cSSH))
+		if server.certSaveOn {
+			pvKeyPath, pvErr := server.savePrivateKey(int64(*cSSH))
 			if pvErr != nil {
 				ui.PrintError("Failed to save private key - %s", pvErr)
 				return nil
 			}
-			pbKeyPath, pbErr := s.savePublicKey(int64(*cSSH))
+			pbKeyPath, pbErr := server.savePublicKey(int64(*cSSH))
 			if pbErr != nil {
 				ui.PrintError("Failed to save private key - %s", pbErr)
 				return nil
@@ -155,7 +158,7 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 
 	if *cNew {
 		// Generate new key pair
-		keypair, err := s.newCertItem()
+		keypair, err := server.newCertItem()
 		if err != nil {
 			ui.PrintError("Failed to generate certificate - %s", err)
 			return nil
@@ -166,7 +169,7 @@ func (c *CertsCommand) Run(s *server, args []string, ui UserInterface) error {
 	}
 
 	if *cRemove > 0 {
-		if err := s.dropCertItem(int64(*cRemove)); err != nil {
+		if err := server.dropCertItem(int64(*cRemove)); err != nil {
 			ui.PrintError("Failed to remove certificate ID %d - %s", *cRemove, err)
 			return nil
 		}

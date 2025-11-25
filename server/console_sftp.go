@@ -101,11 +101,18 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 		command := strings.ToLower(cmdParts[0])
 		args := cmdParts[1:]
 
+		// Create execution context for SFTP console (with session)
+		ctx := &ExecutionContext{
+			server:  s,
+			session: session,
+			ui:      &s.console,
+		}
+
 		// Process commands
 		switch command {
 		case "shell":
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), "-i"}
-			_ = s.commandRegistry.Execute(s, "shell", eArgs, &s.console)
+			_ = s.commandRegistry.Execute(ctx, "shell", eArgs)
 		case "execute":
 			if len(args) < 1 {
 				s.console.PrintWarn("Nothing to execute\n")
@@ -115,7 +122,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			commandStr := strings.Join(args, " ")
 			commandWithCd := fmt.Sprintf("cd %s && %s", remoteCwd, commandStr)
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), commandWithCd}
-			_ = s.commandRegistry.Execute(s, "execute", eArgs, &s.console)
+			_ = s.commandRegistry.Execute(ctx, "execute", eArgs)
 			continue
 		default:
 			// This is meant to be a command to execute locally
@@ -129,7 +136,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			}
 
 			// Try to execute command from SFTP registry
-			err := session.sftpCommandRegistry.ExecuteSftp(session, command, args, &s.console)
+			err := session.sftpCommandRegistry.Execute(ctx, command, args)
 			if err != nil {
 				if errors.Is(err, ErrExitConsole) {
 					// Set Console History back

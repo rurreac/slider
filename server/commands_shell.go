@@ -38,7 +38,10 @@ func (c *ShellCommand) Name() string        { return shellCmd }
 func (c *ShellCommand) Description() string { return shellDesc }
 func (c *ShellCommand) Usage() string       { return shellUsage }
 
-func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
+func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
+	server := ctx.Server()
+	ui := ctx.UI()
+
 	shellFlags := pflag.NewFlagSet(shellCmd, pflag.ContinueOnError)
 	shellFlags.SetOutput(ui.Writer())
 
@@ -102,7 +105,7 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 	var session *Session
 	var sessErr error
 	sessionID := *sSession + *sKill
-	session, sessErr = s.getSession(sessionID)
+	session, sessErr = server.getSession(sessionID)
 	if sessErr != nil {
 		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
@@ -161,13 +164,13 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 					}
 					ui.PrintSuccess("Shell Endpoint running on port: %d", port)
 					if *sInteractive {
-						tlsConfig, ccErr := s.NewClientTlsConfig()
+						tlsConfig, ccErr := server.NewClientTlsConfig()
 						if ccErr != nil {
 							ui.PrintError("Failed to create Client TLS certificate - %v", ccErr)
 							return nil
 						}
 						interactiveConf := &InteractiveConsole{
-							Console:   &s.console,
+							Console:   &server.console,
 							Session:   session,
 							port:      port,
 							tlsConfig: tlsConfig,
@@ -190,10 +193,15 @@ func (c *ShellCommand) Run(s *server, args []string, ui UserInterface) error {
 }
 
 func (s *server) NewClientTlsConfig() (*tls.Config, error) {
+	if s.CertificateAuthority == nil {
+		return nil, errors.New("certificate authority not initialized")
+	}
+
 	cert, ccErr := s.CertificateAuthority.CreateCertificate(false)
 	if ccErr != nil {
 		return nil, ccErr
 	}
+
 	tlsConfig := s.CertificateAuthority.GetTLSClientConfig(cert)
 	return tlsConfig, nil
 }

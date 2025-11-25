@@ -23,12 +23,13 @@ func (c *SftpPutCommand) Description() string { return putDesc }
 func (c *SftpPutCommand) Usage() string       { return putUsage }
 func (c *SftpPutCommand) IsRemote() bool      { return true }
 
-func (c *SftpPutCommand) Run(server *server, args []string, ui UserInterface) error {
-	return nil
-}
-
-func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterface) error {
-	ctx := session.sftpContext
+func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
+	session, err := ctx.RequireSession()
+	if err != nil {
+		return err
+	}
+	ui := ctx.UI()
+	sftpCtx := session.sftpContext
 	if ctx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -58,8 +59,8 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 
 	localPath := putFlags.Args()[0]
 
-	if !spath.IsAbs(ctx.svrSystem, localPath) {
-		localPath = spath.Join(ctx.svrSystem, []string{*ctx.localCwd, localPath})
+	if !spath.IsAbs(sftpCtx.svrSystem, localPath) {
+		localPath = spath.Join(sftpCtx.svrSystem, []string{*sftpCtx.localCwd, localPath})
 	}
 
 	// Get local file info to check if it exists
@@ -69,11 +70,11 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 	}
 
 	// Get basename of the local path for remote destination
-	baseName := spath.Base(ctx.svrSystem, localPath)
+	baseName := spath.Base(sftpCtx.svrSystem, localPath)
 	// Ensure paths correspond to the target system
-	baseName = spath.FromToSlash(ctx.cliSystem, baseName)
+	baseName = spath.FromToSlash(sftpCtx.cliSystem, baseName)
 	// Construct the remote path using the basename and current remote directory
-	remotePath := spath.Join(ctx.cliSystem, []string{*ctx.remoteCwd, baseName})
+	remotePath := spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, baseName})
 
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
@@ -89,7 +90,7 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		totalSize := int64(0)
 
 		// First pass: count files and total size
-		wl1Err := ctx.walkLocalDir(localPath, "", func(lPath, remoteRelPath string, isDir bool) error {
+		wl1Err := sftpCtx.walkLocalDir(localPath, "", func(lPath, remoteRelPath string, isDir bool) error {
 			if !isDir {
 				fileCount++
 				fi, err := os.Stat(lPath)
@@ -112,23 +113,23 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		uploadedSize := int64(0)
 
 		// Create the target directory for the upload
-		if err := ensureRemoteDir(ctx.sftpCli, remotePath); err != nil {
+		if err := ensureRemoteDir(sftpCtx.sftpCli, remotePath); err != nil {
 			return fmt.Errorf("failed to create target directory: %w", err)
 		}
 
-		wl2Err := ctx.walkLocalDir(localPath, "", func(lPath, remoteRelPath string, isDir bool) error {
+		wl2Err := sftpCtx.walkLocalDir(localPath, "", func(lPath, remoteRelPath string, isDir bool) error {
 			var remoteFullPath string
 			if remoteRelPath == "" {
 				remoteFullPath = remotePath
 			} else {
 				// Use appropriate path for the remote OS
-				remoteRelPath = spath.FromToSlash(ctx.cliSystem, remoteRelPath)
-				remoteFullPath = spath.Join(ctx.cliSystem, []string{remotePath, remoteRelPath})
+				remoteRelPath = spath.FromToSlash(sftpCtx.cliSystem, remoteRelPath)
+				remoteFullPath = spath.Join(sftpCtx.cliSystem, []string{remotePath, remoteRelPath})
 			}
 
 			if isDir {
 				// Create directory
-				return ensureRemoteDir(ctx.sftpCli, remoteFullPath)
+				return ensureRemoteDir(sftpCtx.sftpCli, remoteFullPath)
 			}
 
 			// Upload file
@@ -150,14 +151,14 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 			fileSize := fi.Size()
 
 			// Create remote file
-			rFile, rErr := ctx.sftpCli.Create(remoteFullPath)
+			rFile, rErr := sftpCtx.sftpCli.Create(remoteFullPath)
 			if rErr != nil {
 				return fmt.Errorf("failed to create remote file: %w", rErr)
 			}
 			defer func() { _ = rFile.Close() }()
 
 			// Copy file with progress
-			bytesWritten, cErr := ctx.copyFileWithProgress(lFile, rFile, lPath, remoteFullPath, fileSize, fmt.Sprintf("Upload (%d/%d)", currentFile, fileCount), ui)
+			bytesWritten, cErr := sftpCtx.copyFileWithProgress(lFile, rFile, lPath, remoteFullPath, fileSize, fmt.Sprintf("Upload (%d/%d)", currentFile, fileCount), ui)
 			if cErr != nil {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
@@ -190,14 +191,14 @@ func (c *SftpPutCommand) RunSftp(session *Session, args []string, ui UserInterfa
 		defer func() { _ = lFile.Close() }()
 
 		// Create remote file
-		rFile, rErr := ctx.sftpCli.Create(remotePath)
+		rFile, rErr := sftpCtx.sftpCli.Create(remotePath)
 		if rErr != nil {
 			return fmt.Errorf("failed to create remote file: %w", rErr)
 		}
 		defer func() { _ = rFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := ctx.copyFileWithProgress(lFile, rFile, localPath, remotePath, localFileInfo.Size(), "Upload", ui)
+		_, cpErr := sftpCtx.copyFileWithProgress(lFile, rFile, localPath, remotePath, localFileInfo.Size(), "Upload", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to upload file: %w", cpErr)
 		}
