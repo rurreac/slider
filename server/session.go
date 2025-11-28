@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"github.com/pkg/sftp"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -10,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/sftp"
 
 	"golang.org/x/crypto/ssh"
 
@@ -23,26 +24,28 @@ type certInfo struct {
 
 // Session represents a session from a client to the server
 type Session struct {
-	Logger            *slog.Logger
-	LogPrefix         string
-	notifier          chan bool
-	hostIP            string
-	sessionID         int64
-	wsConn            *websocket.Conn
-	sshConn           *ssh.ServerConn
-	sshChannel        ssh.Channel
-	rawTerm           bool
-	KeepAliveChan     chan bool
-	keepAliveOn       bool
-	SocksInstance     *instance.Config
-	clientInterpreter *interpreter.Interpreter
-	isListener        bool
-	sessionMutex      sync.Mutex
-	certInfo          certInfo
-	sshConf           *ssh.ServerConfig
-	SSHInstance       *instance.Config
-	ShellInstance     *instance.Config
-	SftpHistory       *CustomHistory
+	Logger              *slog.Logger
+	LogPrefix           string
+	notifier            chan bool
+	hostIP              string
+	sessionID           int64
+	wsConn              *websocket.Conn
+	sshConn             *ssh.ServerConn
+	sshChannel          ssh.Channel
+	rawTerm             bool
+	KeepAliveChan       chan bool
+	keepAliveOn         bool
+	SocksInstance       *instance.Config
+	clientInterpreter   *interpreter.Interpreter
+	isListener          bool
+	sessionMutex        sync.Mutex
+	certInfo            certInfo
+	sshConf             *ssh.ServerConfig
+	SSHInstance         *instance.Config
+	ShellInstance       *instance.Config
+	SftpHistory         *CustomHistory
+	sftpCommandRegistry *CommandRegistry
+	sftpContext         *SftpCommandContext
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -105,7 +108,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
 
-	s.Logger.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
+	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
 		sc, sa, sa, session.wsConn.RemoteAddr().String())
 
 	return session
@@ -138,7 +141,7 @@ func (s *server) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	s.Logger.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
+	s.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
 		s.sessionTrack.SessionCount,
 		sa,
 		session.sessionID,

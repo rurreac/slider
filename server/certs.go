@@ -14,14 +14,14 @@ func (s *server) loadCertJar() error {
 	var sfErr error
 	s.certSaveOn, sfErr = safeEnabled()
 	if sfErr != nil {
-		s.Logger.Warnf("CertJar - %s", sfErr)
+		s.Warnf("CertJar - %s", sfErr)
 	}
 
 	_, sErr := os.Stat(s.certJarFile)
 	if sErr != nil {
 		if os.IsNotExist(sErr) {
 			_, nErr := s.newCertItem()
-			s.Logger.Warnf("Slider Certificates file not found, initialized with a new certificate")
+			s.Warnf("Slider Certificates file not found, initialized with a new certificate")
 			return nErr
 		}
 		return fmt.Errorf("failed to load %s file - %v", s.certJarFile, sErr)
@@ -43,7 +43,7 @@ func (s *server) loadCertJar() error {
 		if _, nErr := s.newCertItem(); nErr != nil {
 			return fmt.Errorf("failed to initialize Certificate Jar - %v", nErr)
 		}
-		s.Logger.Warnf("Certificate Jar was empty, initialized with a new certificate")
+		s.Warnf("Certificate Jar was empty, initialized with a new certificate")
 		return nil
 	}
 
@@ -57,7 +57,7 @@ func (s *server) loadCertJar() error {
 	s.certTrack.CertCount = ids[len(ids)-1]
 	s.certTrackMutex.Unlock()
 
-	s.Logger.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
+	s.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
 
 	return nil
 }
@@ -118,20 +118,20 @@ func (s *server) dropCertItem(certID int64) error {
 func (s *server) saveCertJar() {
 	jsonCertJar, jErr := json.Marshal(s.certTrack.Certs)
 	if jErr != nil {
-		s.Logger.Errorf("Failed to marshall Certificate Jar - %v", jErr)
+		s.Errorf("Failed to marshall Certificate Jar - %v", jErr)
 		return
 	}
 
 	// Create or truncate, it's ok to trash existing content
 	file, oErr := os.OpenFile(s.certJarFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if oErr != nil {
-		s.Logger.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
+		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
 		return
 	}
 	defer func() { _ = file.Close() }()
 	_, wErr := file.Write(jsonCertJar)
 	if wErr != nil {
-		s.Logger.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
+		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
 		return
 	}
 }
@@ -141,17 +141,6 @@ func (s *server) getCert(certID int64) (*scrypt.KeyPair, error) {
 		return kp, nil
 	}
 	return &scrypt.KeyPair{}, fmt.Errorf("certID %d not found in cert jar", certID)
-}
-
-func (s *server) getSessionsByCertID(id int64) []int64 {
-	var sessionList []int64
-
-	for _, session := range s.sessionTrack.Sessions {
-		if session.certInfo.id == id {
-			sessionList = append(sessionList, session.sessionID)
-		}
-	}
-	return sessionList
 }
 
 func (s *server) savePrivateKey(certID int64) (string, error) {

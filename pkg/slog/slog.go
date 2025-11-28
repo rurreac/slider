@@ -77,22 +77,22 @@ func (l *Logger) WithColors() {
 }
 
 func (l *Logger) LogToBuffer() {
-	l.Mutex.Lock()
+	l.Lock()
 	l.logger.SetOutput(l.logBuff)
-	l.Mutex.Unlock()
+	l.Unlock()
 }
 
 func (l *Logger) LogToStdout() {
-	l.Mutex.Lock()
+	l.Lock()
 	l.logger.SetOutput(os.Stdout)
-	l.Mutex.Unlock()
+	l.Unlock()
 }
 
 func (l *Logger) BufferOut() {
 	fmt.Printf("%s", l.logBuff.buff)
-	l.Mutex.Lock()
+	l.Lock()
 	l.logBuff.buff = make([]byte, 0)
-	l.Mutex.Unlock()
+	l.Unlock()
 }
 
 func (l *Logger) Printf(t string, args ...interface{}) {
