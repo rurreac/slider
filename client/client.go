@@ -20,6 +20,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,13 +63,6 @@ type listenerConf struct {
 	serverHeader string
 	statusCode   int
 }
-
-const (
-	clientUsage = "\r\nSlider Client" +
-		"\r\n\nCreates a new Slider Client instance and connects" +
-		"\nto the defined Slider Server." +
-		"\r\n\nUsage: <slider_client> [flags] [<[server_address]:port>]"
-)
 
 var shutdown = make(chan bool, 1)
 
@@ -247,7 +241,7 @@ func (s *Session) handleTcpIpChannel(nc ssh.NewChannel) {
 		return
 	}
 	s.Logger.Debugf("%sDirect TCPIP channel request to %s:%d", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort)
-	conn, cErr := net.Dial("tcp", fmt.Sprintf("%s:%d", tcpIpMsg.DstHost, tcpIpMsg.DstPort))
+	conn, cErr := net.Dial("tcp", net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort))))
 	if cErr != nil {
 		s.Logger.Errorf("%sFailed to connect to %s:%d - %v", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort, cErr)
 		_ = nc.Reject(ssh.Prohibited, "Failed to connect to destination")

@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 	"io"
 	"net"
 	"os"
@@ -15,9 +13,13 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 const (
@@ -408,7 +410,7 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier 
 	control := si.portFwdMap[bindPort]
 
 	for range control.RcvChan {
-		conn, cErr := net.Dial("tcp", fmt.Sprintf("%s:%d", msg.DstHost, msg.DstPort))
+		conn, cErr := net.Dial("tcp", net.JoinHostPort(msg.DstHost, strconv.Itoa(int(msg.DstPort))))
 		if cErr != nil {
 			si.Logger.Errorf(si.LogPrefix+"Failed to connect to %s:%d - %v", msg.DstHost, msg.DstPort, cErr)
 			si.portFwdMap[bindPort].DoneChan <- true

@@ -14,13 +14,6 @@ import (
 )
 
 const (
-	serverUsage = "\n\rSlider Server" +
-		"\n\n\r  Creates a new Slider Server instance and waits for" +
-		"\n\rincoming Slider Client connections on the defined port." +
-		"\n\n\r  Interaction with Slider Clients can be performed through" +
-		"\n\rits integrated Console by pressing CTR^C at any time." +
-		"\r\n\nUsage: <slider_server> [flags]"
-
 	clientCertsFile = "client-certs.json"
 	serverCertFile  = "server-cert.json"
 )
@@ -55,6 +48,7 @@ type server struct {
 	httpHealth           bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
+	commandRegistry      *CommandRegistry
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -64,7 +58,7 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 	}
 
 	if id, ok := scrypt.IsAllowedFingerprint(fp, s.certTrack.Certs); ok {
-		s.Logger.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
+		s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
 		return &ssh.Permissions{
 			Extensions: map[string]string{
 				"fingerprint": fp,
@@ -72,7 +66,7 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 			},
 		}, nil
 	}
-	s.Logger.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
+	s.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
 
 	return nil, fmt.Errorf("client key not authorized")
 }

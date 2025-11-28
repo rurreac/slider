@@ -132,9 +132,10 @@ func unixClean(path string) string {
 			component := path[start:i]
 
 			// Handle empty component and . component
-			if component == "" || component == "." {
+			switch component {
+			case "", ".":
 				// Skip this component
-			} else if component == ".." {
+			case "..":
 				// Handle .. component
 				if len(components) > 0 && components[len(components)-1] != ".." {
 					// Can go up one level, remove the last component
@@ -144,7 +145,7 @@ func unixClean(path string) string {
 					components = append(components, "..")
 				}
 				// If rooted and can't go up, simply ignore the .. component
-			} else {
+			default:
 				// Add normal component
 				components = append(components, component)
 			}
