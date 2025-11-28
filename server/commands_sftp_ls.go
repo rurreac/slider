@@ -42,7 +42,10 @@ func (c *SftpLsCommand) Description() string {
 }
 
 func (c *SftpLsCommand) Usage() string {
-	return fmt.Sprintf("Usage: %s [flags] [path]", c.Name())
+	if c.isRemote {
+		return lsUsage
+	}
+	return lLsUsage
 }
 
 func (c *SftpLsCommand) IsRemote() bool {
