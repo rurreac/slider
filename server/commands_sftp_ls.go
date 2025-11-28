@@ -95,25 +95,8 @@ func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Read directory
-	var entries []fs.FileInfo
-	if c.isRemote {
-		entries, err = sftpCtx.sftpCli.ReadDir(path)
-	} else {
-		dirEntries, readErr := os.ReadDir(path)
-		if readErr != nil {
-			return fmt.Errorf("failed to list directory: %w", readErr)
-		}
-		// Convert []fs.DirEntry to []fs.FileInfo
-		entries = make([]fs.FileInfo, 0, len(dirEntries))
-		for _, entry := range dirEntries {
-			info, statErr := entry.Info()
-			if statErr != nil {
-				return fmt.Errorf("failed to get file info: %w", statErr)
-			}
-			entries = append(entries, info)
-		}
-	}
-	if err != nil {
+	entries, rErr := sftpCtx.readDir(path, c.isRemote)
+	if rErr != nil {
 		return fmt.Errorf("failed to list directory: %w", err)
 	}
 
