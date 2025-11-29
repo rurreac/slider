@@ -104,7 +104,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		notifier := make(chan error, 1)
 		defer close(notifier)
 		// Give some time to check
-		sshTicker := time.NewTicker(250 * time.Millisecond)
+		sshTicker := time.NewTicker(conf.EndpointTickerInterval)
 		defer sshTicker.Stop()
 		timeout := time.After(conf.Timeout)
 

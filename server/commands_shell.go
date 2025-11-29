@@ -143,7 +143,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		notifier := make(chan error, 1)
 		defer close(notifier)
 		// Give some time to check
-		shellTicker := time.NewTicker(250 * time.Millisecond)
+		shellTicker := time.NewTicker(conf.EndpointTickerInterval)
 		defer shellTicker.Stop()
 		timeout := time.After(conf.Timeout)
 

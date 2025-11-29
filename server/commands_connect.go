@@ -66,7 +66,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
 	notifier := make(chan error, 1)
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(conf.ConnectTickerInterval)
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
 

@@ -186,7 +186,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		go session.SSHInstance.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg, notifier)
 
 		port := int(msg.SrcPort)
-		ticker := time.NewTicker(250 * time.Millisecond)
+		ticker := time.NewTicker(conf.EndpointTickerInterval)
 		defer ticker.Stop()
 		timeout := time.After(conf.Timeout)
 
@@ -254,7 +254,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer close(notifier)
 		go session.SSHInstance.TcpIpForwardFromMsg(*msg, notifier)
 
-		ticker := time.NewTicker(250 * time.Millisecond)
+		ticker := time.NewTicker(conf.EndpointTickerInterval)
 		defer ticker.Stop()
 		timeout := time.After(conf.Timeout)
 		port := int(msg.SrcPort)

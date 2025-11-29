@@ -104,7 +104,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 		notifier := make(chan error, 1)
 		defer close(notifier)
 		// Give some time to check
-		socksTicker := time.NewTicker(250 * time.Millisecond)
+		socksTicker := time.NewTicker(conf.EndpointTickerInterval)
 		defer socksTicker.Stop()
 		timeout := time.After(conf.Timeout)
 

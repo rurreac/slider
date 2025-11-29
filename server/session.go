@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slider/pkg/conf"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -101,7 +102,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		ShellInstance: shellInstance,
 		SftpHistory: &CustomHistory{
 			entries: make([]string, 0),
-			maxSize: 100,
+			maxSize: conf.DefaultHistorySize,
 		},
 	}
 
