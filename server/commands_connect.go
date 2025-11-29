@@ -46,7 +46,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		return fmt.Errorf("flag error: %w", pErr)
+		return pErr
 	}
 
 	// Validate exact args
