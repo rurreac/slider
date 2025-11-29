@@ -46,7 +46,7 @@ func (c *SftpMvCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		return fmt.Errorf("flag error: %w", pErr)
+		return pErr
 	}
 
 	if mvFlags.NArg() != 2 {

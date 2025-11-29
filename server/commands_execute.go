@@ -43,26 +43,22 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return pErr
 	}
 
 	// Validate mutual exclusion
 	if executeFlags.Changed("session") && executeFlags.Changed("all") {
-		ui.PrintError("flags --session and --all cannot be used together")
-		return nil
+		return fmt.Errorf("flags --session and --all cannot be used together")
 	}
 
 	// Validate one required
 	if !executeFlags.Changed("session") && !executeFlags.Changed("all") {
-		ui.PrintError("one of the flags --session or --all must be set")
-		return nil
+		return fmt.Errorf("one of the flags --session or --all must be set")
 	}
 
 	// Validate minimum args
 	if executeFlags.NArg() < 1 {
-		ui.PrintError("at least 1 argument(s) required, got %d", executeFlags.NArg())
-		return nil
+		return fmt.Errorf("at least 1 argument(s) required, got %d", executeFlags.NArg())
 	}
 
 	command := strings.Join(executeFlags.Args(), " ")
@@ -71,8 +67,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *eSession > 0 {
 		session, sErr := server.getSession(*eSession)
 		if sErr != nil {
-			ui.PrintError("Unknown Session ID %d", *eSession)
-			return nil
+			return fmt.Errorf("unknown session ID %d", *eSession)
 		}
 		sessions = []*Session{session}
 	}
@@ -91,6 +86,9 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 		var envVarList []struct{ Key, Value string }
 		i := session.newExecInstance(envVarList)
 		if err := i.ExecuteCommand(command, server.console.InitState); err != nil {
+			if !*eAll {
+				return fmt.Errorf("execution error: %w", err)
+			}
 			ui.PrintError("%v", err)
 		}
 		server.console.Println("")

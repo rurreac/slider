@@ -46,21 +46,18 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return fmt.Errorf("flag error: %w", pErr)
 	}
 
 	// Validate exact args
 	if connectFlags.NArg() != 1 {
-		ui.PrintError("exactly 1 argument(s) required, got %d", connectFlags.NArg())
-		return nil
+		return fmt.Errorf("exactly 1 argument(s) required, got %d", connectFlags.NArg())
 	}
 
 	clientURL := connectFlags.Args()[0]
 	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
-		ui.PrintError("Failed to resolve URL: %v", uErr)
-		return nil
+		return fmt.Errorf("failed to resolve URL: %w", uErr)
 	}
 
 	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
@@ -77,8 +74,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		select {
 		case err := <-notifier:
 			if err != nil {
-				ui.PrintError("Connection failed: %v", err)
-				return nil
+				return fmt.Errorf("connection failed: %w", err)
 			}
 			ui.PrintSuccess("Connection established")
 			return nil
@@ -91,8 +87,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		case <-ticker.C:
 			fmt.Printf(".")
 		case <-timeout:
-			ui.PrintError("Connection Timeout")
-			return nil
+			return fmt.Errorf("connection timeout")
 		}
 	}
 }

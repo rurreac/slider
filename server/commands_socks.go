@@ -45,36 +45,30 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return fmt.Errorf("flag error: %w", pErr)
 	}
 
 	// Validate one required
 	if !socksFlags.Changed("session") && !socksFlags.Changed("kill") {
-		ui.PrintError("one of the flags --session or --kill must be set")
-		return nil
+		return fmt.Errorf("one of the flags --session or --kill must be set")
 	}
 
 	// Validate mutual exclusion
 	if socksFlags.Changed("session") && socksFlags.Changed("kill") {
-		ui.PrintError("flags --session and --kill cannot be used together")
-		return nil
+		return fmt.Errorf("flags --session and --kill cannot be used together")
 	}
 	if socksFlags.Changed("kill") && socksFlags.Changed("port") {
-		ui.PrintError("flags --kill and --port cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --port cannot be used together")
 	}
 	if socksFlags.Changed("kill") && socksFlags.Changed("expose") {
-		ui.PrintError("flags --kill and --expose cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --expose cannot be used together")
 	}
 
 	var session *Session
 	sessionID := *sSession + *sKill
 	session, _ = server.getSession(*sSession)
 	if session == nil {
-		ui.PrintInfo("Unknown Session ID %d", sessionID)
-		return nil
+		return fmt.Errorf("unknown session ID %d", sessionID)
 
 	}
 
@@ -84,8 +78,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 			return nil
 		}
 		if err := session.SocksInstance.Stop(); err != nil { // Added error check for Stop()
-			ui.PrintError("Error stopping SOCKS5 server: %v", err)
-			return nil
+			return fmt.Errorf("error stopping SOCKS5 server: %w", err)
 		}
 		ui.PrintSuccess("SOCKS5 server stopped on session %d", sessionID)
 		return nil
@@ -94,7 +87,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sSession > 0 {
 		if session.SocksInstance.IsEnabled() {
 			if port, pErr := session.SocksInstance.GetEndpointPort(); pErr == nil {
-				ui.PrintError("Socks Endpoint already running on port: %d", port)
+				return fmt.Errorf("socks endpoint already running on port: %d", port)
 			}
 			return nil
 		}
@@ -115,8 +108,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					ui.PrintError("Endpoint error: %v", nErr)
-					return nil
+					return fmt.Errorf("endpoint error: %w", nErr)
 				}
 			default:
 				// Non-blocking, fall through
@@ -135,8 +127,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 					return nil
 				}
 			case <-timeout:
-				ui.PrintError("Socks Endpoint reached Timeout trying to start")
-				return nil
+				return fmt.Errorf("socks endpoint reached timeout trying to start")
 			}
 		}
 	}
