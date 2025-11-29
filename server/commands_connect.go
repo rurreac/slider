@@ -65,29 +65,34 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
-	notifier := make(chan bool, 1)
-	timeout := time.Now().Add(conf.Timeout)
+	notifier := make(chan error, 1)
 	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.After(conf.Timeout)
 
 	go server.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
 
 	for {
+		// Priority check: always check notifier first
 		select {
-		case success := <-notifier:
-			if success {
-				ui.PrintSuccess("Connection established")
+		case err := <-notifier:
+			if err != nil {
+				ui.PrintError("Connection failed: %v", err)
 				return nil
 			}
-			ui.PrintError("Connection failed")
+			ui.PrintSuccess("Connection established")
 			return nil
+		default:
+			// Non-blocking, fall through to ticker/timeout
+		}
+
+		// Then check ticker and timeout
+		select {
 		case <-ticker.C:
-			if time.Now().Before(timeout) {
-				fmt.Printf(".")
-				continue
-			} else {
-				ui.PrintError("Connection Timeout")
-				return nil
-			}
+			fmt.Printf(".")
+		case <-timeout:
+			ui.PrintError("Connection Timeout")
+			return nil
 		}
 	}
 }

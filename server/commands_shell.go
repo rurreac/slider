@@ -144,48 +144,54 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer close(notifier)
 		// Give some time to check
 		shellTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		defer shellTicker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		go session.shellEnable(*sPort, *sExpose, *sInteractive, *sTls, notifier)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
 					ui.PrintError("Endpoint error: %v", nErr)
 					return nil
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-shellTicker.C:
-				if time.Now().Before(timeout) {
-					port, sErr := session.ShellInstance.GetEndpointPort()
-					if port == 0 || sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("Shell Endpoint running on port: %d", port)
-					if *sInteractive {
-						tlsConfig, ccErr := server.NewClientTlsConfig()
-						if ccErr != nil {
-							ui.PrintError("Failed to create Client TLS certificate - %v", ccErr)
-							return nil
-						}
-						interactiveConf := &InteractiveConsole{
-							Console:   &server.console,
-							Session:   session,
-							port:      port,
-							tlsConfig: tlsConfig,
-							ui:        ui,
-						}
-						ui.PrintInfo("Connecting to Shell...")
-						if intErr := interactiveConf.Run(); intErr != nil {
-							ui.PrintError("%s", intErr)
-						}
-					}
-					return nil
-				} else {
-					ui.PrintError("Shell Endpoint reached Timeout trying to start")
-					return nil
+				port, sErr := session.ShellInstance.GetEndpointPort()
+				if port == 0 || sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("Shell Endpoint running on port: %d", port)
+				if *sInteractive {
+					tlsConfig, ccErr := server.NewClientTlsConfig()
+					if ccErr != nil {
+						ui.PrintError("Failed to create Client TLS certificate - %v", ccErr)
+						return nil
+					}
+					interactiveConf := &InteractiveConsole{
+						Console:   &server.console,
+						Session:   session,
+						port:      port,
+						tlsConfig: tlsConfig,
+						ui:        ui,
+					}
+					ui.PrintInfo("Connecting to Shell...")
+					if intErr := interactiveConf.Run(); intErr != nil {
+						ui.PrintError("%s", intErr)
+					}
+				}
+				return nil
+			case <-timeout:
+				ui.PrintError("Shell Endpoint reached Timeout trying to start")
+				return nil
 			}
 		}
 	}

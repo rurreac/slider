@@ -187,29 +187,35 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		port := int(msg.SrcPort)
 		ticker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		defer ticker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
 					ui.PrintError("Local Port Forward error: %v", nErr)
 					return nil
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-ticker.C:
-				if time.Now().Before(timeout) {
-					var sErr error
-					_, sErr = session.SSHInstance.GetLocalPortMapping(port)
-					if sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
-					return nil
-				} else {
-					ui.PrintError("Local Port Forward reached Timeout trying to start")
-					return nil
+				var sErr error
+				_, sErr = session.SSHInstance.GetLocalPortMapping(port)
+				if sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
+				return nil
+			case <-timeout:
+				ui.PrintError("Local Port Forward reached Timeout trying to start")
+				return nil
 			}
 		}
 	}
@@ -249,29 +255,35 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		go session.SSHInstance.TcpIpForwardFromMsg(*msg, notifier)
 
 		ticker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		defer ticker.Stop()
+		timeout := time.After(conf.Timeout)
 		port := int(msg.SrcPort)
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
 					ui.PrintError("Remote Port Forward error: %v", nErr)
 					return nil
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-ticker.C:
-				if time.Now().Before(timeout) {
-					var sErr error
-					_, sErr = session.SSHInstance.GetRemotePortMapping(port)
-					if sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
-					return nil
-				} else {
-					ui.PrintError("Remote Port Forward reached Timeout trying to start")
-					return nil
+				var sErr error
+				_, sErr = session.SSHInstance.GetRemotePortMapping(port)
+				if sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
+				return nil
+			case <-timeout:
+				ui.PrintError("Remote Port Forward reached Timeout trying to start")
+				return nil
 			}
 		}
 	}

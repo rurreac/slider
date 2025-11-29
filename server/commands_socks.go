@@ -70,10 +70,9 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	var session *Session
-	var sessErr error
 	sessionID := *sSession + *sKill
 	session, _ = server.getSession(*sSession)
-	if sessErr != nil {
+	if session == nil {
 		ui.PrintInfo("Unknown Session ID %d", sessionID)
 		return nil
 
@@ -106,32 +105,38 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer close(notifier)
 		// Give some time to check
 		socksTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		defer socksTicker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		go session.socksEnable(*sPort, *sExpose, notifier)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
 					ui.PrintError("Endpoint error: %v", nErr)
 					return nil
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-socksTicker.C:
-				if time.Now().Before(timeout) {
-					if session.SocksInstance != nil {
-						port, portErr := session.SocksInstance.GetEndpointPort()
-						if port == 0 || portErr != nil {
-							fmt.Printf(".")
-							continue
-						}
-						ui.PrintSuccess("Socks Endpoint running on port: %d", port)
-						return nil
+				if session.SocksInstance != nil {
+					port, portErr := session.SocksInstance.GetEndpointPort()
+					if port == 0 || portErr != nil {
+						fmt.Printf(".")
+						continue
 					}
-				} else {
-					ui.PrintError("Socks Endpoint reached Timeout trying to start")
+					ui.PrintSuccess("Socks Endpoint running on port: %d", port)
 					return nil
 				}
+			case <-timeout:
+				ui.PrintError("Socks Endpoint reached Timeout trying to start")
+				return nil
 			}
 		}
 	}

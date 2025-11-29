@@ -26,7 +26,7 @@ type certInfo struct {
 type Session struct {
 	Logger              *slog.Logger
 	LogPrefix           string
-	notifier            chan bool
+	notifier            chan error
 	hostIP              string
 	sessionID           int64
 	wsConn              *websocket.Conn
@@ -212,7 +212,7 @@ func (session *Session) IsPtyOn() bool {
 	return session.clientInterpreter.PtyOn
 }
 
-func (session *Session) addSessionNotifier(notifier chan bool) {
+func (session *Session) addSessionNotifier(notifier chan error) {
 	session.sessionMutex.Lock()
 	session.notifier = notifier
 	session.sessionMutex.Unlock()

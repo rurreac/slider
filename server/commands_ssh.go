@@ -105,30 +105,36 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer close(notifier)
 		// Give some time to check
 		sshTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		defer sshTicker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		go session.sshEnable(*sPort, *sExpose, notifier)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
 					ui.PrintError("Endpoint error: %v", nErr)
 					return nil
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-sshTicker.C:
-				if time.Now().Before(timeout) {
-					port, sErr := session.SSHInstance.GetEndpointPort()
-					if port == 0 || sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("SSH Endpoint running on port: %d", port)
-					return nil
-				} else {
-					ui.PrintError("SSH Endpoint reached Timeout trying to start")
-					return nil
+				port, sErr := session.SSHInstance.GetEndpointPort()
+				if port == 0 || sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("SSH Endpoint running on port: %d", port)
+				return nil
+			case <-timeout:
+				ui.PrintError("SSH Endpoint reached Timeout trying to start")
+				return nil
 			}
 		}
 	}
