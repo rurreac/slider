@@ -25,6 +25,10 @@ func (h *CustomHistory) Add(entry string) {
 		return
 	}
 
+	// Lock the history for concurrent access
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	// Add the new entry at the beginning (most recent first)
 	h.entries = append([]string{entry}, h.entries...)
 
