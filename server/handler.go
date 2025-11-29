@@ -59,10 +59,11 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
 	wsURL, wErr := conf.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.Errorf("Failed to convert %s to WebSocket URL: %v", clientUrl.String(), wErr)
+		notifier <- wErr
 		return
 	}
 
@@ -71,6 +72,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
 		if dErr != nil {
 			s.Errorf("Failed to resolve host %s: %v", clientUrl.Hostname(), dErr)
+			notifier <- dErr
 			return
 		}
 		wsURLStr = strings.Replace(wsURL.String(), clientUrl.Hostname(), ip, 1)
@@ -84,6 +86,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 			cert, lErr := tls.LoadX509KeyPair(tlsCertPath, tlsKeyPath)
 			if lErr != nil {
 				s.Errorf("Failed to load TLS certificate: %v", lErr)
+				notifier <- lErr
 				return
 			}
 			wsConfig.TLSClientConfig.Certificates = []tls.Certificate{cert}
@@ -97,6 +100,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 	if err != nil {
 		s.Errorf(
 			"Failed to open a WebSocket connection to \"%s\": %v", wsURL, err)
+		notifier <- err
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
@@ -113,6 +117,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 		keyPair, kErr := s.getCert(certID)
 		if kErr != nil {
 			s.Errorf("Can't find certificate with id %d", certID)
+			notifier <- kErr
 			return
 		}
 		session.addCertInfo(certID, keyPair.FingerPrint)
@@ -120,6 +125,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan bool, cert
 		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
 		if sErr != nil {
 			s.Errorf("Failed to create client ssh signer with certID %d key", certID)
+			notifier <- sErr
 			return
 		}
 		sshConf.AddHostKey(signerKey)

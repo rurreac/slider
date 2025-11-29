@@ -71,7 +71,7 @@ func RunServer(cfg *ServerConfig) {
 			FirstRun: true,
 			History: &CustomHistory{
 				entries: make([]string, 0),
-				maxSize: 100,
+				maxSize: conf.DefaultHistorySize,
 			},
 		},
 		certTrack: &scrypt.CertTrack{

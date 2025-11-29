@@ -62,44 +62,35 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return pErr
 	}
 
 	// Validate one required
 	if !shellFlags.Changed("session") && !shellFlags.Changed("kill") {
-		ui.PrintError("one of the flags --session or --kill must be set")
-		return nil
+		return fmt.Errorf("one of the flags --session or --kill must be set")
 	}
 
 	// Validate mutual exclusion
 	if shellFlags.Changed("session") && shellFlags.Changed("kill") {
-		ui.PrintError("flags --session and --kill cannot be used together")
-		return nil
+		return fmt.Errorf("flags --session and --kill cannot be used together")
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("port") {
-		ui.PrintError("flags --kill and --port cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --port cannot be used together")
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("interactive") {
-		ui.PrintError("flags --kill and --interactive cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --interactive cannot be used together")
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("tls") {
-		ui.PrintError("flags --kill and --tls cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --tls cannot be used together")
 	}
 	if shellFlags.Changed("kill") && shellFlags.Changed("expose") {
-		ui.PrintError("flags --kill and --expose cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --expose cannot be used together")
 	}
 	if shellFlags.Changed("interactive") && shellFlags.Changed("expose") {
-		ui.PrintError("flags --interactive and --expose cannot be used together")
-		return nil
+		return fmt.Errorf("flags --interactive and --expose cannot be used together")
 	}
 	if shellFlags.Changed("interactive") && shellFlags.Changed("tls") {
-		ui.PrintError("flags --interactive and --tls cannot be used together")
-		return nil
+		return fmt.Errorf("flags --interactive and --tls cannot be used together")
 	}
 
 	var session *Session
@@ -107,15 +98,13 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	sessionID := *sSession + *sKill
 	session, sessErr = server.getSession(sessionID)
 	if sessErr != nil {
-		ui.PrintInfo("Unknown Session ID %d", sessionID)
-		return nil
+		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
 
 	if *sKill > 0 {
 		if session.ShellInstance.IsEnabled() {
 			if err := session.ShellInstance.Stop(); err != nil {
-				ui.PrintError("%v", err)
-				return nil
+				return fmt.Errorf("error stopping shell server: %w", err)
 			}
 			ui.PrintSuccess("Shell Endpoint gracefully stopped")
 			return nil
@@ -127,7 +116,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sSession > 0 {
 		if session.ShellInstance.IsEnabled() {
 			if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
-				ui.PrintError("Shell Endpoint already running on port: %d", port)
+				return fmt.Errorf("shell endpoint already running on port: %d", port)
 			}
 			return nil
 		}
@@ -143,49 +132,52 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		notifier := make(chan error, 1)
 		defer close(notifier)
 		// Give some time to check
-		shellTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		shellTicker := time.NewTicker(conf.EndpointTickerInterval)
+		defer shellTicker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		go session.shellEnable(*sPort, *sExpose, *sInteractive, *sTls, notifier)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					ui.PrintError("Endpoint error: %v", nErr)
-					return nil
+					return fmt.Errorf("endpoint error: %w", nErr)
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-shellTicker.C:
-				if time.Now().Before(timeout) {
-					port, sErr := session.ShellInstance.GetEndpointPort()
-					if port == 0 || sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("Shell Endpoint running on port: %d", port)
-					if *sInteractive {
-						tlsConfig, ccErr := server.NewClientTlsConfig()
-						if ccErr != nil {
-							ui.PrintError("Failed to create Client TLS certificate - %v", ccErr)
-							return nil
-						}
-						interactiveConf := &InteractiveConsole{
-							Console:   &server.console,
-							Session:   session,
-							port:      port,
-							tlsConfig: tlsConfig,
-							ui:        ui,
-						}
-						ui.PrintInfo("Connecting to Shell...")
-						if intErr := interactiveConf.Run(); intErr != nil {
-							ui.PrintError("%s", intErr)
-						}
-					}
-					return nil
-				} else {
-					ui.PrintError("Shell Endpoint reached Timeout trying to start")
-					return nil
+				port, sErr := session.ShellInstance.GetEndpointPort()
+				if port == 0 || sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("Shell Endpoint running on port: %d", port)
+				if *sInteractive {
+					tlsConfig, ccErr := server.NewClientTlsConfig()
+					if ccErr != nil {
+						return fmt.Errorf("failed to create client TLS certificate: %w", ccErr)
+					}
+					interactiveConf := &InteractiveConsole{
+						Console:   &server.console,
+						Session:   session,
+						port:      port,
+						tlsConfig: tlsConfig,
+						ui:        ui,
+					}
+					ui.PrintInfo("Connecting to Shell...")
+					if intErr := interactiveConf.Run(); intErr != nil {
+						return intErr
+					}
+				}
+				return nil
+			case <-timeout:
+				return fmt.Errorf("shell endpoint reached timeout trying to start")
 			}
 		}
 	}
@@ -213,7 +205,7 @@ func (ic *InteractiveConsole) Run() error {
 	// When Shell is interactive, we want it to stop once we are done
 	defer func() {
 		if ssErr := ic.ShellInstance.Stop(); ssErr != nil {
-			ic.ui.PrintError("Failed to stop shell session: %v", ssErr)
+			ic.ui.PrintDebug("Failed to stop shell session: %v", ssErr)
 		}
 		ic.ui.PrintInfo("Shell Endpoint gracefully stopped\n")
 	}()
@@ -224,8 +216,7 @@ func (ic *InteractiveConsole) Run() error {
 		ic.tlsConfig,
 	)
 	if dErr != nil {
-		ic.ui.PrintError("Failed to bind to port %d - %v", ic.port, dErr)
-		return nil
+		return fmt.Errorf("failed to bind to port %d - %w", ic.port, dErr)
 	}
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
@@ -236,8 +227,7 @@ func (ic *InteractiveConsole) Run() error {
 
 		conState, _ := term.GetState(int(os.Stdin.Fd()))
 		if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
-			ic.ui.PrintError("Failed to revert console state, aborting to avoid inconsistent shell")
-			return nil
+			return fmt.Errorf("failed to revert console state, aborting to avoid inconsistent shell")
 		}
 		defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 
@@ -250,7 +240,7 @@ func (ic *InteractiveConsole) Run() error {
 				signal.Stop(sig)
 				close(sig)
 				if cErr := conn.Close(); cErr != nil {
-					ic.ui.PrintError("Failed to close Shell connection - %v", cErr)
+					ic.ui.PrintDebug("Failed to close Shell connection - %v", cErr)
 				}
 			}
 		}()

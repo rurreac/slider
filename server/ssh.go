@@ -2,13 +2,14 @@ package server
 
 import (
 	"encoding/json"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 	"os"
 	"slider/pkg/conf"
 	"slider/pkg/sconn"
 	"slider/pkg/types"
 	"strconv"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 )
 
 func (s *server) NewSSHServer(session *Session) {
@@ -35,7 +36,7 @@ func (s *server) NewSSHServer(session *Session) {
 	if err != nil {
 		s.Errorf("Failed to create SSH server %v", err)
 		if session.notifier != nil {
-			session.notifier <- false
+			session.notifier <- err
 		}
 		return
 	}
@@ -60,7 +61,7 @@ func (s *server) NewSSHServer(session *Session) {
 	)
 
 	if session.notifier != nil {
-		session.notifier <- true
+		session.notifier <- nil
 	}
 
 	// Set keepalive after connection is established

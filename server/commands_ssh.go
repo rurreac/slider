@@ -45,28 +45,23 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return fmt.Errorf("flag error: %w", pErr)
 	}
 
 	// Validate one required
 	if !sshFlags.Changed("session") && !sshFlags.Changed("kill") {
-		ui.PrintError("one of the flags --session or --kill must be set")
-		return nil
+		return fmt.Errorf("one of the flags --session or --kill must be set")
 	}
 
 	// Validate mutual exclusion
 	if sshFlags.Changed("session") && sshFlags.Changed("kill") {
-		ui.PrintError("flags --session and --kill cannot be used together")
-		return nil
+		return fmt.Errorf("flags --session and --kill cannot be used together")
 	}
 	if sshFlags.Changed("kill") && sshFlags.Changed("port") {
-		ui.PrintError("flags --kill and --port cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --port cannot be used together")
 	}
 	if sshFlags.Changed("kill") && sshFlags.Changed("expose") {
-		ui.PrintError("flags --kill and --expose cannot be used together")
-		return nil
+		return fmt.Errorf("flags --kill and --expose cannot be used together")
 	}
 
 	var session *Session
@@ -74,15 +69,13 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	sessionID := *sSession + *sKill
 	session, sErr = server.getSession(sessionID)
 	if sErr != nil {
-		ui.PrintInfo("Unknown Session ID %d", sessionID)
-		return nil
+		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
 
 	if *sKill > 0 {
 		if session.SSHInstance.IsEnabled() {
 			if err := session.SSHInstance.Stop(); err != nil {
-				ui.PrintError("%v", err)
-				return nil
+				return fmt.Errorf("error stopping SSH server: %w", err)
 			}
 			ui.PrintSuccess("SSH Endpoint gracefully stopped")
 			return nil
@@ -94,7 +87,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sSession > 0 {
 		if session.SSHInstance.IsEnabled() {
 			if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
-				ui.PrintError("SSH Endpoint already running on port: %d", port)
+				return fmt.Errorf("ssh endpoint already running on port: %d", port)
 			}
 			return nil
 		}
@@ -104,31 +97,35 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		notifier := make(chan error, 1)
 		defer close(notifier)
 		// Give some time to check
-		sshTicker := time.NewTicker(250 * time.Millisecond)
-		timeout := time.Now().Add(conf.Timeout)
+		sshTicker := time.NewTicker(conf.EndpointTickerInterval)
+		defer sshTicker.Stop()
+		timeout := time.After(conf.Timeout)
 
 		go session.sshEnable(*sPort, *sExpose, notifier)
 
 		for {
+			// Priority check: always check notifier first
 			select {
 			case nErr := <-notifier:
 				if nErr != nil {
-					ui.PrintError("Endpoint error: %v", nErr)
-					return nil
+					return fmt.Errorf("endpoint error: %w", nErr)
 				}
+			default:
+				// Non-blocking, fall through
+			}
+
+			// Then check ticker and timeout
+			select {
 			case <-sshTicker.C:
-				if time.Now().Before(timeout) {
-					port, sErr := session.SSHInstance.GetEndpointPort()
-					if port == 0 || sErr != nil {
-						fmt.Printf(".")
-						continue
-					}
-					ui.PrintSuccess("SSH Endpoint running on port: %d", port)
-					return nil
-				} else {
-					ui.PrintError("SSH Endpoint reached Timeout trying to start")
-					return nil
+				port, sErr := session.SSHInstance.GetEndpointPort()
+				if port == 0 || sErr != nil {
+					fmt.Printf(".")
+					continue
 				}
+				ui.PrintSuccess("SSH Endpoint running on port: %d", port)
+				return nil
+			case <-timeout:
+				return fmt.Errorf("ssh endpoint reached timeout trying to start")
 			}
 		}
 	}
