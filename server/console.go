@@ -127,9 +127,9 @@ func (s *server) NewConsole() string {
 		}
 
 		// This is meant to be a command to execute locally
-		if strings.HasPrefix(fCmd, "!") {
-			if len(fCmd) > 1 {
-				fullCommand := []string{strings.TrimPrefix(fCmd, "!")}
+		if after, ok := strings.CutPrefix(fCmd, "!"); ok {
+			if len(after) > 0 {
+				fullCommand := []string{after}
 				fullCommand = append(fullCommand, args[1:]...)
 				s.notConsoleCommand(fullCommand)
 				continue
@@ -157,7 +157,7 @@ func (s *server) NewConsole() string {
 				out = bgCmd
 				consoleInput = false
 			} else {
-				s.console.PrintError("%v", err)
+				s.console.PrintError("Error: %v", err)
 			}
 		} else {
 			s.console.Term.SetPrompt(getPrompt())

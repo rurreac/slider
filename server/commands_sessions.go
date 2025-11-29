@@ -37,7 +37,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	sessionsFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sessionsUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", executeDesc) // Note: Original code used executeDesc here, might be a copy-paste error in original code, but keeping it for now or should I fix it? sessionsDesc is better.
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", sessionsDesc)
 		sessionsFlags.PrintDefaults()
 	}
 
@@ -45,8 +45,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return pErr
 	}
 
 	// Validate mutual exclusion
@@ -61,8 +60,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		changedCount++
 	}
 	if changedCount > 1 {
-		ui.PrintError("flags --interactive, --disconnect and --kill cannot be used together")
-		return nil
+		return fmt.Errorf("flags --interactive, --disconnect and --kill cannot be used together")
 	}
 
 	if len(args) == 0 {
@@ -151,24 +149,17 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sInteract > 0 {
 		session, sessErr := server.getSession(*sInteract)
 		if sessErr != nil {
-			ui.PrintInfo("Unknown Session ID %d", *sInteract)
-			return nil
+			return fmt.Errorf("unknown session ID %d", *sInteract)
 		}
 
 		sftpCli, sErr := session.newSftpClient()
 		if sErr != nil {
-			ui.PrintInfo("Failed to create SFTP Client: %v", sErr)
+			return fmt.Errorf("failed to create SFTP client: %w", sErr)
 		}
 		defer func() { _ = sftpCli.Close() }()
 		server.newSftpConsole(session, sftpCli)
 
-		// Reset autocomplete commands - Wait, sftpConsole modifies autocomplete?
-		// Yes, server.newSftpConsole calls server.newSftpTerminal which sets prompt and autocomplete.
-		// When it returns, we need to restore the main console autocomplete.
-		// Original code:
-		// commands := server.initCommands()
-		// server.console.setConsoleAutoComplete(commands)
-		// New code:
+		// Reset autocomplete commands
 		server.console.setConsoleAutoComplete(server.commandRegistry)
 
 		return nil
@@ -177,12 +168,10 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sDisconnect > 0 {
 		session, sessErr := server.getSession(*sDisconnect)
 		if sessErr != nil {
-			ui.PrintInfo("Unknown Session ID %d", *sDisconnect)
-			return nil
+			return fmt.Errorf("unknown session ID %d", *sDisconnect)
 		}
 		if cErr := session.wsConn.Close(); cErr != nil {
-			ui.PrintError("Failed to close connection to Session ID %d", session.sessionID)
-			return nil
+			return fmt.Errorf("failed to close connection to session ID %d: %w", session.sessionID, cErr)
 		}
 		ui.PrintSuccess("Closed connection to Session ID %d", session.sessionID)
 		return nil
@@ -191,8 +180,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	if *sKill > 0 {
 		session, sessErr := server.getSession(*sKill)
 		if sessErr != nil {
-			ui.PrintInfo("Unknown Session ID %d", *sKill)
-			return nil
+			return fmt.Errorf("unknown session ID %d", *sKill)
 		}
 		var err error
 		if _, _, err = session.sendRequest(
@@ -200,8 +188,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			true,
 			nil,
 		); err != nil {
-			ui.PrintError("Client did not answer properly to the request: %s", err)
-			return nil
+			return fmt.Errorf("client did not answer properly to the request: %w", err)
 		}
 		ui.PrintSuccess("SessionID %d terminated gracefully", *sKill)
 

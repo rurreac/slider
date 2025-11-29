@@ -46,8 +46,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return pErr
 	}
 
 	// Validate mutual exclusion
@@ -66,8 +65,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	if changedCount > 1 {
-		ui.PrintError("flags --new, --remove, --dump-ssh and --dump-ca cannot be used together")
-		return nil
+		return fmt.Errorf("flags --new, --remove, --dump-ssh and --dump-ca cannot be used together")
 	}
 
 	if changedCount == 0 {
@@ -111,13 +109,11 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 		if server.caStoreOn {
 			caCertPath, cErr := server.saveCACert()
 			if cErr != nil {
-				ui.PrintError("Failed to save CA certificate - %s", cErr)
-				return nil
+				return fmt.Errorf("failed to save CA certificate: %w", cErr)
 			}
 			caKeyPath, kErr := server.saveCAKey()
 			if kErr != nil {
-				ui.PrintError("Failed to save CA key - %s", kErr)
-				return nil
+				return fmt.Errorf("failed to save CA key: %w", kErr)
 			}
 			ui.PrintSuccess("CA Certificate saved to %s", caCertPath)
 			ui.PrintSuccess("CA Private Key saved to %s", caKeyPath)
@@ -132,19 +128,16 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Dump SSH keys for a cert ID
 		keypair, err := server.getCert(int64(*cSSH))
 		if err != nil {
-			ui.PrintError("Failed to get certificate - %s", err)
-			return nil
+			return fmt.Errorf("failed to get certificate: %w", err)
 		}
 		if server.certSaveOn {
 			pvKeyPath, pvErr := server.savePrivateKey(int64(*cSSH))
 			if pvErr != nil {
-				ui.PrintError("Failed to save private key - %s", pvErr)
-				return nil
+				return fmt.Errorf("failed to save private key: %w", pvErr)
 			}
 			pbKeyPath, pbErr := server.savePublicKey(int64(*cSSH))
 			if pbErr != nil {
-				ui.PrintError("Failed to save private key - %s", pbErr)
-				return nil
+				return fmt.Errorf("failed to save public key: %w", pbErr)
 			}
 			ui.PrintInfo("Private Key saved to %s", pvKeyPath)
 			ui.PrintInfo("Public Key saved to %s", pbKeyPath)
@@ -160,8 +153,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Generate new key pair
 		keypair, err := server.newCertItem()
 		if err != nil {
-			ui.PrintError("Failed to generate certificate - %s", err)
-			return nil
+			return fmt.Errorf("failed to generate certificate: %w", err)
 		}
 		ui.PrintInfo("Private Key: %s", keypair.PrivateKey)
 		ui.PrintInfo("Fingerprint: %s", keypair.FingerPrint)
@@ -170,8 +162,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if *cRemove > 0 {
 		if err := server.dropCertItem(int64(*cRemove)); err != nil {
-			ui.PrintError("Failed to remove certificate ID %d - %s", *cRemove, err)
-			return nil
+			return fmt.Errorf("failed to remove certificate ID %d: %w", *cRemove, err)
 		}
 		ui.PrintSuccess("Certificate ID %d successfully removed", *cRemove)
 		return nil

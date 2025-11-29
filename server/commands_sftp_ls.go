@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/spath"
 	"sort"
 	"strings"
@@ -76,7 +77,7 @@ func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		return fmt.Errorf("flag error: %w", pErr)
+		return pErr
 	}
 
 	if lsFlags.NArg() > 1 {
@@ -187,13 +188,13 @@ func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInf
 // formatSize formats a file size human readable
 func formatSize(size int64) string {
 	switch {
-	case size < 1024:
+	case size < conf.BytesPerKB:
 		return fmt.Sprintf("%d B", size)
-	case size < 1024*1024:
-		return fmt.Sprintf("%.1f KB", float64(size)/1024)
-	case size < 1024*1024*1024:
-		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
+	case size < conf.BytesPerMB:
+		return fmt.Sprintf("%.1f KB", float64(size)/conf.BytesPerKB)
+	case size < conf.BytesPerGB:
+		return fmt.Sprintf("%.1f MB", float64(size)/conf.BytesPerMB)
 	default:
-		return fmt.Sprintf("%.1f GB", float64(size)/(1024*1024*1024))
+		return fmt.Sprintf("%.1f GB", float64(size)/conf.BytesPerGB)
 	}
 }

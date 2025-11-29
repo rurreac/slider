@@ -46,48 +46,48 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		ui.PrintError("Flag error: %v", pErr)
-		return nil
+		return pErr
 	}
 
 	// Validate exact args
 	if connectFlags.NArg() != 1 {
-		ui.PrintError("exactly 1 argument(s) required, got %d", connectFlags.NArg())
-		return nil
+		return fmt.Errorf("exactly 1 argument(s) required, got %d", connectFlags.NArg())
 	}
 
 	clientURL := connectFlags.Args()[0]
 	cu, uErr := conf.ResolveURL(clientURL)
 	if uErr != nil {
-		ui.PrintError("Failed to resolve URL: %v", uErr)
-		return nil
+		return fmt.Errorf("failed to resolve URL: %w", uErr)
 	}
 
 	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
-	notifier := make(chan bool, 1)
-	timeout := time.Now().Add(conf.Timeout)
-	ticker := time.NewTicker(500 * time.Millisecond)
+	notifier := make(chan error, 1)
+	ticker := time.NewTicker(conf.ConnectTickerInterval)
+	defer ticker.Stop()
+	timeout := time.After(conf.Timeout)
 
 	go server.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey)
 
 	for {
+		// Priority check: always check notifier first
 		select {
-		case success := <-notifier:
-			if success {
-				ui.PrintSuccess("Connection established")
-				return nil
+		case err := <-notifier:
+			if err != nil {
+				return fmt.Errorf("connection failed: %w", err)
 			}
-			ui.PrintError("Connection failed")
+			ui.PrintSuccess("Connection established")
 			return nil
+		default:
+			// Non-blocking, fall through to ticker/timeout
+		}
+
+		// Then check ticker and timeout
+		select {
 		case <-ticker.C:
-			if time.Now().Before(timeout) {
-				fmt.Printf(".")
-				continue
-			} else {
-				ui.PrintError("Connection Timeout")
-				return nil
-			}
+			fmt.Printf(".")
+		case <-timeout:
+			return fmt.Errorf("connection timeout")
 		}
 	}
 }

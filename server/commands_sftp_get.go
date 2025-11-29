@@ -50,7 +50,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		if errors.Is(pErr, pflag.ErrHelp) {
 			return nil
 		}
-		return fmt.Errorf("flag error: %w", pErr)
+		return pErr
 	}
 
 	// Validate exact args
@@ -98,7 +98,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		})
 
 		if wsErr != nil {
-			return fmt.Errorf("error scanning directory: %w", wsErr)
+			return fmt.Errorf("failed to scan directory: %w", wsErr)
 		}
 
 		ui.Printf("Found %d files totaling %.2f MB\n", fileCount, float64(totalSize)/(1024*1024))

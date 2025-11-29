@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slider/pkg/conf"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -22,11 +23,13 @@ type certInfo struct {
 	id          int64
 }
 
-// Session represents a session from a client to the server
+// Session represents an active client connection to the server.
+// It manages the WebSocket and SSH connections, along with various
+// endpoint instances (SOCKS, SSH, Shell) and SFTP state.
 type Session struct {
 	Logger              *slog.Logger
 	LogPrefix           string
-	notifier            chan bool
+	notifier            chan error
 	hostIP              string
 	sessionID           int64
 	wsConn              *websocket.Conn
@@ -101,7 +104,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		ShellInstance: shellInstance,
 		SftpHistory: &CustomHistory{
 			entries: make([]string, 0),
-			maxSize: 100,
+			maxSize: conf.DefaultHistorySize,
 		},
 	}
 
@@ -212,7 +215,7 @@ func (session *Session) IsPtyOn() bool {
 	return session.clientInterpreter.PtyOn
 }
 
-func (session *Session) addSessionNotifier(notifier chan bool) {
+func (session *Session) addSessionNotifier(notifier chan error) {
 	session.sessionMutex.Lock()
 	session.notifier = notifier
 	session.sessionMutex.Unlock()

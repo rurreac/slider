@@ -126,9 +126,9 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			continue
 		default:
 			// This is meant to be a command to execute locally
-			if strings.HasPrefix(command, "!") {
-				if len(command) > 1 {
-					fullCommand := []string{strings.TrimPrefix(command, "!")}
+			if after, ok := strings.CutPrefix(command, "!"); ok {
+				if len(after) > 0 {
+					fullCommand := []string{after}
 					fullCommand = append(fullCommand, args...)
 					s.notConsoleCommandWithDir(fullCommand, localCwd)
 					continue
@@ -144,7 +144,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 					// Exit SFTP session
 					return
 				}
-				s.console.PrintError("%v", err)
+				s.console.PrintError("Error: %v", err)
 			}
 			s.console.Term.SetPrompt(sftpPrompt())
 		}
