@@ -23,7 +23,9 @@ type certInfo struct {
 	id          int64
 }
 
-// Session represents a session from a client to the server
+// Session represents an active client connection to the server.
+// It manages the WebSocket and SSH connections, along with various
+// endpoint instances (SOCKS, SSH, Shell) and SFTP state.
 type Session struct {
 	Logger              *slog.Logger
 	LogPrefix           string

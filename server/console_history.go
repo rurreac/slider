@@ -3,11 +3,14 @@ package server
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
+// CustomHistory maintains a list of command history entries.
 type CustomHistory struct {
 	entries []string
 	maxSize int
+	mu      sync.Mutex
 }
 
 func (h *CustomHistory) Add(entry string) {
