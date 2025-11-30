@@ -35,3 +35,45 @@ var (
 		Fatal: RedBrightBold,
 	}
 )
+
+func GreyOut(key string, colorOn bool) string {
+	if colorOn {
+		return string(GreyBold) + key + string(ResetColor)
+	}
+	return key
+}
+
+func LogDebug(colorOn bool) string {
+	if colorOn {
+		return string(BlueBrightBold) + "DEBU" + string(ResetColor)
+	}
+	return "DEBU"
+}
+
+func LogInfo(colorOn bool) string {
+	if colorOn {
+		return string(CyanBold) + "INFO" + string(ResetColor)
+	}
+	return "INFO"
+}
+
+func LogWarn(colorOn bool) string {
+	if colorOn {
+		return string(YellowBrightBold) + "WARN" + string(ResetColor)
+	}
+	return "WARN"
+}
+
+func LogError(colorOn bool) string {
+	if colorOn {
+		return string(RedBold) + "ERRO" + string(ResetColor)
+	}
+	return "ERRO"
+}
+
+func LogFatal(colorOn bool) string {
+	if colorOn {
+		return string(RedBrightBold) + "FATA" + string(ResetColor)
+	}
+	return "FATA"
+}

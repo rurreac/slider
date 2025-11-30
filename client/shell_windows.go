@@ -5,28 +5,32 @@ package client
 import (
 	"context"
 	"fmt"
-	"github.com/UserExistsError/conpty"
-	"golang.org/x/crypto/ssh"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"slider/pkg/instance"
+	"slider/pkg/slog"
+
+	"github.com/UserExistsError/conpty"
+	"golang.org/x/crypto/ssh"
 )
 
 func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
+		s.Logger.WithCaller().ErrorWith(
+			"Failed to accept \"%s\" channel",
+			nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()),
+			slog.F("err", aErr),
 		)
 		return
 	}
 	defer func() {
-		s.Logger.Debugf(s.logID+"Closing \"%s\" channel", channel.ChannelType())
+		s.Logger.WithCaller().DebugWith("Closing channel", nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()))
 		_ = sshChan.Close()
 	}()
 
@@ -50,11 +54,14 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				close(envChange)
 			} else {
 				envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-				s.Logger.Debugf("Adding Environment variable: %s=\"%s\"\n", kv.Key, kv.Value)
+				s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+					slog.F("session_id", s.sessionID),
+					slog.F("key", kv.Key),
+					slog.F("value", kv.Value))
 			}
 		}
 
-		s.Logger.Debugf("Running SHELL on PTY")
+		s.Logger.WithCaller().Debugf("Running SHELL on PTY")
 		cmd := exec.Command(s.interpreter.Shell)
 		conPty, cErr := conpty.Start(
 			s.interpreter.Shell,
@@ -62,7 +69,9 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			conpty.ConPtyEnv(append(cmd.Environ(), envVars...)),
 		)
 		if cErr != nil {
-			s.Logger.Errorf("Failed to start conpty - %v", cErr)
+			s.Logger.WithCaller().ErrorWith("Failed to start conpty", nil,
+				slog.F("session_id", s.sessionID),
+				slog.F("err", cErr))
 			return
 		}
 		defer func() { _ = conPty.Close() }()
@@ -72,7 +81,9 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := conPty.Resize(int(cols), int(rows)); sErr != nil {
-					s.Logger.Warnf("Failed to update window size - %v", sErr)
+					s.Logger.WithCaller().WarnWith("Failed to update window size", nil,
+						slog.F("session_id", s.sessionID),
+						slog.F("err", sErr))
 				}
 			}
 		}()
@@ -81,14 +92,17 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		go func() { _, _ = io.Copy(sshChan, conPty) }()
 
 		if code, err := conPty.Wait(context.Background()); err != nil {
-			s.Logger.Errorf("Failed to spawn conpty with exit code %d", code)
+			s.Logger.WithCaller().ErrorWith("Failed to spawn conpty", nil,
+				slog.F("session_id", s.sessionID),
+				slog.F("exit_code", code),
+				slog.F("err", err))
 		}
 	} else {
 		// - You are here cause the System is likely Windows < 2018 and does not support ConPTY
 		// - Command Prompt Buffer Size can be set running: `mode con:cols=X lines=Y`,
 		//   unfortunately, there's no equivalent variable to set that up,
 		//   so size won't be set or updated
-		s.Logger.Debugf("Running SHELL on NON PTY")
+		s.Logger.WithCaller().Debugf("Running SHELL on NON PTY")
 
 		// Discard window-change events
 		go func() {
@@ -107,7 +121,10 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				close(envChange)
 			} else {
 				envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-				s.Logger.Debugf("Adding Environment variable: %s=\"%s\"\n", kv.Key, kv.Value)
+				s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+					slog.F("session_id", s.sessionID),
+					slog.F("key", kv.Key),
+					slog.F("value", kv.Value))
 			}
 		}
 
@@ -121,12 +138,16 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		}
 
 		if err := cmd.Start(); err != nil {
-			s.Logger.Fatalf(s.logID+"Failed to start process: %v", err)
+			s.Logger.WithCaller().ErrorWith("Failed to start process", nil,
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
 			return
 		}
 
 		if err := cmd.Wait(); err != nil {
-			s.Logger.Fatalf(s.logID+"Command exited: %v", err)
+			s.Logger.WithCaller().ErrorWith("Command exited", nil,
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
 		}
 	}
 
@@ -135,16 +156,16 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
-		)
+		s.Logger.WithCaller().ErrorWith("Failed to accept channel", nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()),
+			slog.F("err", aErr))
 		return
 	}
 	defer func() {
-		s.Logger.Debugf("%sClosing EXEC channel", s.logID)
+		s.Logger.WithCaller().DebugWith("Closing channel", nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()))
 		_ = sshChan.Close()
 	}()
 
@@ -156,7 +177,9 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	// The first 4 elements of Channel.Extradata() are 3 null bytes plus the size of the payload
 	// The rest of the payload is the command to be executed
-	s.Logger.Debugf("ExtraData: %v", channel.ExtraData())
+	s.Logger.WithCaller().DebugWith("Channel ExtraData", nil,
+		slog.F("session_id", s.sessionID),
+		slog.F("extra_data", channel.ExtraData()))
 
 	rcvCmd := string(channel.ExtraData()[4:])
 
@@ -179,11 +202,15 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			close(envChange)
 		} else {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.Logger.Debugf("Adding Environment variable: %s=\"%s\"\n", kv.Key, kv.Value)
+			s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+				slog.F("session_id", s.sessionID),
+				slog.F("key", kv.Key),
+				slog.F("value", kv.Value))
 		}
 	}
 
-	s.Logger.Debugf("Running EXEC on NON PTY")
+	s.Logger.WithCaller().DebugWith("Running EXEC on NON PTY", nil,
+		slog.F("session_id", s.sessionID))
 
 	cmd := &exec.Cmd{
 		Path:   s.interpreter.Shell,
@@ -194,10 +221,15 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("Failed to start process: %v", err)
+		s.Logger.WithCaller().ErrorWith("Failed to start command", nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
+		return
 	}
 
 	if err := cmd.Wait(); err != nil {
-		log.Printf("Command exited: %v", err)
+		s.Logger.WithCaller().ErrorWith("Command exited", nil,
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 	}
 }

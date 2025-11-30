@@ -7,6 +7,7 @@ import (
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/scrypt"
+	"slider/pkg/slog"
 	"sync/atomic"
 )
 
@@ -118,20 +119,26 @@ func (s *server) dropCertItem(certID int64) error {
 func (s *server) saveCertJar() {
 	jsonCertJar, jErr := json.Marshal(s.certTrack.Certs)
 	if jErr != nil {
-		s.Errorf("Failed to marshall Certificate Jar - %v", jErr)
+		s.WithCaller().ErrorWith("Failed to marshall Certificate Jar", nil, slog.F("err", jErr))
 		return
 	}
 
 	// Create or truncate, it's ok to trash existing content
 	file, oErr := os.OpenFile(s.certJarFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if oErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, oErr)
+		s.WithCaller().ErrorWith("Failed to save Certificate Jar to File",
+			nil,
+			slog.F("file", s.certJarFile),
+			slog.F("err", oErr))
 		return
 	}
 	defer func() { _ = file.Close() }()
 	_, wErr := file.Write(jsonCertJar)
 	if wErr != nil {
-		s.Errorf("Failed to save Certificate Jar to File %s - %v", s.certJarFile, wErr)
+		s.WithCaller().ErrorWith("Failed to save Certificate Jar to File",
+			nil,
+			slog.F("file", s.certJarFile),
+			slog.F("err", wErr))
 		return
 	}
 }

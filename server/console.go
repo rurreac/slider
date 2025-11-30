@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"slider/pkg/conf"
+	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
 	"strings"
@@ -70,14 +71,14 @@ func (s *server) NewConsole() string {
 	// Only applies to Windows - Best effort to have a successful raw terminal regardless
 	// of the Windows version
 	if piErr := s.serverInterpreter.EnableProcessedInputOutput(); piErr != nil {
-		s.Errorf("Failed to enable Processed Input/Output")
+		s.WithCaller().ErrorWith("Failed to enable Processed Input/Output", nil, slog.F("error", piErr))
 		// Sets Console Colors based on if PTY is enabled on the server.
 		// If it's not on PTY and fails to set Processed IO, disables colors
 		setConsoleColors()
 	}
 	defer func() {
 		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {
-			s.Errorf("Failed to reset Input/Output modes: %s", ioErr)
+			s.WithCaller().ErrorWith("Failed to reset Input/Output modes", nil, slog.F("error", ioErr))
 		}
 	}()
 

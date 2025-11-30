@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"slider/pkg/scrypt"
+	"slider/pkg/slog"
 )
 
 func (si *Config) StartTLSEndpoint(port int) error {
@@ -16,9 +17,11 @@ func (si *Config) StartTLSEndpoint(port int) error {
 			return fmt.Errorf("failed to create Server TLS certificate - %v", ccErr)
 		}
 		si.setServerCertificate(cert)
-		si.Logger.Debugf(si.LogPrefix + "Created new TLS server certificate")
+		si.Logger.WithCaller().DebugWith("Created new TLS server certificate", nil,
+			slog.F("session_id", si.SessionID))
 	} else {
-		si.Logger.Debugf(si.LogPrefix + "Using existing TLS server certificate")
+		si.Logger.WithCaller().DebugWith("Using existing TLS server certificate", nil,
+			slog.F("session_id", si.SessionID))
 		cert = si.serverCertificate
 	}
 	tlsConfig := si.CertificateAuthority.GetTLSServerConfig(cert, si.interactiveOn)

@@ -14,7 +14,7 @@ const maxTemplateSize = 2
 
 var HttpVersionResponse = &types.VersionHolder{
 	ProtoVersion: Proto,
-	Version:      version,
+	Version:      Version,
 }
 
 func CheckStatusCode(statusCode int) bool {
