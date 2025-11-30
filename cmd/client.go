@@ -73,7 +73,7 @@ func init() {
 	clientCmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying client certificates")
 	clientCmd.Flags().StringVar(&clientTlsCert, "tls-cert", "", "TLS client Certificate")
 	clientCmd.Flags().StringVar(&clientTlsKey, "tls-key", "", "TLS client Key")
-	if conf.Version == "developer" {
+	if conf.Version == "development" {
 		clientCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
 	}
 
