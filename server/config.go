@@ -40,6 +40,8 @@ type ServerConfig struct {
 	ListenerCert string
 	ListenerKey  string
 	ListenerCA   string
+	JsonLog      bool
+	CallerLog    bool
 }
 
 // RunServer starts a server with the given configuration
@@ -50,15 +52,23 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	log := slog.NewLogger("Server")
+	if cfg.JsonLog {
+		log.WithJSON(true)
+	} else {
+		// It is safe to assume that if PTY is On then colors are supported.
+		if interpreter.IsPtyOn() && !cfg.Colorless {
+			log.WithColors(true)
+		} else {
+			log.WithColors(false)
+		}
+	}
+	if cfg.CallerLog {
+		log.WithCallerInfo(true)
+	}
 	lvErr := log.SetLevel(cfg.Verbose)
 	if lvErr != nil {
-		fmt.Printf("wrong log level \"%s\", %v", cfg.Verbose, lvErr)
+		log.Fatalf("Wrong log level (%s): %v", cfg.Verbose, lvErr)
 		return
-	}
-
-	// It is safe to assume that if PTY is On then colors are supported.
-	if interpreter.IsPtyOn() && !cfg.Colorless {
-		log.WithColors()
 	}
 
 	s := &server{
@@ -126,29 +136,29 @@ func RunServer(cfg *ServerConfig) {
 		}
 
 		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !cfg.CaStore && cfg.CaStorePath != "" {
-			s.Fatalf("Failed load Server Key, %s does not exist", kp)
+			s.FatalWith("Failed to load Server Key", slog.F("ca_store", kp))
 		} else if os.IsNotExist(sErr) && cfg.CaStore {
-			s.Debugf("Storing New Server Certificate on %s", kp)
+			s.DebugWith("Storing New Server Certificate", slog.F("ca_store", kp))
 		} else {
-			s.Infof("Importing existing Server Certificate from %s", kp)
+			s.InfoWith("Importing existing Server Certificate", slog.F("ca_store", kp))
 		}
 
 		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
 		if kErr != nil {
-			s.Fatalf("Failed to load Server Key: %v", kErr)
+			s.FatalWith("Failed to load Server Key", slog.F("err", kErr))
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.Fatalf("Failed generate SSH signer: %v", prErr)
+			s.FatalWith("Failed generate SSH signer", slog.F("err", prErr))
 		}
 	} else {
 		serverKeyPair, kErr = scrypt.NewServerKeyPair()
 		if kErr != nil {
-			s.Fatalf("Failed to generate Server Key: %v", kErr)
+			s.FatalWith("Failed to generate Server Key", slog.F("err", kErr))
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.Fatalf("failed to create signer: %v", prErr)
+			s.FatalWith("Failed to create signer", slog.F("err", prErr))
 		}
 
 	}
@@ -183,10 +193,10 @@ func RunServer(cfg *ServerConfig) {
 	if cfg.HttpRedirect != "" {
 		wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
 		if wErr != nil {
-			s.Fatalf("Bad Redirect URL: %v", wErr)
+			s.FatalWith("Bad Redirect URL", slog.F("url", cfg.HttpRedirect), slog.F("err", wErr))
 		}
 		s.urlRedirect = wr
-		s.Debugf("Redirecting incomming HTTP requests to \"%s\"", s.urlRedirect)
+		s.DebugWith("Redirecting incomming HTTP requests to", slog.F("url", s.urlRedirect))
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
@@ -202,13 +212,13 @@ func RunServer(cfg *ServerConfig) {
 		tlsOn = true
 		listenerProto = "tls"
 		if cfg.ListenerCA != "" {
-			s.Warnf("Using CA \"%s\" for TLS client verification", cfg.ListenerCA)
+			s.WarnWith("Using CA for TLS client verification", slog.F("ca", cfg.ListenerCA))
 			caPem, rfErr := os.ReadFile(cfg.ListenerCA)
 			if rfErr != nil {
-				s.Fatalf("Failed to read CA file: %v", rfErr)
+				s.FatalWith("Failed to read CA file", slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
 			}
 			if len(caPem) == 0 {
-				s.Fatalf("CA file is empty")
+				s.FatalWith("CA file is empty", slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
 			}
 			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
 		}
@@ -226,16 +236,16 @@ func RunServer(cfg *ServerConfig) {
 			}
 			httpSrv.Handler = handler
 			if sErr := httpSrv.ListenAndServeTLS(cfg.ListenerCert, cfg.ListenerKey); sErr != nil {
-				s.Fatalf("TLS Listener error: %s", sErr)
+				s.FatalWith("TLS Listener error", slog.F("err", sErr))
 			}
 			return
 		}
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
-			s.Fatalf("Listener error: %s", sErr)
+			s.FatalWith("Listener error", slog.F("err", sErr))
 		}
 	}()
 
-	s.Infof("Press CTR^C to access the Slider Console")
+	s.Printf("Press CTR^C to access the Slider Console")
 
 	// Capture Interrupt Signal to toggle log output and activate Console
 	var cmdOutput string
@@ -260,5 +270,5 @@ func RunServer(cfg *ServerConfig) {
 		}
 	}
 
-	s.Printf("Server down...")
+	s.Infof("Server down...")
 }

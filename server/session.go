@@ -28,7 +28,6 @@ type certInfo struct {
 // endpoint instances (SOCKS, SSH, Shell) and SFTP state.
 type Session struct {
 	Logger              *slog.Logger
-	LogPrefix           string
 	notifier            chan error
 	hostIP              string
 	sessionID           int64
@@ -67,7 +66,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	shellInstance := instance.New(
 		&instance.Config{
 			Logger:               s.Logger,
-			LogPrefix:            fmt.Sprintf("SessionID %d - SHELL ", sc),
+			SessionID:            sc,
 			EndpointType:         instance.ShellEndpoint,
 			CertificateAuthority: s.CertificateAuthority,
 		},
@@ -76,7 +75,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	socksInstance := instance.New(
 		&instance.Config{
 			Logger:       s.Logger,
-			LogPrefix:    fmt.Sprintf("SessionID %d - SOCKS ", sc),
+			SessionID:    sc,
 			EndpointType: instance.SocksEndpoint,
 		},
 	)
@@ -84,7 +83,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	sshInstance := instance.New(
 		&instance.Config{
 			Logger:       s.Logger,
-			LogPrefix:    fmt.Sprintf("SessionID %d - SSH ", sc),
+			SessionID:    sc,
 			EndpointType: instance.SshEndpoint,
 			ServerKey:    s.serverKey,
 			AuthOn:       s.authOn,
@@ -97,7 +96,6 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		wsConn:        wsConn,
 		KeepAliveChan: make(chan bool, 1),
 		Logger:        s.Logger,
-		LogPrefix:     fmt.Sprintf("SessionID %d - ", sc),
 		sshConf:       s.sshConf,
 		SocksInstance: socksInstance,
 		SSHInstance:   sshInstance,
@@ -111,8 +109,12 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
 
-	s.Infof("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
-		sc, sa, sa, session.wsConn.RemoteAddr().String())
+	s.InfoWith("Session Stats (↑)",
+		slog.F("global", sc),
+		slog.F("active", sa),
+		slog.F("session_id", sc),
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()),
+	)
 
 	return session
 }
@@ -144,11 +146,11 @@ func (s *server) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	s.Infof("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
-		s.sessionTrack.SessionCount,
-		sa,
-		session.sessionID,
-		session.wsConn.RemoteAddr().String(),
+	s.InfoWith("Session Stats (↓)",
+		slog.F("global", s.sessionTrack.SessionCount),
+		slog.F("active", sa),
+		slog.F("session_id", session.sessionID),
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()),
 	)
 
 	delete(s.sessionTrack.Sessions, session.sessionID)
@@ -229,16 +231,18 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Logger.Debugf(session.LogPrefix + "KeepAlive Check Stopped")
+			session.Logger.DebugWith("KeepAlive Check Stopped",
+				slog.F("session_id", session.sessionID),
+			)
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
-				session.Logger.Errorf(
-					session.LogPrefix+"KeepAlive Connection Error Received (\"%v\"-\"%s\"-\"%v\")",
-					ok,
-					p,
-					sendErr,
+				session.Logger.ErrorWith("KeepAlive Connection Error Received",
+					slog.F("session_id", session.sessionID),
+					slog.F("ok", ok),
+					slog.F("payload", p),
+					slog.F("err", sendErr),
 				)
 				return
 			}
@@ -262,13 +266,13 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload []byte) error {
 	var pMsg string
 	if len(payload) != 0 {
-		pMsg = fmt.Sprintf("with Payload: \"%s\" ", payload)
+		pMsg = fmt.Sprintf("%v", payload)
 	}
-	session.Logger.Debugf(
-		session.LogPrefix+"Replying Connection Request Type \"%s\", will send \"%v\" %s",
-		request.Type,
-		ok,
-		pMsg,
+	session.Logger.DebugWith("Replying Connection Request",
+		slog.F("session_id", session.sessionID),
+		slog.F("request_type", request.Type),
+		slog.F("ok", ok),
+		slog.F("payload", pMsg),
 	)
 	return request.Reply(ok, payload)
 }
@@ -317,8 +321,9 @@ func (session *Session) sshEnable(port int, exposePort bool, notifier chan error
 
 func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }) *instance.Config {
 	config := instance.New(&instance.Config{
-		Logger:    session.Logger,
-		LogPrefix: fmt.Sprintf("SessionID %d - EXEC ", session.sessionID),
+		Logger:       session.Logger,
+		SessionID:    session.sessionID,
+		EndpointType: instance.ExecEndpoint,
 	})
 	config.SetSSHConn(session.sshConn)
 	config.SetPtyOn(session.clientInterpreter.PtyOn)
@@ -338,7 +343,9 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 	go ssh.DiscardRequests(requests)
 
 	cleanup := func() {
-		session.Logger.Debugf("Closing SFTP channel due to error")
+		session.Logger.DebugWith("Closing SFTP channel due to error",
+			slog.F("session_id", session.sessionID),
+		)
 		_ = sftpChan.Close()
 	}
 
@@ -351,9 +358,13 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 
 	go func() {
 		_ = client.Wait()
-		session.Logger.Debugf("SFTP client connection closed")
+		session.Logger.DebugWith("SFTP client connection closed",
+			slog.F("session_id", session.sessionID),
+		)
 	}()
 
-	session.Logger.Debugf("SFTP client connected successfully")
+	session.Logger.DebugWith("SFTP client connected successfully",
+		slog.F("session_id", session.sessionID),
+	)
 	return client, nil
 }

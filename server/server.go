@@ -54,11 +54,11 @@ type server struct {
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 	fp, fErr := scrypt.GenerateFingerprint(key)
 	if fErr != nil {
-		return nil, fmt.Errorf("failed to generate fingerprint from public key - %s", fErr)
+		return nil, fmt.Errorf("failed to generate fingerprint from public key: %s", fErr)
 	}
 
 	if id, ok := scrypt.IsAllowedFingerprint(fp, s.certTrack.Certs); ok {
-		s.Debugf("Authenticated Client %s fingerprint: %s", conn.RemoteAddr(), fp)
+		s.DebugWith("Authenticated Client", slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp), slog.F("cert_id", id))
 		return &ssh.Permissions{
 			Extensions: map[string]string{
 				"fingerprint": fp,
@@ -66,7 +66,7 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 			},
 		}, nil
 	}
-	s.Warnf("Rejected client %s, due to bad key authentication", conn.RemoteAddr())
+	s.WarnWith("Rejected client", slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp))
 
 	return nil, fmt.Errorf("client key not authorized")
 }

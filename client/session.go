@@ -1,20 +1,19 @@
 package client
 
 import (
-	"fmt"
-	"github.com/gorilla/websocket"
-	"golang.org/x/crypto/ssh"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/gorilla/websocket"
+	"golang.org/x/crypto/ssh"
 )
 
 type Session struct {
 	Logger        *slog.Logger
-	logID         string
 	sessionID     int64
 	serverAddr    string
 	wsConn        *websocket.Conn
@@ -57,16 +56,10 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		keepAliveOn:   false,
 	}
 
-	if c.isListener {
-		session.logID = fmt.Sprintf(
-			"Session ID %d (%s) - ",
-			sc,
-			wsConn.RemoteAddr().String(),
-		)
-	}
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {
-		c.Logger.Fatalf("Interpreter not supported - %v", iErr)
+		c.Logger.FatalWith("Interpreter not supported",
+			slog.F("err", iErr))
 	}
 	session.interpreter = i
 	session.initTermSize = &types.TermDimensions{
@@ -75,8 +68,11 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	}
 	c.sessionTrack.Sessions[sc] = session
 
-	c.Logger.Debugf("Sessions -> Global: %d, Active: %d (Session ID %d: %s)",
-		sc, sa, sa, session.wsConn.RemoteAddr().String())
+	c.Logger.DebugWith("Session Stats (↑)",
+		slog.F("global", sc),
+		slog.F("active", sa),
+		slog.F("session_id", session.sessionID),
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()))
 	return session
 }
 
@@ -94,12 +90,11 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	c.Logger.Debugf("Sessions <- Global: %d, Active: %d (Dropped Session ID %d: %s)",
-		c.sessionTrack.SessionCount,
-		sa,
-		session.sessionID,
-		session.wsConn.RemoteAddr().String(),
-	)
+	c.Logger.DebugWith("Session Stats (↓)",
+		slog.F("global", c.sessionTrack.SessionCount),
+		slog.F("active", sa),
+		slog.F("session_id", session.sessionID),
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()))
 
 	delete(c.sessionTrack.Sessions, session.sessionID)
 	c.sessionTrackMutex.Unlock()
@@ -135,7 +130,10 @@ func (s *Session) handleSSHRequests(requests <-chan *ssh.Request, winChange chan
 	for req := range requests {
 		ok := false
 		if req.Type != "env" {
-			s.Logger.Debugf("SSH Request \"%s\" - Request Type \"%s\" - payload: %v", "shell", req.Type, req.Payload)
+			s.Logger.DebugWith("SSH Request",
+				slog.F("session_id", s.sessionID),
+				slog.F("request_type", req.Type),
+				slog.F("payload", req.Payload))
 		}
 
 		switch req.Type {
@@ -153,7 +151,9 @@ func (s *Session) handleSSHRequests(requests <-chan *ssh.Request, winChange chan
 			}
 			winChange <- req.Payload
 		default:
-			s.Logger.Warnf("SSH Rejected request type %s", req.Type)
+			s.Logger.WarnWith("SSH Rejected request type",
+				slog.F("session_id", s.sessionID),
+				slog.F("request_type", req.Type))
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}

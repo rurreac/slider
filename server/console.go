@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"slider/pkg/conf"
+	"slider/pkg/escseq"
+	"slider/pkg/interpreter"
+	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
 	"strings"
@@ -28,7 +31,7 @@ type screenIO struct {
 
 func (s *server) consoleBanner() {
 	s.console.clearScreen()
-	s.console.Printf("%s%s%s\n\n", greyBold, conf.Banner, resetColor)
+	s.console.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
 	s.console.PrintInfo("Type \"bg\" to return to logging.")
 	s.console.PrintInfo("Type \"help\" to see available commands.")
 	s.console.PrintInfo("Type \"exit\" to exit the console.\n")
@@ -70,14 +73,14 @@ func (s *server) NewConsole() string {
 	// Only applies to Windows - Best effort to have a successful raw terminal regardless
 	// of the Windows version
 	if piErr := s.serverInterpreter.EnableProcessedInputOutput(); piErr != nil {
-		s.Errorf("Failed to enable Processed Input/Output")
+		s.ErrorWith("Failed to enable Processed Input/Output", slog.F("error", piErr))
 		// Sets Console Colors based on if PTY is enabled on the server.
 		// If it's not on PTY and fails to set Processed IO, disables colors
-		setConsoleColors()
+		escseq.SetColors(interpreter.IsPtyOn())
 	}
 	defer func() {
 		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {
-			s.Errorf("Failed to reset Input/Output modes: %s", ioErr)
+			s.ErrorWith("Failed to reset Input/Output modes", slog.F("error", ioErr))
 		}
 	}()
 

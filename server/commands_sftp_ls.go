@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"slider/pkg/conf"
+	"slider/pkg/escseq"
 	"slider/pkg/spath"
 	"sort"
 	"strings"
@@ -157,9 +158,9 @@ func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
 func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInfo, path string) string {
 	var nameField string
 	if entry.IsDir() {
-		nameField = blueBrightBoldText(entry.Name())
+		nameField = escseq.BlueBrightBoldText(entry.Name())
 	} else if entry.Mode()&os.ModeSymlink != 0 {
-		nameField = cyanBoldText(entry.Name())
+		nameField = escseq.CyanBoldText(entry.Name())
 		target, lErr := ctx.readLink(
 			spath.Join(ctx.getContextSystem(c.isRemote), []string{path, entry.Name()}),
 			c.isRemote,
@@ -172,13 +173,13 @@ func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInf
 		// Check if target exists
 		tI, tErr := ctx.pathStat(target, c.isRemote)
 		if tErr != nil {
-			target = blinkText(redBoldText(target))
+			target = escseq.BlinkText(escseq.RedBoldText(target))
 		} else {
 			if tI.IsDir() {
-				target = blueBrightBoldText(target)
+				target = escseq.BlueBrightBoldText(target)
 			}
 		}
-		nameField = fmt.Sprintf("%s -> %s", cyanBoldText(entry.Name()), target)
+		nameField = fmt.Sprintf("%s -> %s", escseq.CyanBoldText(entry.Name()), target)
 	} else {
 		nameField = entry.Name()
 	}

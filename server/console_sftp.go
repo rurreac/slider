@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"slider/pkg/escseq"
 	"strings"
 
 	"github.com/pkg/sftp"
@@ -56,11 +57,11 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 
 		return fmt.Sprintf(
 			"\r(%s) %s@%s:%s%s ",
-			cyanBoldText(fmt.Sprintf("S%d", session.sessionID)),
+			escseq.CyanBoldText(fmt.Sprintf("S%d", session.sessionID)),
 			cliUser,
 			cliHostname,
 			rCwd,
-			cyanBoldText("$"),
+			escseq.CyanBoldText("$"),
 		)
 
 	}

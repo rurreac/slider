@@ -41,6 +41,8 @@ type ClientConfig struct {
 	ListenerCA    string
 	ClientTlsCert string
 	ClientTlsKey  string
+	JsonLog       bool
+	CallerLog     bool
 	ServerURL     string // Only used when not in listener mode
 }
 
@@ -49,15 +51,21 @@ func RunClient(cfg *ClientConfig) {
 	defer close(shutdown)
 
 	log := slog.NewLogger("Client")
+	if cfg.JsonLog {
+		log.WithJSON(true)
+	} else {
+		// It is safe to assume that if PTY is On then colors are supported.
+		if interpreter.IsPtyOn() && !cfg.Colorless {
+			log.WithColors(true)
+		}
+	}
+	if cfg.CallerLog {
+		log.WithCallerInfo(true)
+	}
 	lvErr := log.SetLevel(cfg.Verbose)
 	if lvErr != nil {
-		fmt.Printf("wrong log level \"%s\", %s", cfg.Verbose, lvErr)
+		log.Fatalf("Wrong log level (%s): %s", cfg.Verbose, lvErr)
 		return
-	}
-
-	// It is safe to assume that if PTY is On then colors are supported.
-	if interpreter.IsPtyOn() && !cfg.Colorless {
-		log.WithColors()
 	}
 
 	c := client{
@@ -121,7 +129,7 @@ func RunClient(cfg *ClientConfig) {
 
 		c.statusCode = cfg.StatusCode
 		if !conf.CheckStatusCode(cfg.StatusCode) {
-			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
+			c.Logger.Warnf("Invalid status code (%d), will use %d", cfg.StatusCode, http.StatusOK)
 			c.statusCode = http.StatusOK
 		}
 
@@ -131,13 +139,14 @@ func RunClient(cfg *ClientConfig) {
 				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 			}
 			c.urlRedirect = wr
-			c.Logger.Debugf("Redirecting incomming HTTP requests to \"%s\"", c.urlRedirect.String())
+			c.Logger.DebugWith("Redirecting incomming HTTP requests",
+				slog.F("url", c.urlRedirect.String()))
 		}
 
 		fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 		if rErr != nil {
-			c.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
+			c.Logger.Fatalf("Not a valid IP address (%s)", fmtAddress)
 		}
 
 		tlsOn := false
@@ -147,10 +156,13 @@ func RunClient(cfg *ClientConfig) {
 			tlsOn = true
 			listenerProto = "tls"
 			if cfg.ListenerCA != "" {
-				c.Logger.Warnf("Using CA \"%s\" for TLS client verification", cfg.ListenerCA)
+				c.Logger.DebugWith("Using CA for TLS client verification",
+					slog.F("ca", cfg.ListenerCA))
 				caPem, rfErr := os.ReadFile(cfg.ListenerCA)
 				if rfErr != nil {
-					c.Logger.Fatalf("Failed to read CA file: %v", rfErr)
+					c.Logger.FatalWith("Failed to read CA file",
+						slog.F("ca", cfg.ListenerCA),
+						slog.F("err", rfErr))
 				}
 				if len(caPem) == 0 {
 					c.Logger.Fatalf("CA file is empty")
@@ -170,12 +182,14 @@ func RunClient(cfg *ClientConfig) {
 				}
 				httpSrv.Handler = handler
 				if sErr := httpSrv.ListenAndServeTLS(cfg.ListenerCert, cfg.ListenerKey); sErr != nil {
-					c.Logger.Fatalf("TLS Listener error: %s", sErr)
+					c.Logger.FatalWith("TLS Listener error",
+						slog.F("err", sErr))
 				}
 				return
 			}
 			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
-				c.Logger.Fatalf("Listener error: %s", sErr)
+				c.Logger.FatalWith("Listener failure",
+					slog.F("err", sErr))
 			}
 
 		}()
@@ -192,7 +206,8 @@ func RunClient(cfg *ClientConfig) {
 		if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
 			tlsCert, lErr := tls.LoadX509KeyPair(cfg.ClientTlsCert, cfg.ClientTlsKey)
 			if lErr != nil {
-				c.Logger.Fatalf("Failed to load TLS certificate: %v", lErr)
+				c.Logger.FatalWith("Failed to load TLS certificate",
+					slog.F("err", lErr))
 			}
 			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
 		}

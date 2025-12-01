@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
 	"github.com/spf13/pflag"
@@ -158,7 +159,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
 			downloadedSize += bytesWritten
-			clearStatus := cursorUp + cursorClear
+			clearStatus := escseq.CursorUp() + escseq.CursorClear()
 			ui.Printf("%sDownloaded file %d/%d: %s\n", clearStatus, currentFile, fileCount, rPath)
 
 			return nil

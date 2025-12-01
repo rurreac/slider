@@ -16,7 +16,7 @@ const Banner = `
   ╚══════╝╚══════╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝`
 
 var (
-	version = "development"
+	Version = "development"
 	Proto   = "slider-v1"
 	binOS   = runtime.GOOS
 	binArch = runtime.GOARCH
@@ -29,7 +29,7 @@ func PrintVersion() {
 	fmt.Printf("%s\n\n", Banner)
 	twl := new(tabwriter.Writer)
 	twl.Init(os.Stdout, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintf(twl, "\tVersion:\t%s\t\n", version)
+	_, _ = fmt.Fprintf(twl, "\tVersion:\t%s\t\n", Version)
 	_, _ = fmt.Fprintf(twl, "\tProto:\t%s\t\n", Proto)
 	_, _ = fmt.Fprintf(twl, "\tTarget System:\t%s/%s\t\n", binOS, binArch)
 	_, _ = fmt.Fprintf(twl, "\tGit Commit:\t%s\t\n", commit)
