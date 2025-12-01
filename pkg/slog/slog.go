@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slider/pkg/escseq"
 	"strings"
 	"sync"
 	"time"
@@ -82,11 +81,11 @@ func (l *Logger) WithColors(colorOn bool) {
 	l.Lock()
 	defer l.Unlock()
 	l.colorOn = colorOn
-	DEBU = escseq.LogDebug(colorOn)
-	INFO = escseq.LogInfo(colorOn)
-	WARN = escseq.LogWarn(colorOn)
-	ERRO = escseq.LogError(colorOn)
-	FATA = escseq.LogFatal(colorOn)
+	DEBU = colorDebug(colorOn)
+	INFO = colorInfo(colorOn)
+	WARN = colorWarn(colorOn)
+	ERRO = colorError(colorOn)
+	FATA = colorFatal(colorOn)
 }
 
 // WithJSON enables or disables JSON formatting for logs
@@ -127,7 +126,7 @@ func (l *Logger) getCallerIfEnabled(skip int) string {
 	// For JSON output, this will be cleaned up by the caller
 	return fmt.Sprintf(
 		" <%s> ",
-		escseq.GreyOut(
+		colorGreyOut(
 			fmt.Sprintf("%s:%d", filepath.Base(file), line),
 			l.colorOn),
 	)
@@ -463,7 +462,7 @@ func (l *Logger) formatWithFields(msg string, fields []Field) string {
 
 	for _, field := range fields {
 		sb.WriteString(" ")
-		sb.WriteString(escseq.GreyOut(field.Key+"=", l.colorOn))
+		sb.WriteString(colorGreyOut(field.Key+"=", l.colorOn))
 		switch field.Value.(type) {
 		case int, int64, uint, uint64, float64, float32:
 			sb.WriteString(fmt.Sprintf("%v", field.Value))
