@@ -5,6 +5,7 @@ import (
 	"os"
 	"slider/pkg/conf"
 	"slider/pkg/sconn"
+	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
 
@@ -15,9 +16,10 @@ import (
 func (s *server) NewSSHServer(session *Session) {
 	netConn := sconn.WsConnToNetConn(session.wsConn)
 
-	s.Debugf(
-		"Established WebSocket connection with client \"%s\"",
-		netConn.RemoteAddr().String(),
+	s.DebugWith(
+		"Established WebSocket connection with client",
+		slog.F("session_id", session.sessionID),
+		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
 	var sshServerConn *ssh.ServerConn
@@ -34,7 +36,7 @@ func (s *server) NewSSHServer(session *Session) {
 
 	sshServerConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
-		s.Errorf("Failed to create SSH server %v", err)
+		s.DErrorWith("Failed to create SSH server", slog.F("err", err))
 		if session.notifier != nil {
 			session.notifier <- err
 		}
@@ -53,11 +55,11 @@ func (s *server) NewSSHServer(session *Session) {
 
 	}
 
-	s.Debugf(
-		"Upgraded Websocket transport to SSH Connection: address: %s, client version: %s, session: %v",
-		session.sshConn.RemoteAddr().String(),
-		session.sshConn.ClientVersion(),
-		session.sshConn.SessionID(),
+	s.DebugWith(
+		"Upgraded Websocket transport to SSH Connection",
+		slog.F("session_id", session.sessionID),
+		slog.F("host", session.sshConn.RemoteAddr().String()),
+		slog.F("client_version", session.sshConn.ClientVersion()),
 	)
 
 	if session.notifier != nil {
@@ -84,28 +86,29 @@ func (s *server) handleNewChannels(session *Session, newChan <-chan ssh.NewChann
 		case "session":
 			sshChan, chanReq, err = nc.Accept()
 			if err != nil {
-				session.Logger.Errorf(
-					"Session ID %d - handleSSHChannels (Accept): Failed to accept the channel \"%s\".\n%v",
-					session.sessionID,
-					nc.ChannelType(),
-					err,
+				session.Logger.DErrorWith(
+					"Failed to accept the channel",
+					slog.F("session_id", session.sessionID),
+					slog.F("channel_type", nc.ChannelType()),
+					slog.F("err", err),
 				)
 				return
 			}
 			session.addSessionChannel(sshChan)
-			session.Logger.Debugf(
-				"Session ID %d - Accepted SSH \"%s\" Channel Connection.",
-				session.sessionID,
-				nc.ChannelType(),
+			session.Logger.DebugWith(
+				"Accepted SSH Channel Connection",
+				slog.F("session_id", session.sessionID),
+				slog.F("channel_type", nc.ChannelType()),
 			)
 		case "forwarded-tcpip":
 			go session.handleForwardedTcpIpChannel(nc)
 		default:
-			session.Logger.Debugf("Rejected channel %s", nc.ChannelType())
+			session.Logger.DebugWith("Rejected channel", slog.F("channel_type", nc.ChannelType()))
 			if err = nc.Reject(ssh.UnknownChannelType, ""); err != nil {
-				session.Logger.Warnf("Session ID %d - handleSSHnewChannels (session): Received Unknown channel type.\n%s",
-					session.sessionID,
-					err,
+				session.Logger.DErrorWith("Received Unknown channel type",
+					slog.F("session_id", session.sessionID),
+					slog.F("channel_type", nc.ChannelType()),
+					slog.F("err", err),
 				)
 			}
 			return
@@ -134,13 +137,20 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		case "keep-alive":
 			replyErr := session.replyConnRequest(r, true, []byte("pong"))
 			if replyErr != nil {
-				session.Logger.Errorf("Session ID %d (KeepAlive)- Connection error while replying.", session.sessionID)
+				session.Logger.DErrorWith("Connection error while replying.",
+					slog.F("session_id", session.sessionID),
+					slog.F("request_type", r.Type),
+					slog.F("err", replyErr),
+				)
 				return
 			}
 		case "client-info":
 			ci := &conf.ClientInfo{}
 			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
-				s.Errorf("Failed to parse Client Info - %v", jErr)
+				session.Logger.DErrorWith("Failed to parse Client Info",
+					slog.F("session_id", session.sessionID),
+					slog.F("err", jErr),
+				)
 			}
 			session.setInterpreter(ci.Interpreter)
 
@@ -153,7 +163,10 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 				var jErr error
 				interpreterPayload, jErr = json.Marshal(ci.Interpreter)
 				if jErr != nil {
-					s.Errorf("Session ID %d - Error marshaling Client Info", session.sessionID)
+					session.Logger.DErrorWith("Error marshaling Client Info",
+						slog.F("session_id", session.sessionID),
+						slog.F("err", jErr),
+					)
 				}
 			}
 			_ = session.replyConnRequest(r, true, interpreterPayload)
@@ -172,14 +185,22 @@ func (s *server) handleChanRequests(session *Session, chanReq <-chan *ssh.Reques
 			ok = true
 			session.rawTerm = true
 			_ = session.replyConnRequest(r, ok, nil)
-			session.Logger.Debugf("Session ID %d - Client Requested Raw Terminal...", session.sessionID)
+			session.Logger.DebugWith("Client Requested Raw Terminal",
+				slog.F("session_id", session.sessionID),
+			)
 		case "reverse-shell":
 			ok = true
 			_ = session.replyConnRequest(r, ok, nil)
-			session.Logger.Debugf("Session ID %d - Client will send Reverse Shell...", session.sessionID)
+			session.Logger.DebugWith("Client will send Reverse Shell",
+				slog.F("session_id", session.sessionID),
+			)
 			return
 		default:
 			_ = session.replyConnRequest(r, ok, nil)
+			session.Logger.DebugWith("Unknown channel request",
+				slog.F("session_id", session.sessionID),
+				slog.F("request_type", r.Type),
+			)
 			return
 		}
 	}
@@ -193,14 +214,15 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 
 	var err error
 	var requests <-chan *ssh.Request
-	session.Logger.Debugf("Session ID %d - Forwarded TCP IP Channel", session.sessionID)
+	session.Logger.DebugWith("Forwarded TCP IP Channel",
+		slog.F("session_id", session.sessionID),
+	)
 	session.SSHInstance.FTx.ForwardedSshChannel, requests, err = nc.Accept()
 	if err != nil {
-		session.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			session.LogPrefix,
-			nc.ChannelType(),
-			err,
+		session.Logger.DErrorWith("Failed to accept channel",
+			slog.F("session_id", session.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("err", err),
 		)
 		return
 	}
@@ -210,7 +232,12 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 	payload := &types.CustomTcpIpChannelMsg{}
 
 	if uErr := json.Unmarshal(nc.ExtraData(), payload); uErr != nil {
-		session.Logger.Errorf(session.LogPrefix+"Failed to parse forwarded-tcpip extra data: %v", uErr)
+		session.Logger.DErrorWith("Failed to parse ssh channel extra data",
+			slog.F("session_id", session.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("extra_data", nc.ExtraData()),
+			slog.F("err", uErr),
+		)
 		return
 	}
 
@@ -219,7 +246,11 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 	control, mErr := session.SSHInstance.GetRemotePortMapping(boundPort)
 	if mErr != nil {
 		// This should never happen
-		session.Logger.Errorf(session.LogPrefix+"Failed to find PortFwd mapping: %v", boundPort, mErr)
+		session.Logger.ErrorWith("Failed to find PortFwd mapping",
+			slog.F("session_id", session.sessionID),
+			slog.F("bound_port", boundPort),
+			slog.F("err", mErr),
+		)
 		return
 	}
 
@@ -230,13 +261,25 @@ func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
 		SrcPort: payload.SrcPort,
 	}
 	if payload.IsSshConn {
-		session.Logger.Debugf(session.LogPrefix+"Received SSH TCPIP Forwarded channel from remote %s:%d", control.DstHost, control.DstPort)
+		session.Logger.DebugWith("Received SSH TCPIP Forwarded channel",
+			slog.F("session_id", session.sessionID),
+			slog.F("bound_port", boundPort),
+			slog.F("dst_host", control.DstHost),
+			slog.F("dst_port", control.DstPort),
+		)
 		// Send the payload to the SSH instance
 		control.RcvChan <- tcpIpMsg
 		// Wait until done
 		<-control.DoneChan
 	} else {
-		session.Logger.Debugf(session.LogPrefix+"Received MSG TCPIP Forwarded channel %s:%d -> %s:%d", control.SrcHost, control.SrcPort, control.DstHost, control.DstPort)
+		session.Logger.DebugWith("Received MSG TCPIP Forwarded channel",
+			slog.F("session_id", session.sessionID),
+			slog.F("bound_port", boundPort),
+			slog.F("src_host", control.SrcHost),
+			slog.F("src_port", control.SrcPort),
+			slog.F("dst_host", control.DstHost),
+			slog.F("dst_port", control.DstPort),
+		)
 		// Send the payload to the msg request
 		control.RcvChan <- tcpIpMsg
 		// Wait until done

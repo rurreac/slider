@@ -76,6 +76,8 @@ Usage: <slider_server> [flags]
 
   --verbose
         Adds verbosity [debug|info|warn|error|off] (default info)  
+  --caller-log
+        Display caller information in logs (default false)  
   --address
         Server will bind to this address (default 0.0.0.0)  
   --port
@@ -170,6 +172,14 @@ The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CER
 on *nix hosts, or `\certs` on Windows hosts.
 
 ![Sever Auth](./doc/server_auth.gif)
+
+##### `--json-log` (development only):
+Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). This is useful for log aggregation systems and automated log parsing.
+
+Since the Server is only interactive at the moment through the Console, using this flag in production is not really useful so it's only available in development mode.
+
+##### `--caller-log` (development only):
+Enables display of caller information (file name and line number) in log messages. This helps with debugging by showing exactly where each log message originated in the code. Works with both standard and JSON formatted logs.
 
 ##### `--colorless`:
 By default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using colors. If this flag is passed
@@ -569,6 +579,10 @@ Usage: <slider_client> [flags] [<[server_address]:port>]
 
   --verbose
         Adds verbosity [debug|info|warn|error|off] (default info)  
+  --json-log
+        Enables JSON formatted logging (default false)  
+  --caller-log
+        Display caller information in logs (default false)  
   --keepalive
         Sets keepalive interval in seconds. (default 1m0s)  
   --colorless
@@ -647,6 +661,12 @@ Flag "--listener" with status "false" is incompatible with flags:
 ### Client Flags Overview
 
 #### Common Client Flags
+
+##### `--json-log`:
+Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). This is useful for log aggregation systems and automated log parsing.
+
+##### `--caller-log` (development only):
+Enables display of caller information (file name and line number) in log messages. This helps with debugging by showing exactly where each log message originated in the code. Works with both standard and JSON formatted logs.
 
 ##### `--colorless`:
 The same as with the Server, by default, regardless of the OS, if Slider runs on a PTY, logs will show their log level using

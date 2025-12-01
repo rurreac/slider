@@ -69,7 +69,9 @@ var shutdown = make(chan bool, 1)
 func (c *client) startConnection(customDNS string) {
 	wsURL, wErr := conf.FormatToWS(c.serverURL)
 	if wErr != nil {
-		c.Logger.Errorf("Failed to convert %s to WebSocket URL: %v", c.serverURL.String(), wErr)
+		c.Logger.ErrorWith("Failed to convert to WebSocket URL",
+			slog.F("url", c.serverURL.String()),
+			slog.F("err", wErr))
 		return
 	}
 
@@ -77,11 +79,15 @@ func (c *client) startConnection(customDNS string) {
 	if customDNS != "" {
 		ip, rErr := conf.CustomResolver(customDNS, c.serverURL.Hostname())
 		if rErr != nil {
-			c.Logger.Errorf("Failed to resolve host %s: %v", c.serverURL.Hostname(), rErr)
+			c.Logger.ErrorWith("Failed to resolve host",
+				slog.F("host", c.serverURL.Hostname()),
+				slog.F("err", rErr))
 			return
 		}
 		wsURLStr = strings.Replace(wsURL.String(), c.serverURL.Hostname(), ip, 1)
-		c.Logger.Debugf("Connecting to %s, resolved to IP: %s", wsURL, ip)
+		c.Logger.DebugWith("Connecting to WebSocket URL",
+			slog.F("url", wsURLStr),
+			slog.F("ip", ip))
 	}
 
 	if wsURL.Scheme == "wss" {
@@ -90,7 +96,8 @@ func (c *client) startConnection(customDNS string) {
 
 	wsConn, _, cErr := c.wsConfig.DialContext(context.Background(), wsURLStr, c.httpHeaders)
 	if cErr != nil {
-		c.Logger.Errorf("Can't connect to Server address: %s", cErr)
+		c.Logger.ErrorWith("Can't connect to Server address",
+			slog.F("err", cErr))
 		return
 	}
 	session := c.newWebSocketSession(wsConn)
@@ -111,13 +118,16 @@ func (c *client) newSSHClient(session *Session) {
 
 	session.sshConn, newChan, reqChan, connErr = ssh.NewClientConn(netConn, session.wsConn.RemoteAddr().String(), c.sshConfig)
 	if connErr != nil {
-		c.Logger.Errorf("%s\n", connErr)
+		c.Logger.ErrorWith("SSH connection error",
+			slog.F("err", connErr))
 		session.disconnect <- true
 		return
 	}
 	defer func() { _ = session.sshConn.Close() }()
-	c.Logger.Infof("Server connected (%s)", session.wsConn.RemoteAddr().String())
-	c.Logger.Debugf("%sSSH Session %v\n", session.logID, session.sshConn.SessionID())
+	c.Logger.InfoWith("Server connected",
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()))
+	c.Logger.DebugWith("New SSH Session",
+		slog.F("session_id", session.sessionID))
 
 	// Send Client Information to Server
 	clientInfo := &conf.ClientInfo{Interpreter: session.interpreter}
@@ -156,7 +166,7 @@ func (c *client) loadFingerPrint(fp string) error {
 	}
 	file, fErr := os.Open(fp)
 	if fErr != nil {
-		return fmt.Errorf("failed to read fingerprint file - %s", fErr)
+		return fmt.Errorf("failed to read fingerprint file: %v", fErr)
 	}
 	scan := bufio.NewScanner(file)
 	for scan.Scan() {
@@ -186,13 +196,16 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	clientInfoBytes, _ := json.Marshal(ci)
 	ok, ciAnswerBytes, sErr := s.sshConn.SendRequest("client-info", true, clientInfoBytes)
 	if sErr != nil || !ok {
-		s.Logger.Errorf("%sclient information was not sent to server - %v", s.logID, sErr)
+		s.Logger.ErrorWith("Client information was not sent to server",
+			slog.F("err", sErr))
 		return
 	}
 	if len(ciAnswerBytes) != 0 {
 		ciAnswer := &interpreter.Interpreter{}
 		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
-			s.Logger.Debugf("%sServer requested shell: %s", s.logID, ciAnswer.AltShell)
+			s.Logger.DebugWith("Server requested shell",
+				slog.F("session_id", s.sessionID),
+				slog.F("shell", ciAnswer.AltShell))
 			s.interpreter.Shell = ciAnswer.AltShell
 		}
 	}
@@ -200,34 +213,32 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 
 func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
+		s.Logger.DebugWith("Opening channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()))
 		switch nc.ChannelType() {
 		case "socks5":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSocksChannel(nc)
 		case "sftp":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleSFTPChannel(nc)
 		case "shell":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleShellChannel(nc)
 		case "exec":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleExecChannel(nc)
 		case "init-size":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
-			// Blocking here to ensure is serviced before another channel is opened
+			// Blocking here to ensure it is serviced before another channel is opened
 			s.handleInitSizeChannel(nc)
 		case "direct-tcpip":
-			s.Logger.Debugf("%sOpening \"%s\" channel", s.logID, nc.ChannelType())
 			go s.handleTcpIpChannel(nc)
 		default:
-			s.Logger.Debugf("%sRejected channel %s", s.logID, nc.ChannelType())
+			s.Logger.DebugWith("Rejected channel",
+				slog.F("session_id", s.sessionID),
+				slog.F("channel_type", nc.ChannelType()))
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
-				s.Logger.Warnf("%sReceived Unknown channel type \"%s\" - %s",
-					s.logID,
-					nc.ChannelType(),
-					rErr,
-				)
+				s.Logger.WarnWith("Received Unknown channel type",
+					slog.F("session_id", s.sessionID),
+					slog.F("channel_type", nc.ChannelType()),
+					slog.F("err", rErr))
 			}
 		}
 	}
@@ -236,20 +247,35 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 func (s *Session) handleTcpIpChannel(nc ssh.NewChannel) {
 	tcpIpMsg := &types.TcpIpChannelMsg{}
 	if uErr := ssh.Unmarshal(nc.ExtraData(), tcpIpMsg); uErr != nil {
-		s.Logger.Errorf("%sFailed to unmarshal \"%s\" channel data - %v", s.logID, nc.ChannelType(), uErr)
+		s.Logger.ErrorWith("Failed to unmarshal channel data",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("extra_data", nc.ExtraData()),
+			slog.F("err", uErr))
 		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode direct-tcpip data")
 		return
 	}
-	s.Logger.Debugf("%sDirect TCPIP channel request to %s:%d", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort)
-	conn, cErr := net.Dial("tcp", net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort))))
+	s.Logger.DebugWith("Direct TCPIP channel request",
+		slog.F("session_id", s.sessionID),
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort))
+	host := net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort)))
+	conn, cErr := net.Dial("tcp", host)
 	if cErr != nil {
-		s.Logger.Errorf("%sFailed to connect to %s:%d - %v", s.logID, tcpIpMsg.DstHost, tcpIpMsg.DstPort, cErr)
+		s.Logger.ErrorWith("Failed to connect to destination",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("host", host),
+			slog.F("err", cErr))
 		_ = nc.Reject(ssh.Prohibited, "Failed to connect to destination")
 		return
 	}
 	dChan, dReq, dErr := nc.Accept()
 	if dErr != nil {
-		s.Logger.Errorf("%sFailed to accept \"%s\" channel - %v", s.logID, nc.ChannelType(), dErr)
+		s.Logger.ErrorWith("Failed to accept channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("err", dErr))
 		_ = conn.Close()
 		return
 	}
@@ -262,10 +288,14 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 		switch req.Type {
 		case "keep-alive":
 			if err := s.replyConnRequest(req, true, []byte("pong")); err != nil {
-				s.Logger.Errorf("%sError sending \"%s\" reply to Server - %v", s.logID, req.Type, err)
+				s.Logger.ErrorWith("Error sending keep-alive reply to Server",
+					slog.F("session_id", s.sessionID),
+					slog.F("request_type", req.Type),
+					slog.F("err", err))
 			}
 		case "shutdown":
-			s.Logger.Warnf("%sServer requested Client shutdown", s.logID)
+			s.Logger.WarnWith("Server requested Client shutdown",
+				slog.F("session_id", s.sessionID))
 			_ = s.replyConnRequest(req, true, nil)
 			shutdown <- true
 			s.disconnect <- true
@@ -286,7 +316,9 @@ func (s *Session) handleGlobalRequests(requests <-chan *ssh.Request) {
 				_ = req.Reply(ok, nil)
 			}
 		default:
-			s.Logger.Debugf("%sReceived unknown Connection Request Type: \"%s\"", s.logID, req.Type)
+			s.Logger.DebugWith("Received unknown Connection Request Type",
+				slog.F("session_id", s.sessionID),
+				slog.F("request_type", req.Type))
 			_ = req.Reply(false, nil)
 		}
 	}
@@ -299,12 +331,15 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-s.disconnect:
-			s.Logger.Infof("%sDisconnected from Server %s", s.logID, s.wsConn.RemoteAddr().String())
+			s.Logger.InfoWith("Disconnected from Server",
+				slog.F("session_id", s.sessionID),
+				slog.F("remote_addr", s.wsConn.RemoteAddr().String()))
 			return
 		case <-ticker.C:
 			_, p, sendErr := s.sendConnRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !bytes.Equal(p, []byte("pong")) {
-				s.Logger.Errorf("%sKeepAlive Check Lost connection to Server.", s.logID)
+				s.Logger.ErrorWith("KeepAlive Check Lost connection to Server",
+					slog.F("session_id", s.sessionID))
 				s.disconnect <- true
 			}
 		}
@@ -312,28 +347,33 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 }
 
 func (s *Session) sendConnRequest(reqType string, wantReply bool, payload []byte) (bool, []byte, error) {
-	s.Logger.Debugf("%sSending Connection Request Type \"%s\" with Payload: \"%s\"", s.logID, reqType, payload)
+	s.Logger.DebugWith("Sending Connection Request Type",
+		slog.F("session_id", s.sessionID),
+		slog.F("request_type", reqType),
+		slog.F("payload", payload))
 	return s.sshConn.SendRequest(reqType, wantReply, payload)
 }
 
 func (s *Session) replyConnRequest(req *ssh.Request, reply bool, payload []byte) error {
-	s.Logger.Debugf("%sReplying Connection Request Type \"%s\" with Payload: \"%s\"", s.logID, req.Type, payload)
+	s.Logger.DebugWith("Replying Connection Request Type",
+		slog.F("session_id", s.sessionID),
+		slog.F("request_type", req.Type),
+		slog.F("payload", payload))
 	return req.Reply(reply, payload)
 }
 
 func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	socksChan, req, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
-		)
+		s.Logger.ErrorWith("Failed to accept channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()),
+			slog.F("err", aErr))
 		return
 	}
 	defer func() {
-		s.Logger.Debugf("%sClosing Socks Channel", s.logID)
+		s.Logger.DebugWith("Closing Socks Channel",
+			slog.F("session", s.sessionID))
 		_ = socksChan.Close()
 	}()
 	go ssh.DiscardRequests(req)
@@ -351,38 +391,44 @@ func (s *Session) handleSocksChannel(channel ssh.NewChannel) {
 	// Create a new SOCKS5 server
 	server, err := socks5.New(socksConf)
 	if err != nil {
-		s.Logger.Errorf("%sFailed to create SOCKS5 server: %v", s.logID, err)
+		s.Logger.ErrorWith("Failed to create SOCKS5 server",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 		return
 	}
 
 	// Serve the connection
-	s.Logger.Debugf("%sStarting SOCKS5 server on connection", s.logID)
+	s.Logger.DebugWith("Starting SOCKS5 server on connection",
+		slog.F("session_id", s.sessionID))
 	if sErr := server.ServeConn(socksConn); sErr != nil {
 		// Logging Errors as Debug as most of them are:
 		// - Failed to handle request: EOF
 		// - read: connection reset by peer
-		s.Logger.Debugf("%sError in SOCKS5 server: %v", s.logID, sErr)
+		s.Logger.DebugWith("Error in SOCKS5 server",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", sErr))
 	}
 
-	s.Logger.Debugf("%sSOCKS5 server connection closed", s.logID)
+	s.Logger.DebugWith("SOCKS5 server connection closed",
+		slog.F("session_id", s.sessionID))
 }
 
 func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
-	s.Logger.Debugf("%sAccepting SFTP channel request", s.logID)
+	s.Logger.DebugWith("Accepting SFTP channel request",
+		slog.F("session_id", s.sessionID))
 	sftpChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.Errorf(
-			"%sFailed to accept \"%s\" channel\n%v",
-			s.logID,
-			channel.ChannelType(),
-			aErr,
-		)
+		s.Logger.ErrorWith("Failed to accept channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", channel.ChannelType()),
+			slog.F("err", aErr))
 		return
 	}
 
 	// Make sure the channel gets closed when we're done
 	defer func() {
-		s.Logger.Debugf("%sClosing SFTP channel", s.logID)
+		s.Logger.DebugWith("Closing SFTP channel",
+			slog.F("session_id", s.sessionID))
 		_ = sftpChan.Close()
 	}()
 
@@ -396,47 +442,62 @@ func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
 	}
 
 	// Create the SFTP server with the configured options
-	s.Logger.Debugf("%sInitializing SFTP server", s.logID)
+	s.Logger.DebugWith("Initializing SFTP server",
+		slog.F("session_id", s.sessionID))
 	server, err := sftp.NewServer(
 		sftpChan,
 		serverOptions...,
 	)
 	if err != nil {
-		s.Logger.Errorf("%sFailed to create SFTP server: %v", s.logID, err)
+		s.Logger.ErrorWith("Failed to create SFTP server",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 		return
 	}
 
-	s.Logger.Infof("%sSFTP server started successfully", s.logID)
+	s.Logger.DebugWith("SFTP server started successfully",
+		slog.F("session_id", s.sessionID))
 
 	// Serve SFTP connections
 	if err := server.Serve(); err != nil {
 		if err == io.EOF {
-			s.Logger.Debugf("%sSFTP client disconnected", s.logID)
+			s.Logger.DebugWith("SFTP client disconnected",
+				slog.F("session_id", s.sessionID))
 		} else {
-			s.Logger.Errorf("%sSFTP server error: %v", s.logID, err)
+			s.Logger.ErrorWith("SFTP server error",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
 		}
 	}
 
-	s.Logger.Debugf("%sSFTP server stopped", s.logID)
+	s.Logger.DebugWith("SFTP server stopped",
+		slog.F("session_id", s.sessionID))
 }
 
 func (s *Session) handleInitSizeChannel(nc ssh.NewChannel) {
 	channel, requests, err := nc.Accept()
 	if err != nil {
-		s.Logger.Errorf("Failed to accept channel - %v", err)
+		s.Logger.ErrorWith("Failed to accept channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 		return
 	}
 	defer func() {
 		_ = channel.Close()
-		s.Logger.Debugf("%sClosing INIT-SIZE channel", s.logID)
+		s.Logger.DebugWith("Closing INIT-SIZE channel",
+			slog.F("session_id", s.sessionID))
 	}()
 	payload := nc.ExtraData()
 	go ssh.DiscardRequests(requests)
-	s.Logger.Debugf("SSH Effective \"req-pty\" size as \"init-size\" payload: %v", payload)
+	s.Logger.DebugWith("SSH Effective \"req-pty\" size as \"init-size\" payload",
+		slog.F("session_id", s.sessionID),
+		slog.F("payload", payload))
 	if len(payload) > 0 {
 		var winSize types.TermDimensions
 		if jErr := json.Unmarshal(payload, &winSize); jErr != nil {
-			s.Logger.Errorf("Failed to unmarshal terminal size payload: %v", jErr)
+			s.Logger.ErrorWith("Failed to unmarshal terminal size payload",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", jErr))
 		}
 		s.setInitTermSize(winSize)
 	}
@@ -445,7 +506,9 @@ func (s *Session) handleInitSizeChannel(nc ssh.NewChannel) {
 func (s *Session) handleTcpIpForward(req *ssh.Request) {
 	tcpIpForward := &types.CustomTcpIpFwdRequest{}
 	if uErr := json.Unmarshal(req.Payload, tcpIpForward); uErr != nil {
-		s.Logger.Errorf(s.logID+"Failed to unmarshal TcpIpFwdRequest request - %v", uErr)
+		s.Logger.ErrorWith("Failed to unmarshal TcpIpFwdRequest request",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", uErr))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
@@ -455,7 +518,10 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 	fwdAddress := fmt.Sprintf("%s:%d", tcpIpForward.BindAddress, tcpIpForward.BindPort)
 	listener, err := net.Listen("tcp", fwdAddress)
 	if err != nil {
-		s.Logger.Errorf(s.logID+"Failed to start reverse port forward listener on %s: %v", fwdAddress, err)
+		s.Logger.ErrorWith("Failed to start reverse port forward listener",
+			slog.F("session_id", s.sessionID),
+			slog.F("fwd_address", fwdAddress),
+			slog.F("err", err))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
@@ -464,11 +530,12 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 
 	// We may have asked to bind to port 0, we want it resolved, saved and send back to the server
 	finalBindPort := listener.Addr().(*net.TCPAddr).Port
-	s.Logger.Debugf(s.logID+"Reverse Port Forward request binding to %s:%d, resolved to %s:%d",
-		tcpIpForward.BindAddress,
-		tcpIpForward.BindPort,
-		tcpIpForward.BindAddress,
-		finalBindPort,
+	s.Logger.DebugWith("Reverse Port Forward request binding",
+		slog.F("session_id", s.sessionID),
+		slog.F("bind_address", tcpIpForward.BindAddress),
+		slog.F("bind_port", tcpIpForward.BindPort),
+		slog.F("fwd_address", fwdAddress),
+		slog.F("fwd_port", finalBindPort),
 	)
 	// Answer when we know if we can create a listener and the final bound port
 	if req.WantReply {
@@ -510,7 +577,10 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 				continue
 			}
 
-			s.Logger.Debugf(s.logID+"Error accepting connection on reverse port %d: %v", tcpIpForward.BindPort, lErr)
+			s.Logger.DebugWith("Error accepting connection on reverse port",
+				slog.F("session_id", s.sessionID),
+				slog.F("bind_port", tcpIpForward.BindPort),
+				slog.F("err", lErr))
 			return
 		}
 
@@ -527,13 +597,18 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 			}
 			customMsgBytes, mErr := json.Marshal(payload)
 			if mErr != nil {
-				s.Logger.Errorf("Failed to marshal custom message: %v", mErr)
+				s.Logger.DebugWith("Failed to marshal custom message",
+					slog.F("session_id", s.sessionID),
+					slog.F("bind_port", tcpIpForward.BindPort),
+					slog.F("err", mErr))
 				return
 			}
 			// Start a "forwarded-tcpip" channel. Circling back to the server
 			channel, reqs, oErr := s.sshConn.OpenChannel("forwarded-tcpip", customMsgBytes)
 			if oErr != nil {
-				s.Logger.Errorf("Failed to open forwarded-tcpip channel: %v", oErr)
+				s.Logger.DebugWith("Failed to open forwarded-tcpip channel",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", oErr))
 				return
 			}
 			defer func() { _ = channel.Close() }()
@@ -541,12 +616,12 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 
 			_, _ = sio.PipeWithCancel(conn, channel)
 
-			s.Logger.Debugf(
-				"Completed request to remote %s:%d from local %s:%d",
-				tcpIpForward.BindAddress,
-				tcpIpForward.BindPort,
-				srcAddr.IP.String(),
-				srcAddr.Port,
+			s.Logger.DebugWith("Completed request to remote",
+				slog.F("session_id", s.sessionID),
+				slog.F("bind_address", tcpIpForward.BindAddress),
+				slog.F("bind_port", tcpIpForward.BindPort),
+				slog.F("src_addr", srcAddr.IP.String()),
+				slog.F("src_port", srcAddr.Port),
 			)
 		}()
 	}

@@ -43,6 +43,8 @@ var (
 	sListenerCert string
 	sListenerKey  string
 	sListenerCA   string
+	sJsonLog      bool
+	sCallerLog    bool
 )
 
 func init() {
@@ -68,6 +70,10 @@ func init() {
 	serverCmd.Flags().StringVar(&sListenerCert, "listener-cert", "", "Certificate for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerKey, "listener-key", "", "Key for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerCA, "listener-ca", "", "CA for verifying client certificates")
+	if conf.Version == "development" {
+		serverCmd.Flags().BoolVar(&sCallerLog, "caller-log", false, "Display caller information in logs")
+		serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
+	}
 
 	// Mark flag dependencies
 	serverCmd.MarkFlagsRequiredTogether("listener-cert", "listener-key")
@@ -96,6 +102,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 		ListenerCert: sListenerCert,
 		ListenerKey:  sListenerKey,
 		ListenerCA:   sListenerCA,
+		JsonLog:      sJsonLog,
+		CallerLog:    sCallerLog,
 	}
 
 	// Call the new RunServer function

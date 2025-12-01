@@ -66,7 +66,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	var session *Session
 	sessionID := *sSession + *sKill
-	session, _ = server.getSession(*sSession)
+	session, _ = server.getSession(sessionID)
 	if session == nil {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 

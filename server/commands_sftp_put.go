@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
 	"github.com/spf13/pflag"
@@ -164,7 +165,7 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			uploadedSize += bytesWritten
-			clearStatus := cursorUp + cursorClear
+			clearStatus := escseq.CursorUp() + escseq.CursorClear()
 			ui.Printf("%sUploaded file %d/%d: %s\n", clearStatus, currentFile, fileCount, lPath)
 
 			return nil

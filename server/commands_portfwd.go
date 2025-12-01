@@ -57,14 +57,30 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Validate flag requires args
-	if portFwdFlags.Changed("reverse") && portFwdFlags.NArg() != 1 {
-		return fmt.Errorf("flag --reverse requires exactly 1 argument(s)")
+	if portFwdFlags.Changed("local") {
+		if portFwdFlags.NArg() != 1 || (!portFwdFlags.Changed("session")) {
+			return fmt.Errorf("flag --local requires exactly 1 argument(s) and the session flag")
+		}
 	}
-	if portFwdFlags.Changed("local") && portFwdFlags.NArg() != 1 {
-		return fmt.Errorf("flag --local requires exactly 1 argument(s)")
+	if portFwdFlags.Changed("reverse") {
+		if portFwdFlags.NArg() != 1 || (!portFwdFlags.Changed("session")) {
+			return fmt.Errorf("flag --reverse requires exactly 1 argument(s) and the session flag")
+		}
 	}
-	if portFwdFlags.Changed("remove") && portFwdFlags.NArg() != 1 {
-		return fmt.Errorf("flag --remove requires exactly 1 argument(s)")
+	if portFwdFlags.Changed("remove") {
+		if portFwdFlags.NArg() != 1 || (!portFwdFlags.Changed("session")) || (!portFwdFlags.Changed("reverse") && !portFwdFlags.Changed("local")) {
+			return fmt.Errorf("flag --remove requires exactly 1 argument(s), the session flag and the reverse or local flag")
+		}
+	}
+	if portFwdFlags.Changed("session") {
+		if portFwdFlags.NArg() != 1 || (!portFwdFlags.Changed("reverse") && !portFwdFlags.Changed("local")) {
+			return fmt.Errorf("flag --session requires exactly 1 argument(s) and the reverse or local flag")
+		}
+	}
+	if !portFwdFlags.Changed("session") && portFwdFlags.NArg() != 0 {
+		if !portFwdFlags.Changed("local") && !portFwdFlags.Changed("reverse") && !portFwdFlags.Changed("remove") {
+			return fmt.Errorf("flag --session and at least one of the flags --local, --reverse or --remove must be specified")
+		}
 	}
 
 	var session *Session
@@ -232,7 +248,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		if pErr != nil {
 			return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
 		}
-		ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+		ui.PrintInfo("Creating Port Forwarding %s:%d -> %s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
 
 		notifier := make(chan error, 1)
 		defer close(notifier)

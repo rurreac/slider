@@ -44,6 +44,8 @@ var (
 	listenerCA    string
 	clientTlsCert string
 	clientTlsKey  string
+	jsonLog       bool
+	callerLog     bool
 )
 
 func init() {
@@ -72,6 +74,10 @@ func init() {
 	clientCmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying client certificates")
 	clientCmd.Flags().StringVar(&clientTlsCert, "tls-cert", "", "TLS client Certificate")
 	clientCmd.Flags().StringVar(&clientTlsKey, "tls-key", "", "TLS client Key")
+	clientCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
+	if conf.Version == "development" {
+		clientCmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
+	}
 
 	// Mark mutual exclusions
 	clientCmd.MarkFlagsMutuallyExclusive("listener", "key")
@@ -132,6 +138,8 @@ func runClient(cmd *cobra.Command, args []string) error {
 		ListenerCA:    listenerCA,
 		ClientTlsCert: clientTlsCert,
 		ClientTlsKey:  clientTlsKey,
+		JsonLog:       jsonLog,
+		CallerLog:     callerLog,
 	}
 
 	// Add server URL if not in listener mode

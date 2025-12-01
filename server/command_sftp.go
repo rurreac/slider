@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
 	"github.com/pkg/sftp"
@@ -251,7 +252,7 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			// Clear previous progress line
 			clear := ""
 			if lastReportedMB != -1 {
-				clear = eraseLine
+				clear = escseq.CursorEraseLine()
 			}
 
 			// Report progress every 1MB or at completion

@@ -1,13 +1,16 @@
 package slog
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"slider/pkg/escseq"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 )
 
 type LogBuff struct {
@@ -20,8 +23,11 @@ type Logger struct {
 	logLevel int
 	logger   *log.Logger
 	logBuff  *LogBuff
-	colorOn  bool
 	sync.Mutex
+	colorOn  bool
+	callerOn bool
+	jsonOn   bool
+	prefix   string
 }
 
 const (
@@ -33,11 +39,11 @@ const (
 )
 
 var (
-	DEBUG = "DEBU"
-	INFO  = "INFO"
-	WARN  = "WARN"
-	ERROR = "ERRO"
-	FATAL = "FATA"
+	DEBU = "DEBU"
+	INFO = "INFO"
+	WARN = "WARN"
+	ERRO = "ERRO"
+	FATA = "FATA"
 )
 
 func (lb *LogBuff) Write(p []byte) (int, error) {
@@ -58,6 +64,10 @@ func NewLogger(prefix string) *Logger {
 		logLevel: lvlInfo,
 		logger:   log.New(os.Stdout, prefix, log.LstdFlags|log.Lmsgprefix),
 		logBuff:  lb,
+		colorOn:  false,
+		callerOn: false,
+		jsonOn:   false,
+		prefix:   prefix,
 	}
 	return l
 }
@@ -66,14 +76,60 @@ func NewDummyLog() *log.Logger {
 	return log.New(io.Discard, "", 0)
 }
 
-func (l *Logger) WithColors() {
-	l.colorOn = true
+func (l *Logger) WithColors(colorOn bool) {
 	// Log Level
-	DEBUG = string(escseq.Log.Debug) + DEBUG + string(escseq.ResetColor)
-	INFO = string(escseq.Log.Info) + INFO + string(escseq.ResetColor)
-	WARN = string(escseq.Log.Warn) + WARN + string(escseq.ResetColor)
-	ERROR = string(escseq.Log.Error) + ERROR + string(escseq.ResetColor)
-	FATAL = string(escseq.Log.Fatal) + FATAL + string(escseq.ResetColor)
+	l.Lock()
+	defer l.Unlock()
+	l.colorOn = colorOn
+	DEBU = colorDebug(colorOn)
+	INFO = colorInfo(colorOn)
+	WARN = colorWarn(colorOn)
+	ERRO = colorError(colorOn)
+	FATA = colorFatal(colorOn)
+}
+
+// WithJSON enables or disables JSON formatting for logs
+func (l *Logger) WithJSON(jsonOn bool) {
+	l.Lock()
+	defer l.Unlock()
+	l.jsonOn = jsonOn
+	if jsonOn {
+		// Disable colors when JSON is enabled
+		l.colorOn = false
+		// Remove timestamp and prefix from standard logger when using JSON
+		l.logger.SetFlags(0)
+		l.logger.SetPrefix("")
+	} else {
+		// Restore standard formatting
+		l.logger.SetFlags(log.LstdFlags | log.Lmsgprefix)
+		l.logger.SetPrefix(l.prefix)
+	}
+}
+
+// WithCallerInfo enables or disables automatic caller information display for all logs
+func (l *Logger) WithCallerInfo(enabled bool) {
+	l.Lock()
+	defer l.Unlock()
+	l.callerOn = enabled
+}
+
+// getCallerIfEnabled returns caller information if callerOn is true, empty string otherwise
+func (l *Logger) getCallerIfEnabled(skip int) string {
+	if !l.callerOn {
+		return ""
+	}
+	_, file, line, ok := runtime.Caller(skip + 1)
+	if !ok {
+		return ""
+	}
+	// For text output, format with brackets and grey color
+	// For JSON output, this will be cleaned up by the caller
+	return fmt.Sprintf(
+		" <%s> ",
+		colorGreyOut(
+			fmt.Sprintf("%s:%d", filepath.Base(file), line),
+			l.colorOn),
+	)
 }
 
 func (l *Logger) LogToBuffer() {
@@ -95,51 +151,265 @@ func (l *Logger) BufferOut() {
 	l.Unlock()
 }
 
-func (l *Logger) Printf(t string, args ...interface{}) {
-	l.logger.Printf(" - "+t, args...)
-}
-
-func (l *Logger) Debugf(t string, args ...interface{}) {
-	if l.logLevel == lvlDebug {
-		l.logger.Printf(" "+DEBUG+" "+t, args...)
-	}
-}
-func (l *Logger) DWarnf(t string, args ...interface{}) {
-	if l.logLevel == lvlDebug {
-		l.logger.Printf(" "+WARN+" "+t, args...)
-	}
-}
-
-func (l *Logger) DErrorf(t string, args ...interface{}) {
-	if l.logLevel == lvlDebug {
-		l.logger.Printf(" "+ERROR+" "+t, args...)
+func (l *Logger) Printf(t string, args ...any) {
+	caller := l.getCallerIfEnabled(1)
+	if l.jsonOn {
+		msg := fmt.Sprintf(t, args...)
+		callerInfo := ""
+		if caller != "" {
+			callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+		}
+		jsonMsg := l.formatAsJSON(msg, "", nil, callerInfo)
+		l.logger.Println(jsonMsg)
+	} else {
+		l.logger.Printf("  --  %s"+t, append([]any{caller}, args...)...)
 	}
 }
 
-func (l *Logger) Warnf(t string, args ...interface{}) {
+func (l *Logger) Debugf(t string, args ...any) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "debug", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+DEBU+" %s"+t, append([]any{caller}, args...)...)
+		}
+	}
+}
+func (l *Logger) DWarnf(t string, args ...any) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "warn", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+WARN+" %s"+t, append([]any{caller}, args...)...)
+		}
+	}
+}
+
+func (l *Logger) DErrorf(t string, args ...any) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "error", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+ERRO+" %s"+t, append([]any{caller}, args...)...)
+		}
+	}
+}
+
+func (l *Logger) Warnf(t string, args ...any) {
 	if l.logLevel <= lvlWarn {
-		l.logger.Printf(" "+WARN+" "+t, args...)
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "warn", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+WARN+" %s"+t, append([]any{caller}, args...)...)
+		}
 	}
 }
 
-func (l *Logger) Infof(t string, args ...interface{}) {
+func (l *Logger) Infof(t string, args ...any) {
 	if l.logLevel <= lvlInfo {
-		l.logger.Printf(" "+INFO+" "+t, args...)
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "info", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+INFO+" %s"+t, append([]any{caller}, args...)...)
+		}
 	}
 }
 
-func (l *Logger) Fatalf(t string, args ...interface{}) {
-	l.logger.Fatalf(" "+FATAL+" "+t, args...)
+func (l *Logger) Fatalf(t string, args ...any) {
+	caller := l.getCallerIfEnabled(1)
+	if l.jsonOn {
+		msg := fmt.Sprintf(t, args...)
+		callerInfo := ""
+		if caller != "" {
+			callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+		}
+		jsonMsg := l.formatAsJSON(msg, "fatal", nil, callerInfo)
+		l.logger.Fatalln(jsonMsg)
+	} else {
+		l.logger.Fatalf(" "+FATA+" %s"+t, append([]any{caller}, args...)...)
+	}
 }
 
-func (l *Logger) Errorf(t string, args ...interface{}) {
+func (l *Logger) Errorf(t string, args ...any) {
 	if l.logLevel <= lvlError {
-		l.logger.Printf(" "+ERROR+" "+t, args...)
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			msg := fmt.Sprintf(t, args...)
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "error", nil, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			l.logger.Printf(" "+ERRO+" %s"+t, append([]any{caller}, args...)...)
+		}
+	}
+}
+
+// InfoWith logs an info message with structured fields
+func (l *Logger) InfoWith(msg string, fields ...Field) {
+	if l.logLevel <= lvlInfo {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "info", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+INFO+" %s%s", caller, fmtFields)
+		}
+	}
+}
+
+// DebugWith logs a debug message with structured fields
+func (l *Logger) DebugWith(msg string, fields ...Field) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "debug", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+DEBU+" %s%s", caller, fmtFields)
+		}
+	}
+}
+
+// WarnWith logs a warning message with structured fields
+func (l *Logger) WarnWith(msg string, fields ...Field) {
+	if l.logLevel <= lvlWarn {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "warn", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+WARN+" %s%s", caller, fmtFields)
+		}
+	}
+}
+
+// ErrorWith logs an error message with structured fields
+func (l *Logger) ErrorWith(msg string, fields ...Field) {
+	if l.logLevel <= lvlError {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "error", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+ERRO+" %s%s", caller, fmtFields)
+		}
+	}
+}
+
+// FatalWith logs a fatal message with structured fields, then exits
+func (l *Logger) FatalWith(msg string, fields ...Field) {
+	caller := l.getCallerIfEnabled(1)
+	if l.jsonOn {
+		callerInfo := ""
+		if caller != "" {
+			callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+		}
+		jsonMsg := l.formatAsJSON(msg, "fatal", fields, callerInfo)
+		l.logger.Fatalln(jsonMsg)
+	} else {
+		fmtFields := l.formatWithFields(msg, fields)
+		l.logger.Fatalf(" "+FATA+" %s%s", caller, fmtFields)
+	}
+}
+
+// DWarnWith logs a warning message with structured fields (debug level only)
+func (l *Logger) DWarnWith(msg string, fields ...Field) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "warn", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+WARN+" %s%s", caller, fmtFields)
+		}
+	}
+}
+
+// DErrorWith logs an error message with structured fields (debug level only)
+func (l *Logger) DErrorWith(msg string, fields ...Field) {
+	if l.logLevel == lvlDebug {
+		caller := l.getCallerIfEnabled(1)
+		if l.jsonOn {
+			callerInfo := ""
+			if caller != "" {
+				callerInfo = strings.Trim(strings.TrimSpace(caller), "<>")
+			}
+			jsonMsg := l.formatAsJSON(msg, "error", fields, callerInfo)
+			l.logger.Println(jsonMsg)
+		} else {
+			fmtFields := l.formatWithFields(msg, fields)
+			l.logger.Printf(" "+ERRO+" %s%s", caller, fmtFields)
+		}
 	}
 }
 
 func (l *Logger) SetLevel(verbosity string) error {
-	switch strings.ToUpper(verbosity) {
+	var err error
+	verbosity = strings.ToUpper(verbosity)
+	switch verbosity {
 	case "DEBUG":
 		l.logLevel = lvlDebug
 	case "INFO":
@@ -151,12 +421,85 @@ func (l *Logger) SetLevel(verbosity string) error {
 	case "OFF":
 		l.logLevel = disabled
 	default:
-		return fmt.Errorf("expected one of [debug|info|warn|error|off]")
+		err = fmt.Errorf("expected one of [debug|info|warn|error|off]")
 	}
-	return nil
+	return err
 }
 
 // IsDebug returns true if the logger is set to debug level
 func (l *Logger) IsDebug() bool {
 	return l.logLevel == lvlDebug
+}
+
+// Field represents a structured log field with a key-value pair
+type Field struct {
+	Key   string
+	Value any
+}
+
+// F is a helper function to create a Field for structured logging
+func F(key string, value any) Field {
+	return Field{Key: key, Value: value}
+}
+
+// P is a helper function to create a Field for structured logging as message prefix
+func P(scope string) string {
+	return fmt.Sprintf("%s - ", scope)
+}
+
+// formatWithFields formats a message with structured fields
+func (l *Logger) formatWithFields(msg string, fields []Field) string {
+	if l.jsonOn {
+		return l.formatAsJSON(msg, "", fields, "")
+	}
+
+	if len(fields) == 0 {
+		return msg
+	}
+
+	var sb strings.Builder
+	sb.WriteString(msg)
+
+	for _, field := range fields {
+		sb.WriteString(" ")
+		sb.WriteString(colorGreyOut(field.Key+"=", l.colorOn))
+		switch field.Value.(type) {
+		case int, int64, uint, uint64, float64, float32:
+			sb.WriteString(fmt.Sprintf("%v", field.Value))
+		default:
+			sb.WriteString(fmt.Sprintf("\"%v\"", field.Value))
+		}
+	}
+
+	return sb.String()
+}
+
+// formatAsJSON formats a log entry as JSON
+func (l *Logger) formatAsJSON(msg string, level string, fields []Field, caller string) string {
+	logEntry := map[string]interface{}{
+		"timestamp": time.Now().Format(time.RFC3339),
+		"scope":     l.prefix,
+		"message":   msg,
+	}
+
+	if level != "" {
+		logEntry["level"] = level
+	}
+
+	if caller != "" {
+		logEntry["caller"] = caller
+	}
+
+	// Add structured fields
+	for _, field := range fields {
+		logEntry[field.Key] = field.Value
+	}
+
+	jsonBytes, err := json.Marshal(logEntry)
+	if err != nil {
+		// Fallback to plain text if JSON marshaling fails
+		return fmt.Sprintf("JSON_ERROR: %v - %s", err, msg)
+	}
+
+	return string(jsonBytes)
 }

@@ -3,6 +3,7 @@ package client
 import (
 	"net/http"
 	"slider/pkg/conf"
+	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strings"
 )
@@ -20,7 +21,9 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 			c.handleWebSocket(w, r)
 			return
 		}
-		c.Logger.Debugf("Received unsupported protocol: %s, and operation: %s", secProto, secOperation)
+		c.Logger.DebugWith("Received unsupported protocol",
+			slog.F("proto", secProto),
+			slog.F("operation", secOperation))
 	}
 
 	if hErr := conf.HandleHttpRequest(w, r, &types.HttpHandler{
@@ -31,7 +34,8 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 		VersionOn:    c.httpVersion,
 		HealthOn:     c.httpHealth,
 	}); hErr != nil {
-		c.Logger.Errorf("Error handling HTTP request: %v", hErr)
+		c.Logger.DebugWith("Error handling HTTP request",
+			slog.F("err", hErr))
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("Internal Server Error"))
 	}
@@ -43,12 +47,16 @@ func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {
-		c.Logger.Errorf("Failed to upgrade client \"%s\": %v", r.Host, err)
+		c.Logger.DebugWith("Failed to upgrade client",
+			slog.F("host", r.Host),
+			slog.F("err", err))
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	c.Logger.Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
+	c.Logger.DebugWith("Upgraded client HTTP connection to WebSocket",
+		slog.F("host", r.Host),
+		slog.F("remote_addr", r.RemoteAddr))
 
 	session := c.newWebSocketSession(wsConn)
 	defer c.dropWebSocketSession(session)
