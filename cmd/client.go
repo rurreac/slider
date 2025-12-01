@@ -74,9 +74,9 @@ func init() {
 	clientCmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying client certificates")
 	clientCmd.Flags().StringVar(&clientTlsCert, "tls-cert", "", "TLS client Certificate")
 	clientCmd.Flags().StringVar(&clientTlsKey, "tls-key", "", "TLS client Key")
-	clientCmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
+	clientCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
 	if conf.Version == "development" {
-		clientCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
+		clientCmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
 	}
 
 	// Mark mutual exclusions
