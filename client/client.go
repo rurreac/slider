@@ -124,7 +124,8 @@ func (c *client) newSSHClient(session *Session) {
 		return
 	}
 	defer func() { _ = session.sshConn.Close() }()
-	c.Logger.WithCaller().Infof("Server connected (%s)", session.wsConn.RemoteAddr().String())
+	c.Logger.WithCaller().InfoWith("Server connected", nil,
+		slog.F("remote_addr", session.wsConn.RemoteAddr().String()))
 	c.Logger.WithCaller().DebugWith("New SSH Session", nil,
 		slog.F("session_id", session.sessionID))
 
