@@ -54,7 +54,11 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	s.WithCaller().Debugf("Upgraded client \"%s\" HTTP connection to WebSocket.", r.RemoteAddr)
+	s.WithCaller().DebugWith(
+		"Upgraded client HTTP connection to WebSocket.",
+		nil,
+		slog.F("remote_addr", r.RemoteAddr),
+	)
 
 	session := s.newWebSocketSession(wsConn)
 	defer s.dropWebSocketSession(session)

@@ -20,7 +20,7 @@ func (s *server) NewSSHServer(session *Session) {
 		"Established WebSocket connection with client",
 		nil,
 		slog.F("session_id", session.sessionID),
-		slog.F("addr", netConn.RemoteAddr().String()),
+		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
 	var sshServerConn *ssh.ServerConn
