@@ -129,7 +129,7 @@ func RunClient(cfg *ClientConfig) {
 
 		c.statusCode = cfg.StatusCode
 		if !conf.CheckStatusCode(cfg.StatusCode) {
-			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
+			c.Logger.Warnf("Invalid status code (%d), will use %d", cfg.StatusCode, http.StatusOK)
 			c.statusCode = http.StatusOK
 		}
 
@@ -146,7 +146,7 @@ func RunClient(cfg *ClientConfig) {
 		fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 		if rErr != nil {
-			c.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
+			c.Logger.Fatalf("Not a valid IP address (%s)", fmtAddress)
 		}
 
 		tlsOn := false

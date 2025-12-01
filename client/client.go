@@ -213,9 +213,9 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 
 func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 	for nc := range newChan {
-		s.Logger.DebugWith("Opening \"%s\" channel",
+		s.Logger.DebugWith("Opening channel",
 			slog.F("session_id", s.sessionID),
-			slog.F("channel", nc.ChannelType()))
+			slog.F("channel_type", nc.ChannelType()))
 		switch nc.ChannelType() {
 		case "socks5":
 			go s.handleSocksChannel(nc)
@@ -233,11 +233,11 @@ func (s *Session) handleGlobalChannels(newChan <-chan ssh.NewChannel) {
 		default:
 			s.Logger.DebugWith("Rejected channel",
 				slog.F("session_id", s.sessionID),
-				slog.F("channel", nc.ChannelType()))
+				slog.F("channel_type", nc.ChannelType()))
 			if rErr := nc.Reject(ssh.UnknownChannelType, ""); rErr != nil {
 				s.Logger.WarnWith("Received Unknown channel type",
 					slog.F("session_id", s.sessionID),
-					slog.F("channel", nc.ChannelType()),
+					slog.F("channel_type", nc.ChannelType()),
 					slog.F("err", rErr))
 			}
 		}
