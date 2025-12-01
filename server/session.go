@@ -109,7 +109,7 @@ func (s *server) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	s.sessionTrack.Sessions[sc] = session
 	s.sessionTrackMutex.Unlock()
 
-	s.WithCaller().InfoWith("Session Stats (↑)", nil,
+	s.InfoWith("Session Stats (↑)",
 		slog.F("global", sc),
 		slog.F("active", sa),
 		slog.F("session_id", sc),
@@ -146,7 +146,7 @@ func (s *server) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	s.WithCaller().InfoWith("Session Stats (↓)", nil,
+	s.InfoWith("Session Stats (↓)",
 		slog.F("global", s.sessionTrack.SessionCount),
 		slog.F("active", sa),
 		slog.F("session_id", session.sessionID),
@@ -231,16 +231,14 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 	for {
 		select {
 		case <-session.KeepAliveChan:
-			session.Logger.WithCaller().DebugWith("KeepAlive Check Stopped",
-				nil,
+			session.Logger.DebugWith("KeepAlive Check Stopped",
 				slog.F("session_id", session.sessionID),
 			)
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !ok || string(p) != "pong" {
-				session.Logger.WithCaller().ErrorWith("KeepAlive Connection Error Received",
-					nil,
+				session.Logger.ErrorWith("KeepAlive Connection Error Received",
 					slog.F("session_id", session.sessionID),
 					slog.F("ok", ok),
 					slog.F("payload", p),
@@ -270,8 +268,7 @@ func (session *Session) replyConnRequest(request *ssh.Request, ok bool, payload 
 	if len(payload) != 0 {
 		pMsg = fmt.Sprintf("%v", payload)
 	}
-	session.Logger.WithCaller().DebugWith("Replying Connection Request",
-		nil,
+	session.Logger.DebugWith("Replying Connection Request",
 		slog.F("session_id", session.sessionID),
 		slog.F("request_type", request.Type),
 		slog.F("ok", ok),
@@ -336,7 +333,7 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 }
 
 func (session *Session) newSftpClient() (*sftp.Client, error) {
-	session.Logger.WithCaller().Debugf("Opening SFTP channel to client")
+	session.Logger.Debugf("Opening SFTP channel to client")
 
 	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
 	if err != nil {
@@ -346,14 +343,13 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 	go ssh.DiscardRequests(requests)
 
 	cleanup := func() {
-		session.Logger.WithCaller().DebugWith("Closing SFTP channel due to error",
-			nil,
+		session.Logger.DebugWith("Closing SFTP channel due to error",
 			slog.F("session_id", session.sessionID),
 		)
 		_ = sftpChan.Close()
 	}
 
-	session.Logger.WithCaller().Debugf("Initializing SFTP client")
+	session.Logger.Debugf("Initializing SFTP client")
 	client, err := sftp.NewClientPipe(sftpChan, sftpChan)
 	if err != nil {
 		cleanup()
@@ -362,14 +358,12 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 
 	go func() {
 		_ = client.Wait()
-		session.Logger.WithCaller().DebugWith("SFTP client connection closed",
-			nil,
+		session.Logger.DebugWith("SFTP client connection closed",
 			slog.F("session_id", session.sessionID),
 		)
 	}()
 
-	session.Logger.WithCaller().DebugWith("SFTP client connected successfully",
-		nil,
+	session.Logger.DebugWith("SFTP client connected successfully",
 		slog.F("session_id", session.sessionID),
 	)
 	return client, nil

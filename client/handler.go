@@ -21,7 +21,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 			c.handleWebSocket(w, r)
 			return
 		}
-		c.Logger.WithCaller().DebugWith("Received unsupported protocol", nil,
+		c.Logger.DebugWith("Received unsupported protocol",
 			slog.F("proto", secProto),
 			slog.F("operation", secOperation))
 	}
@@ -34,7 +34,7 @@ func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
 		VersionOn:    c.httpVersion,
 		HealthOn:     c.httpHealth,
 	}); hErr != nil {
-		c.Logger.WithCaller().DebugWith("Error handling HTTP request", nil,
+		c.Logger.DebugWith("Error handling HTTP request",
 			slog.F("err", hErr))
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("Internal Server Error"))
@@ -47,14 +47,14 @@ func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {
-		c.Logger.WithCaller().DebugWith("Failed to upgrade client", nil,
+		c.Logger.DebugWith("Failed to upgrade client",
 			slog.F("host", r.Host),
 			slog.F("err", err))
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	c.Logger.WithCaller().DebugWith("Upgraded client HTTP connection to WebSocket", nil,
+	c.Logger.DebugWith("Upgraded client HTTP connection to WebSocket",
 		slog.F("host", r.Host),
 		slog.F("remote_addr", r.RemoteAddr))
 

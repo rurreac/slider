@@ -41,6 +41,7 @@ type ServerConfig struct {
 	ListenerKey  string
 	ListenerCA   string
 	JsonLog      bool
+	CallerLog    bool
 }
 
 // RunServer starts a server with the given configuration
@@ -61,9 +62,12 @@ func RunServer(cfg *ServerConfig) {
 			log.WithColors(false)
 		}
 	}
+	if cfg.CallerLog {
+		log.WithCallerInfo(true)
+	}
 	lvErr := log.SetLevel(cfg.Verbose)
 	if lvErr != nil {
-		log.WithCaller().Fatalf("Wrong log level (%s): %v", cfg.Verbose, lvErr)
+		log.Fatalf("Wrong log level (%s): %v", cfg.Verbose, lvErr)
 		return
 	}
 
@@ -132,29 +136,29 @@ func RunServer(cfg *ServerConfig) {
 		}
 
 		if _, sErr := os.Stat(kp); os.IsNotExist(sErr) && !cfg.CaStore && cfg.CaStorePath != "" {
-			s.WithCaller().FatalWith("Failed to load Server Key", nil, slog.F("ca_store", kp))
+			s.FatalWith("Failed to load Server Key", slog.F("ca_store", kp))
 		} else if os.IsNotExist(sErr) && cfg.CaStore {
-			s.WithCaller().DebugWith("Storing New Server Certificate", nil, slog.F("ca_store", kp))
+			s.DebugWith("Storing New Server Certificate", slog.F("ca_store", kp))
 		} else {
-			s.WithCaller().InfoWith("Importing existing Server Certificate", nil, slog.F("ca_store", kp))
+			s.InfoWith("Importing existing Server Certificate", slog.F("ca_store", kp))
 		}
 
 		serverKeyPair, kErr = scrypt.ServerKeyPairFromFile(kp)
 		if kErr != nil {
-			s.WithCaller().FatalWith("Failed to load Server Key", nil, slog.F("err", kErr))
+			s.FatalWith("Failed to load Server Key", slog.F("err", kErr))
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.WithCaller().FatalWith("Failed generate SSH signer", nil, slog.F("err", prErr))
+			s.FatalWith("Failed generate SSH signer", slog.F("err", prErr))
 		}
 	} else {
 		serverKeyPair, kErr = scrypt.NewServerKeyPair()
 		if kErr != nil {
-			s.WithCaller().FatalWith("Failed to generate Server Key", nil, slog.F("err", kErr))
+			s.FatalWith("Failed to generate Server Key", slog.F("err", kErr))
 		}
 		privateKeySigner, prErr = scrypt.SignerFromKey(serverKeyPair.PrivateKey)
 		if prErr != nil {
-			s.WithCaller().FatalWith("Failed to create signer", nil, slog.F("err", prErr))
+			s.FatalWith("Failed to create signer", slog.F("err", prErr))
 		}
 
 	}
@@ -189,10 +193,10 @@ func RunServer(cfg *ServerConfig) {
 	if cfg.HttpRedirect != "" {
 		wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
 		if wErr != nil {
-			s.WithCaller().FatalWith("Bad Redirect URL", nil, slog.F("url", cfg.HttpRedirect), slog.F("err", wErr))
+			s.FatalWith("Bad Redirect URL", slog.F("url", cfg.HttpRedirect), slog.F("err", wErr))
 		}
 		s.urlRedirect = wr
-		s.WithCaller().DebugWith("Redirecting incomming HTTP requests to", nil, slog.F("url", s.urlRedirect))
+		s.DebugWith("Redirecting incomming HTTP requests to", slog.F("url", s.urlRedirect))
 	}
 
 	fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
@@ -208,13 +212,13 @@ func RunServer(cfg *ServerConfig) {
 		tlsOn = true
 		listenerProto = "tls"
 		if cfg.ListenerCA != "" {
-			s.WithCaller().WarnWith("Using CA for TLS client verification", nil, slog.F("ca", cfg.ListenerCA))
+			s.WarnWith("Using CA for TLS client verification", slog.F("ca", cfg.ListenerCA))
 			caPem, rfErr := os.ReadFile(cfg.ListenerCA)
 			if rfErr != nil {
-				s.WithCaller().FatalWith("Failed to read CA file", nil, slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
+				s.FatalWith("Failed to read CA file", slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
 			}
 			if len(caPem) == 0 {
-				s.WithCaller().FatalWith("CA file is empty", nil, slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
+				s.FatalWith("CA file is empty", slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
 			}
 			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
 		}
@@ -232,12 +236,12 @@ func RunServer(cfg *ServerConfig) {
 			}
 			httpSrv.Handler = handler
 			if sErr := httpSrv.ListenAndServeTLS(cfg.ListenerCert, cfg.ListenerKey); sErr != nil {
-				s.WithCaller().FatalWith("TLS Listener error", nil, slog.F("err", sErr))
+				s.FatalWith("TLS Listener error", slog.F("err", sErr))
 			}
 			return
 		}
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
-			s.WithCaller().FatalWith("Listener error", nil, slog.F("err", sErr))
+			s.FatalWith("Listener error", slog.F("err", sErr))
 		}
 	}()
 

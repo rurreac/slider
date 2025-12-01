@@ -174,7 +174,7 @@ func (si *Config) StartEndpoint(port int) error {
 		}
 	}()
 
-	si.Logger.WithCaller().DebugWith("Triggering Listener", nil,
+	si.Logger.DebugWith("Triggering Listener",
 		slog.F("session_id", si.SessionID),
 		slog.F("port", port))
 	for {
@@ -212,7 +212,7 @@ func (si *Config) runSshComm(conn net.Conn) {
 	var cErr error
 	si.sshServerConn, si.sshClientChannel, reqChan, cErr = ssh.NewServerConn(conn, sshConf)
 	if cErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed SSH handshake", nil,
+		si.Logger.ErrorWith("Failed SSH handshake",
 			slog.F("session_id", si.SessionID),
 			slog.F("err", cErr))
 		return
@@ -230,7 +230,7 @@ func (si *Config) runSshComm(conn net.Conn) {
 		case "session":
 			sessionClientChannel, request, aErr := nc.Accept()
 			if aErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to accept channel", nil,
+				si.Logger.ErrorWith("Failed to accept channel",
 					slog.F("session_id", si.SessionID),
 					slog.F("channel_type", nc.ChannelType()),
 					slog.F("err", aErr))
@@ -239,14 +239,14 @@ func (si *Config) runSshComm(conn net.Conn) {
 		case "direct-tcpip":
 			go func() {
 				if hErr := si.handleDirectTcpIpChannel(nc); hErr != nil {
-					si.Logger.WithCaller().ErrorWith("Failed to handle channel", nil,
+					si.Logger.ErrorWith("Failed to handle channel",
 						slog.F("session_id", si.SessionID),
 						slog.F("channel_type", nc.ChannelType()),
 						slog.F("err", hErr))
 				}
 			}()
 		default:
-			si.Logger.WithCaller().WarnWith("SSH Rejected channel type", nil,
+			si.Logger.WarnWith("SSH Rejected channel type",
 				slog.F("session_id", si.SessionID),
 				slog.F("channel_type", nc.ChannelType()),
 				slog.F("payload", nc.ExtraData()))
@@ -259,7 +259,7 @@ func (si *Config) runSocksComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	socksChan, reqs, oErr := si.sshSessionConn.OpenChannel("socks5", nil)
 	if oErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to open \"socks5\" channel", nil,
+		si.Logger.ErrorWith("Failed to open \"socks5\" channel",
 			slog.F("session_id", si.SessionID),
 			slog.F("err", oErr))
 		return
@@ -274,7 +274,7 @@ func (si *Config) runShellComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
 	if tErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to get terminal size", nil,
+		si.Logger.ErrorWith("Failed to get terminal size",
 			slog.F("session_id", si.SessionID),
 			slog.F("err", tErr))
 		return
@@ -287,7 +287,7 @@ func (si *Config) runShellComm(conn net.Conn) {
 		},
 	)
 	if uErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to marshal init terminal size", nil,
+		si.Logger.ErrorWith("Failed to marshal init terminal size",
 			slog.F("session_id", si.SessionID),
 			slog.F("err", uErr))
 		return
@@ -296,7 +296,7 @@ func (si *Config) runShellComm(conn net.Conn) {
 	// Send message with initial size
 	initChan, reqs, oErr := si.sshSessionConn.OpenChannel("init-size", initSize)
 	if oErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to open channel", nil,
+		si.Logger.ErrorWith("Failed to open channel",
 			slog.F("session_id", si.SessionID),
 			slog.F("channel_type", "init-size"),
 			slog.F("err", oErr))
@@ -327,7 +327,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	for req := range requests {
 		ok := false
 		if req.Type != "env" {
-			si.Logger.WithCaller().DebugWith("Scope \"%s\" - Request Type \"%s\" - payload: %v", nil,
+			si.Logger.DebugWith("Scope \"%s\" - Request Type \"%s\" - payload: %v",
 				slog.F("session_id", si.SessionID),
 				slog.F("scope", scope),
 				slog.F("request_type", req.Type),
@@ -389,7 +389,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 		case "tcpip-forward":
 			go si.handleTcpIpForwardRequest(req)
 		default:
-			si.Logger.WithCaller().DebugWith("Request status", nil,
+			si.Logger.DebugWith("Request status",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_type", req.Type),
 				slog.F("request_status", ok),
@@ -444,7 +444,7 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier 
 	for range control.RcvChan {
 		conn, cErr := net.Dial("tcp", net.JoinHostPort(msg.DstHost, strconv.Itoa(int(msg.DstPort))))
 		if cErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to connect to host", nil,
+			si.Logger.ErrorWith("Failed to connect to host",
 				slog.F("session_id", si.SessionID),
 				slog.F("dst_host", msg.DstHost),
 				slog.F("dst_port", msg.DstPort),
@@ -459,7 +459,7 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier 
 				_ = conn.Close()
 			}()
 			_, _ = sio.PipeWithCancel(conn, si.FTx.ForwardedSshChannel)
-			si.Logger.WithCaller().DebugWith("Completed MSG TCPIP Forwarded channel", nil,
+			si.Logger.DebugWith("Completed MSG TCPIP Forwarded channel",
 				slog.F("session_id", si.SessionID),
 				slog.F("src_host", msg.SrcHost),
 				slog.F("src_port", msg.SrcPort),
@@ -508,7 +508,7 @@ func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan er
 		return
 	}
 	defer func() { _ = listener.Close() }()
-	si.Logger.WithCaller().DebugWith("Endpoint listening", nil,
+	si.Logger.DebugWith("Endpoint listening",
 		slog.F("session_id", si.SessionID),
 		slog.F("channel_type", "direct-tcpip"),
 		slog.F("src_host", msg.SrcHost),
@@ -524,7 +524,7 @@ func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan er
 	for {
 		select {
 		case <-mapping.DoneChan:
-			si.Logger.WithCaller().DebugWith("Endpoint listener stopped", nil,
+			si.Logger.DebugWith("Endpoint listener stopped",
 				slog.F("session_id", si.SessionID),
 				slog.F("channel_type", "direct-tcpip"),
 				slog.F("src_host", msg.SrcHost),
@@ -543,7 +543,7 @@ func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan er
 
 		oChan, oReq, oErr := si.sshSessionConn.OpenChannel("direct-tcpip", ssh.Marshal(msg))
 		if oErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to open \"direct-tcpip\" channel", nil,
+			si.Logger.ErrorWith("Failed to open \"direct-tcpip\" channel",
 				slog.F("session_id", si.SessionID),
 				slog.F("channel_type", "direct-tcpip"),
 				slog.F("err", oErr))
@@ -561,7 +561,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 	// Just making sure that data received is what it should be
 	srcReqPayload := &types.TcpIpFwdRequest{}
 	if uErr := ssh.Unmarshal(req.Payload, srcReqPayload); uErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to unmarshal TcpIpFwdRequest request", nil,
+		si.Logger.ErrorWith("Failed to unmarshal TcpIpFwdRequest request",
 			slog.F("session_id", si.SessionID),
 			slog.F("request_type", "tcpip-forward"),
 			slog.F("err", uErr))
@@ -578,7 +578,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 	}
 	reqPayload, mErr := json.Marshal(customReqPayload)
 	if mErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to marshal request", nil,
+		si.Logger.ErrorWith("Failed to marshal request",
 			slog.F("session_id", si.SessionID),
 			slog.F("request_type", "tcpip-forward"),
 			slog.F("err", mErr))
@@ -589,7 +589,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 	}
 	rOk, sliderRespData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", req.WantReply, reqPayload)
 	if rErr != nil || !rOk {
-		si.Logger.WithCaller().ErrorWith("Failed to send slider client request", nil,
+		si.Logger.ErrorWith("Failed to send slider client request",
 			slog.F("session_id", si.SessionID),
 			slog.F("request_type", "tcpip-forward"),
 			slog.F("err", rErr))
@@ -603,7 +603,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 	if req.WantReply {
 		// If the request was to bind to port 0, there should be data in the Slider response
 		if sliderRespData == nil && srcReqPayload.BindPort == 0 {
-			si.Logger.WithCaller().ErrorWith("Failed to bind to port", nil,
+			si.Logger.ErrorWith("Failed to bind to port",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_type", "tcpip-forward"),
 				slog.F("bind_port", srcReqPayload.BindPort))
@@ -618,7 +618,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 		// If the request was to bind to port 0, we need to respond with the bound port
 		if srcReqPayload.BindPort == 0 {
 			if uErr := ssh.Unmarshal(sliderRespData, sshRespPayload); uErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to unmarshal request", nil,
+				si.Logger.ErrorWith("Failed to unmarshal request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "tcpip-forward"),
 					slog.F("err", uErr))
@@ -634,7 +634,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 		}
 
 		if wErr := req.Reply(true, respPayload); wErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to reply to original request", nil,
+			si.Logger.ErrorWith("Failed to reply to original request",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_type", "tcpip-forward"),
 				slog.F("err", wErr))
@@ -657,7 +657,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 
 		channel, tcpIpFwdReq, oErr := si.sshServerConn.OpenChannel("forwarded-tcpip", ssh.Marshal(channelMsg))
 		if oErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to open channel to client", nil,
+			si.Logger.ErrorWith("Failed to open channel to client",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_channel", "forwarded-tcpip"),
 				slog.F("err", oErr))
@@ -673,7 +673,7 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 			}()
 			_, _ = sio.PipeWithCancel(channel, si.FTx.ForwardedSshChannel)
 			control.DoneChan <- true
-			si.Logger.WithCaller().DebugWith("Completed SSH Port Forward channel from remote", nil,
+			si.Logger.DebugWith("Completed SSH Port Forward channel from remote",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_channel", "forwarded-tcpip"),
 				slog.F("src_host", srcReqPayload.BindAddress),
@@ -726,7 +726,7 @@ func (si *Config) cancelSshRemoteFwd() {
 				})
 				ok, _, cErr := si.sshSessionConn.SendRequest("cancel-tcpip-forward", true, payload)
 				if cErr != nil || !ok {
-					si.Logger.WithCaller().ErrorWith("Failed to cancel reverse tcp forwarding", nil,
+					si.Logger.ErrorWith("Failed to cancel reverse tcp forwarding",
 						slog.F("session_id", si.SessionID),
 						slog.F("request_channel", "cancel-tcpip-forward"),
 						slog.F("fwd_host", portFwd.SrcHost),
@@ -734,7 +734,7 @@ func (si *Config) cancelSshRemoteFwd() {
 						slog.F("err", cErr))
 					continue
 				}
-				si.Logger.WithCaller().DebugWith("Cancelled reverse tcp forwarding", nil,
+				si.Logger.DebugWith("Cancelled reverse tcp forwarding",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_channel", "cancel-tcpip-forward"),
 					slog.F("fwd_host", portFwd.SrcHost),
@@ -767,7 +767,7 @@ func (si *Config) CancelMsgRemoteFwd(port int) error {
 		return fmt.Errorf("failed to cancel reverse tcp forwarding - %v", cErr)
 	}
 
-	si.Logger.WithCaller().DebugWith("Cancelled reverse tcp forwarding", nil,
+	si.Logger.DebugWith("Cancelled reverse tcp forwarding",
 		slog.F("session_id", si.SessionID),
 		slog.F("request_channel", "cancel-tcpip-forward"),
 		slog.F("fwd_port", control.SrcPort))
@@ -794,7 +794,7 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 	if uErr := ssh.Unmarshal(nc.ExtraData(), &dti); uErr != nil {
 		return fmt.Errorf("could not parse direct TCPIP - %v", uErr)
 	}
-	si.Logger.WithCaller().DebugWith("request to %s:%d from %s:%d", nil,
+	si.Logger.DebugWith("request to %s:%d from %s:%d",
 		slog.F("session_id", si.SessionID),
 		slog.F("request_channel", "direct-tcpip"),
 		slog.F("dst_host", dti.DstHost),
@@ -824,7 +824,7 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 		return hErr
 	}
 	// Now we can start piping data between the channels
-	si.Logger.WithCaller().DebugWith("connection established to %s:%d", nil,
+	si.Logger.DebugWith("connection established to %s:%d",
 		slog.F("session_id", si.SessionID),
 		slog.F("request_channel", "direct-tcpip"),
 		slog.F("dst_host", dti.DstHost),
@@ -841,12 +841,12 @@ func (si *Config) sendInitTermSize(payload []byte) {
 	if len(payload) > 0 {
 		var ptyReq types.PtyRequest
 		if uErr := ssh.Unmarshal(payload, &ptyReq); uErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to unmarshall \"pty-req\" request", nil,
+			si.Logger.ErrorWith("Failed to unmarshall \"pty-req\" request",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_type", "pty-req"),
 				slog.F("err", uErr))
 		}
-		si.Logger.WithCaller().DebugWith("Init Terminal size", nil,
+		si.Logger.DebugWith("Init Terminal size",
 			slog.F("session_id", si.SessionID),
 			slog.F("request_type", "pty-req"),
 			slog.F("width", ptyReq.TermWidthCols),
@@ -861,7 +861,7 @@ func (si *Config) sendInitTermSize(payload []byte) {
 			},
 		)
 		if uErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to marshal request payload", nil,
+			si.Logger.ErrorWith("Failed to marshal request payload",
 				slog.F("session_id", si.SessionID),
 				slog.F("request_type", "init-size"),
 				slog.F("err", uErr))
@@ -869,7 +869,7 @@ func (si *Config) sendInitTermSize(payload []byte) {
 
 		sliderClientChannel, requests, oErr := si.sshSessionConn.OpenChannel("init-size", initSize)
 		if oErr != nil {
-			si.Logger.WithCaller().ErrorWith("Failed to open SSH channel", nil,
+			si.Logger.ErrorWith("Failed to open SSH channel",
 				slog.F("session_id", si.SessionID),
 				slog.F("channel_type", "init-size"),
 				slog.F("err", oErr))
@@ -906,7 +906,7 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 	go func() {
 		for _, envVar := range envVarList {
 			if _, eErr := sliderClientChannel.SendRequest("env", true, ssh.Marshal(envVar)); eErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to send request", nil,
+				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "env"),
 					slog.F("err", eErr))
@@ -940,7 +940,7 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte) {
 	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
 	if oErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to open SSH channel", nil,
+		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),
 			slog.F("channel_type", channelType),
 			slog.F("err", oErr))
@@ -957,7 +957,7 @@ func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType stri
 func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
 	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
 	if oErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to open SSH channel", nil,
+		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),
 			slog.F("channel_type", channelType),
 			slog.F("err", oErr))
@@ -970,7 +970,7 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 		for sizeBytes := range winChange {
 			_, wErr := sliderClientChannel.SendRequest("window-change", true, sizeBytes)
 			if wErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to send request", nil,
+				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "window-change"),
 					slog.F("err", wErr))
@@ -983,7 +983,7 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 		for envVarBytes := range envChange {
 			_, eErr := sliderClientChannel.SendRequest("env", true, envVarBytes)
 			if eErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to send request", nil,
+				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "env"),
 					slog.F("err", eErr))
@@ -999,7 +999,7 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
 	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
 	if oErr != nil {
-		si.Logger.WithCaller().ErrorWith("Failed to open SSH channel", nil,
+		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),
 			slog.F("channel_type", channelType),
 			slog.F("err", oErr))
@@ -1012,7 +1012,7 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 		for sizeBytes := range winChange {
 			_, wErr := sliderClientChannel.SendRequest("window-change", true, sizeBytes)
 			if wErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to send request", nil,
+				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "window-change"),
 					slog.F("err", wErr))
@@ -1030,7 +1030,7 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 		for envVarBytes := range envChange {
 			_, eErr := sliderClientChannel.SendRequest("env", true, envVarBytes)
 			if eErr != nil {
-				si.Logger.WithCaller().ErrorWith("Failed to send request", nil,
+				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
 					slog.F("request_type", "env"),
 					slog.F("err", eErr))
@@ -1077,7 +1077,7 @@ func (si *Config) Stop() error {
 	if !si.IsEnabled() {
 		return fmt.Errorf("endpoint is not running")
 	}
-	si.Logger.WithCaller().DebugWith("Triggering Shutdown", nil,
+	si.Logger.DebugWith("Triggering Shutdown",
 		slog.F("session_id", si.SessionID),
 		slog.F("endpoint_type", si.EndpointType))
 
@@ -1093,7 +1093,7 @@ func (si *Config) Stop() error {
 	}
 	si.instanceMutex.Unlock()
 
-	si.Logger.WithCaller().DebugWith("Endpoint down", nil,
+	si.Logger.DebugWith("Endpoint down",
 		slog.F("session_id", si.SessionID),
 		slog.F("endpoint_type", si.EndpointType))
 
@@ -1107,13 +1107,13 @@ func (si *Config) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (
 	}
 
 	if fp == si.allowedFingerprint {
-		si.Logger.WithCaller().DebugWith("Authenticated Client", nil,
+		si.Logger.DebugWith("Authenticated Client",
 			slog.F("session_id", si.SessionID),
 			slog.F("remote_addr", conn.RemoteAddr()),
 			slog.F("fingerprint", fp))
 		return &ssh.Permissions{Extensions: map[string]string{"fingerprint": fp}}, nil
 	}
-	si.Logger.WithCaller().DebugWith("Rejected client", nil,
+	si.Logger.DebugWith("Rejected client",
 		slog.F("session_id", si.SessionID),
 		slog.F("remote_addr", conn.RemoteAddr()),
 		slog.F("err", "bad key authentication"))

@@ -58,7 +58,7 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 	}
 
 	if id, ok := scrypt.IsAllowedFingerprint(fp, s.certTrack.Certs); ok {
-		s.WithCaller().DebugWith("Authenticated Client", nil, slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp), slog.F("cert_id", id))
+		s.DebugWith("Authenticated Client", slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp), slog.F("cert_id", id))
 		return &ssh.Permissions{
 			Extensions: map[string]string{
 				"fingerprint": fp,
@@ -66,7 +66,7 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 			},
 		}, nil
 	}
-	s.WithCaller().WarnWith("Rejected client", nil, slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp))
+	s.WarnWith("Rejected client", slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp))
 
 	return nil, fmt.Errorf("client key not authorized")
 }

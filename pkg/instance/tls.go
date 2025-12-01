@@ -17,10 +17,10 @@ func (si *Config) StartTLSEndpoint(port int) error {
 			return fmt.Errorf("failed to create Server TLS certificate - %v", ccErr)
 		}
 		si.setServerCertificate(cert)
-		si.Logger.WithCaller().DebugWith("Created new TLS server certificate", nil,
+		si.Logger.DebugWith("Created new TLS server certificate",
 			slog.F("session_id", si.SessionID))
 	} else {
-		si.Logger.WithCaller().DebugWith("Using existing TLS server certificate", nil,
+		si.Logger.DebugWith("Using existing TLS server certificate",
 			slog.F("session_id", si.SessionID))
 		cert = si.serverCertificate
 	}

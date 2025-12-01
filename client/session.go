@@ -58,7 +58,7 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 
 	i, iErr := interpreter.NewInterpreter()
 	if iErr != nil {
-		c.Logger.WithCaller().FatalWith("Interpreter not supported", nil,
+		c.Logger.FatalWith("Interpreter not supported",
 			slog.F("err", iErr))
 	}
 	session.interpreter = i
@@ -68,7 +68,7 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 	}
 	c.sessionTrack.Sessions[sc] = session
 
-	c.Logger.WithCaller().DebugWith("Session Stats (↑)", nil,
+	c.Logger.DebugWith("Session Stats (↑)",
 		slog.F("global", sc),
 		slog.F("active", sa),
 		slog.F("session_id", session.sessionID),
@@ -90,7 +90,7 @@ func (c *client) dropWebSocketSession(session *Session) {
 
 	_ = session.wsConn.Close()
 
-	c.Logger.WithCaller().DebugWith("Session Stats (↓)", nil,
+	c.Logger.DebugWith("Session Stats (↓)",
 		slog.F("global", c.sessionTrack.SessionCount),
 		slog.F("active", sa),
 		slog.F("session_id", session.sessionID),
@@ -130,7 +130,7 @@ func (s *Session) handleSSHRequests(requests <-chan *ssh.Request, winChange chan
 	for req := range requests {
 		ok := false
 		if req.Type != "env" {
-			s.Logger.WithCaller().DebugWith("SSH Request", nil,
+			s.Logger.DebugWith("SSH Request",
 				slog.F("session_id", s.sessionID),
 				slog.F("request_type", req.Type),
 				slog.F("payload", req.Payload))
@@ -151,7 +151,7 @@ func (s *Session) handleSSHRequests(requests <-chan *ssh.Request, winChange chan
 			}
 			winChange <- req.Payload
 		default:
-			s.Logger.WithCaller().WarnWith("SSH Rejected request type", nil,
+			s.Logger.WarnWith("SSH Rejected request type",
 				slog.F("session_id", s.sessionID),
 				slog.F("request_type", req.Type))
 			if req.WantReply {

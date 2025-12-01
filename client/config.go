@@ -42,6 +42,7 @@ type ClientConfig struct {
 	ClientTlsCert string
 	ClientTlsKey  string
 	JsonLog       bool
+	CallerLog     bool
 	ServerURL     string // Only used when not in listener mode
 }
 
@@ -58,9 +59,12 @@ func RunClient(cfg *ClientConfig) {
 			log.WithColors(true)
 		}
 	}
+	if cfg.CallerLog {
+		log.WithCallerInfo(true)
+	}
 	lvErr := log.SetLevel(cfg.Verbose)
 	if lvErr != nil {
-		log.WithCaller().Fatalf("Wrong log level (%s): %s", cfg.Verbose, lvErr)
+		log.Fatalf("Wrong log level (%s): %s", cfg.Verbose, lvErr)
 		return
 	}
 
@@ -80,7 +84,7 @@ func RunClient(cfg *ClientConfig) {
 	}
 
 	if cfg.Keepalive < conf.MinKeepAlive {
-		c.Logger.WithCaller().Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
+		c.Logger.Debugf("Overriding KeepAlive to minimum allowed \"%v\"", conf.MinKeepAlive)
 		cfg.Keepalive = conf.MinKeepAlive
 	}
 	c.keepalive = cfg.Keepalive
@@ -93,13 +97,13 @@ func RunClient(cfg *ClientConfig) {
 
 	if cfg.Key != "" {
 		if aErr := c.enableKeyAuth(cfg.Key); aErr != nil {
-			c.Logger.WithCaller().Fatalf("%s", aErr)
+			c.Logger.Fatalf("%s", aErr)
 		}
 	}
 
 	if cfg.Fingerprint != "" {
 		if fErr := c.loadFingerPrint(cfg.Fingerprint); fErr != nil {
-			c.Logger.WithCaller().Fatalf("%s", fErr)
+			c.Logger.Fatalf("%s", fErr)
 		}
 		c.sshConfig.HostKeyCallback = c.verifyServerKey
 	}
@@ -118,32 +122,31 @@ func RunClient(cfg *ClientConfig) {
 		if cfg.TemplatePath != "" {
 			tErr := conf.CheckTemplate(cfg.TemplatePath)
 			if tErr != nil {
-				c.Logger.WithCaller().Fatalf("Wrong template: %s", tErr)
+				c.Logger.Fatalf("Wrong template: %s", tErr)
 			}
 			c.templatePath = cfg.TemplatePath
 		}
 
 		c.statusCode = cfg.StatusCode
 		if !conf.CheckStatusCode(cfg.StatusCode) {
-			c.Logger.WithCaller().Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
+			c.Logger.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
 			c.statusCode = http.StatusOK
 		}
 
 		if cfg.HttpRedirect != "" {
 			wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
 			if wErr != nil {
-				c.Logger.WithCaller().Fatalf("Bad Redirect URL: %v", wErr)
+				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 			}
 			c.urlRedirect = wr
-			c.Logger.WithCaller().DebugWith("Redirecting incomming HTTP requests",
-				nil,
+			c.Logger.DebugWith("Redirecting incomming HTTP requests",
 				slog.F("url", c.urlRedirect.String()))
 		}
 
 		fmtAddress := fmt.Sprintf("%s:%d", cfg.Address, cfg.Port)
 		clientAddr, rErr := net.ResolveTCPAddr("tcp", fmtAddress)
 		if rErr != nil {
-			c.Logger.WithCaller().Fatalf("Not a valid IP address \"%s\"", fmtAddress)
+			c.Logger.Fatalf("Not a valid IP address \"%s\"", fmtAddress)
 		}
 
 		tlsOn := false
@@ -153,17 +156,16 @@ func RunClient(cfg *ClientConfig) {
 			tlsOn = true
 			listenerProto = "tls"
 			if cfg.ListenerCA != "" {
-				c.Logger.WithCaller().DebugWith("Using CA for TLS client verification",
-					nil,
+				c.Logger.DebugWith("Using CA for TLS client verification",
 					slog.F("ca", cfg.ListenerCA))
 				caPem, rfErr := os.ReadFile(cfg.ListenerCA)
 				if rfErr != nil {
-					c.Logger.WithCaller().FatalWith("Failed to read CA file", nil,
+					c.Logger.FatalWith("Failed to read CA file",
 						slog.F("ca", cfg.ListenerCA),
 						slog.F("err", rfErr))
 				}
 				if len(caPem) == 0 {
-					c.Logger.WithCaller().Fatalf("CA file is empty")
+					c.Logger.Fatalf("CA file is empty")
 				}
 				tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
 			}
@@ -180,23 +182,23 @@ func RunClient(cfg *ClientConfig) {
 				}
 				httpSrv.Handler = handler
 				if sErr := httpSrv.ListenAndServeTLS(cfg.ListenerCert, cfg.ListenerKey); sErr != nil {
-					c.Logger.WithCaller().FatalWith("TLS Listener error", nil,
+					c.Logger.FatalWith("TLS Listener error",
 						slog.F("err", sErr))
 				}
 				return
 			}
 			if sErr := http.ListenAndServe(clientAddr.String(), handler); sErr != nil {
-				c.Logger.WithCaller().FatalWith("Listener failure", nil,
+				c.Logger.FatalWith("Listener failure",
 					slog.F("err", sErr))
 			}
 
 		}()
-		c.Logger.WithCaller().Infof("Listening on %s://%s", listenerProto, clientAddr.String())
+		c.Logger.Infof("Listening on %s://%s", listenerProto, clientAddr.String())
 		<-shutdown
 	} else {
 		su, uErr := conf.ResolveURL(cfg.ServerURL)
 		if uErr != nil {
-			c.Logger.WithCaller().Fatalf("Argument \"%s\" is not a valid URL", cfg.ServerURL)
+			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", cfg.ServerURL)
 		}
 
 		c.serverURL = su
@@ -204,7 +206,7 @@ func RunClient(cfg *ClientConfig) {
 		if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
 			tlsCert, lErr := tls.LoadX509KeyPair(cfg.ClientTlsCert, cfg.ClientTlsKey)
 			if lErr != nil {
-				c.Logger.WithCaller().FatalWith("Failed to load TLS certificate", nil,
+				c.Logger.FatalWith("Failed to load TLS certificate",
 					slog.F("err", lErr))
 			}
 			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}

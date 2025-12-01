@@ -18,14 +18,14 @@ import (
 func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.WithCaller().ErrorWith("Failed to accept channel", nil,
+		s.Logger.ErrorWith("Failed to accept channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()),
 			slog.F("err", aErr))
 		return
 	}
 	defer func() {
-		s.Logger.WithCaller().DebugWith("Closing channel", nil,
+		s.Logger.DebugWith("Closing channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()))
 		_ = sshChan.Close()
@@ -52,7 +52,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			close(envChange)
 		} else {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+			s.Logger.DebugWith("Adding Environment variable",
 				slog.F("session_id", s.sessionID),
 				slog.F("key", kv.Key),
 				slog.F("value", kv.Value))
@@ -61,7 +61,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	cmd.Env = append(os.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
-		s.Logger.WithCaller().Debugf("Running SHELL on PTY")
+		s.Logger.Debugf("Running SHELL on PTY")
 		ptyF, _ := pty.StartWithSize(
 			cmd,
 			&pty.Winsize{
@@ -75,7 +75,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := pty.Setsize(ptyF, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); sErr != nil {
-					s.Logger.WithCaller().ErrorWith("Failed to set window size", nil,
+					s.Logger.ErrorWith("Failed to set window size",
 						slog.F("session_id", s.sessionID),
 						slog.F("err", sErr))
 				}
@@ -85,7 +85,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		_, _ = sio.PipeWithCancel(ptyF, sshChan)
 
 	} else {
-		s.Logger.WithCaller().Debugf("Running SHELL on NON PTY")
+		s.Logger.Debugf("Running SHELL on NON PTY")
 
 		// Handle window-change events
 		go func() {
@@ -95,21 +95,21 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 
 		outRC, oErr := cmd.StdoutPipe()
 		if oErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to get stdout pipe", nil,
+			s.Logger.ErrorWith("Failed to get stdout pipe",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", oErr))
 			return
 		}
 		errRC, eErr := cmd.StderrPipe()
 		if eErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to get stderr pipe", nil,
+			s.Logger.ErrorWith("Failed to get stderr pipe",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", eErr))
 			return
 		}
 
 		if runErr := cmd.Start(); runErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to execute command", nil,
+			s.Logger.ErrorWith("Failed to execute command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", runErr))
 			return
@@ -119,7 +119,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		go func() { _, _ = io.Copy(sshChan, errRC) }()
 
 		if wErr := cmd.Wait(); wErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to wait for command", nil,
+			s.Logger.ErrorWith("Failed to wait for command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", wErr))
 		}
@@ -130,7 +130,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.WithCaller().ErrorWith("Failed to accept channel", nil,
+		s.Logger.ErrorWith("Failed to accept channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()),
 			slog.F("err", aErr))
@@ -146,7 +146,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	// First 4 elements of Channel.Extradata() are 3 null bytes plus the size of the payload
 	// The rest of the payload is the command to be executed
-	s.Logger.WithCaller().DebugWith("Channel ExtraData", nil,
+	s.Logger.DebugWith("Channel ExtraData",
 		slog.F("session_id", s.sessionID),
 		slog.F("extra_data", channel.ExtraData()))
 
@@ -166,7 +166,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			close(envChange)
 		} else {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+			s.Logger.DebugWith("Adding Environment variable",
 				slog.F("session_id", s.sessionID),
 				slog.F("key", kv.Key),
 				slog.F("value", kv.Value))
@@ -175,10 +175,10 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	cmd.Env = append(cmd.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
-		s.Logger.WithCaller().Debugf("Running EXEC on PTY")
+		s.Logger.Debugf("Running EXEC on PTY")
 		ptyF, fErr := pty.Start(cmd)
 		if fErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to start command", nil,
+			s.Logger.ErrorWith("Failed to start command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", fErr))
 			return
@@ -187,7 +187,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 		if sErr := pty.Setsize(ptyF, &pty.Winsize{
 			Rows: uint16(s.initTermSize.Height),
 			Cols: uint16(s.initTermSize.Width)}); sErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to set window size", nil,
+			s.Logger.ErrorWith("Failed to set window size",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", sErr))
 		}
@@ -197,7 +197,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := pty.Setsize(ptyF, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); sErr != nil {
-					s.Logger.WithCaller().ErrorWith("Failed to update window size", nil,
+					s.Logger.ErrorWith("Failed to update window size",
 						slog.F("session_id", s.sessionID),
 						slog.F("err", sErr))
 				}
@@ -207,7 +207,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 		_, _ = sio.PipeWithCancel(ptyF, sshChan)
 
 	} else {
-		s.Logger.WithCaller().Debugf("Running EXEC on NON PTY")
+		s.Logger.Debugf("Running EXEC on NON PTY")
 		// Handle window-change events
 		go func() {
 			for range winChange {
@@ -216,21 +216,21 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 		outRC, oErr := cmd.StdoutPipe()
 		if oErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to get stdout pipe", nil,
+			s.Logger.ErrorWith("Failed to get stdout pipe",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", oErr))
 			return
 		}
 		errRC, eErr := cmd.StderrPipe()
 		if eErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to get stderr pipe", nil,
+			s.Logger.ErrorWith("Failed to get stderr pipe",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", eErr))
 			return
 		}
 
 		if runErr := cmd.Start(); runErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to execute command", nil,
+			s.Logger.ErrorWith("Failed to execute command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", runErr))
 			return
@@ -240,7 +240,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 		go func() { _, _ = io.Copy(sshChan, errRC) }()
 
 		if wErr := cmd.Wait(); wErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to wait for command", nil,
+			s.Logger.ErrorWith("Failed to wait for command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", wErr))
 		}

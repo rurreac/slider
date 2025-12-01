@@ -18,9 +18,8 @@ import (
 func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.WithCaller().ErrorWith(
+		s.Logger.ErrorWith(
 			"Failed to accept \"%s\" channel",
-			nil,
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()),
 			slog.F("err", aErr),
@@ -28,7 +27,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		return
 	}
 	defer func() {
-		s.Logger.WithCaller().DebugWith("Closing channel", nil,
+		s.Logger.DebugWith("Closing channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()))
 		_ = sshChan.Close()
@@ -54,14 +53,14 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				close(envChange)
 			} else {
 				envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-				s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+				s.Logger.DebugWith("Adding Environment variable",
 					slog.F("session_id", s.sessionID),
 					slog.F("key", kv.Key),
 					slog.F("value", kv.Value))
 			}
 		}
 
-		s.Logger.WithCaller().Debugf("Running SHELL on PTY")
+		s.Logger.Debugf("Running SHELL on PTY")
 		cmd := exec.Command(s.interpreter.Shell)
 		conPty, cErr := conpty.Start(
 			s.interpreter.Shell,
@@ -69,7 +68,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			conpty.ConPtyEnv(append(cmd.Environ(), envVars...)),
 		)
 		if cErr != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to start conpty", nil,
+			s.Logger.ErrorWith("Failed to start conpty",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", cErr))
 			return
@@ -81,7 +80,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
 				if sErr := conPty.Resize(int(cols), int(rows)); sErr != nil {
-					s.Logger.WithCaller().WarnWith("Failed to update window size", nil,
+					s.Logger.WarnWith("Failed to update window size",
 						slog.F("session_id", s.sessionID),
 						slog.F("err", sErr))
 				}
@@ -92,7 +91,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		go func() { _, _ = io.Copy(sshChan, conPty) }()
 
 		if code, err := conPty.Wait(context.Background()); err != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to spawn conpty", nil,
+			s.Logger.ErrorWith("Failed to spawn conpty",
 				slog.F("session_id", s.sessionID),
 				slog.F("exit_code", code),
 				slog.F("err", err))
@@ -102,7 +101,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		// - Command Prompt Buffer Size can be set running: `mode con:cols=X lines=Y`,
 		//   unfortunately, there's no equivalent variable to set that up,
 		//   so size won't be set or updated
-		s.Logger.WithCaller().Debugf("Running SHELL on NON PTY")
+		s.Logger.Debugf("Running SHELL on NON PTY")
 
 		// Discard window-change events
 		go func() {
@@ -121,7 +120,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				close(envChange)
 			} else {
 				envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-				s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+				s.Logger.DebugWith("Adding Environment variable",
 					slog.F("session_id", s.sessionID),
 					slog.F("key", kv.Key),
 					slog.F("value", kv.Value))
@@ -138,14 +137,14 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		}
 
 		if err := cmd.Start(); err != nil {
-			s.Logger.WithCaller().ErrorWith("Failed to start process", nil,
+			s.Logger.ErrorWith("Failed to start process",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", err))
 			return
 		}
 
 		if err := cmd.Wait(); err != nil {
-			s.Logger.WithCaller().ErrorWith("Command exited", nil,
+			s.Logger.ErrorWith("Command exited",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", err))
 		}
@@ -156,14 +155,14 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	sshChan, requests, aErr := channel.Accept()
 	if aErr != nil {
-		s.Logger.WithCaller().ErrorWith("Failed to accept channel", nil,
+		s.Logger.ErrorWith("Failed to accept channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()),
 			slog.F("err", aErr))
 		return
 	}
 	defer func() {
-		s.Logger.WithCaller().DebugWith("Closing channel", nil,
+		s.Logger.DebugWith("Closing channel",
 			slog.F("session_id", s.sessionID),
 			slog.F("channel_type", channel.ChannelType()))
 		_ = sshChan.Close()
@@ -177,7 +176,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 
 	// The first 4 elements of Channel.Extradata() are 3 null bytes plus the size of the payload
 	// The rest of the payload is the command to be executed
-	s.Logger.WithCaller().DebugWith("Channel ExtraData", nil,
+	s.Logger.DebugWith("Channel ExtraData",
 		slog.F("session_id", s.sessionID),
 		slog.F("extra_data", channel.ExtraData()))
 
@@ -202,14 +201,14 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			close(envChange)
 		} else {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.Logger.WithCaller().DebugWith("Adding Environment variable", nil,
+			s.Logger.DebugWith("Adding Environment variable",
 				slog.F("session_id", s.sessionID),
 				slog.F("key", kv.Key),
 				slog.F("value", kv.Value))
 		}
 	}
 
-	s.Logger.WithCaller().DebugWith("Running EXEC on NON PTY", nil,
+	s.Logger.DebugWith("Running EXEC on NON PTY",
 		slog.F("session_id", s.sessionID))
 
 	cmd := &exec.Cmd{
@@ -221,14 +220,14 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		s.Logger.WithCaller().ErrorWith("Failed to start command", nil,
+		s.Logger.ErrorWith("Failed to start command",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
 		return
 	}
 
 	if err := cmd.Wait(); err != nil {
-		s.Logger.WithCaller().ErrorWith("Command exited", nil,
+		s.Logger.ErrorWith("Command exited",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
 	}

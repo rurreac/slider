@@ -119,15 +119,14 @@ func (s *server) dropCertItem(certID int64) error {
 func (s *server) saveCertJar() {
 	jsonCertJar, jErr := json.Marshal(s.certTrack.Certs)
 	if jErr != nil {
-		s.WithCaller().ErrorWith("Failed to marshall Certificate Jar", nil, slog.F("err", jErr))
+		s.ErrorWith("Failed to marshall Certificate Jar", slog.F("err", jErr))
 		return
 	}
 
 	// Create or truncate, it's ok to trash existing content
 	file, oErr := os.OpenFile(s.certJarFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if oErr != nil {
-		s.WithCaller().ErrorWith("Failed to save Certificate Jar to File",
-			nil,
+		s.ErrorWith("Failed to save Certificate Jar to File",
 			slog.F("file", s.certJarFile),
 			slog.F("err", oErr))
 		return
@@ -135,8 +134,7 @@ func (s *server) saveCertJar() {
 	defer func() { _ = file.Close() }()
 	_, wErr := file.Write(jsonCertJar)
 	if wErr != nil {
-		s.WithCaller().ErrorWith("Failed to save Certificate Jar to File",
-			nil,
+		s.ErrorWith("Failed to save Certificate Jar to File",
 			slog.F("file", s.certJarFile),
 			slog.F("err", wErr))
 		return

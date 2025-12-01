@@ -25,7 +25,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 			s.handleWebSocket(w, r)
 			return
 		}
-		s.WithCaller().DebugWith("Received unsupported protocol", nil,
+		s.DebugWith("Received unsupported protocol",
 			slog.F("protocol", secProto),
 			slog.F("operation", secOperation))
 	}
@@ -38,7 +38,7 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		VersionOn:    s.httpVersion,
 		HealthOn:     s.httpHealth,
 	}); hErr != nil {
-		s.WithCaller().ErrorWith("Error handling HTTP request", slog.F("err", hErr))
+		s.ErrorWith("Error handling HTTP request", slog.F("err", hErr))
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("Internal Server Error"))
 	}
@@ -49,14 +49,13 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		s.WithCaller().ErrorWith("Failed to upgrade client", slog.F("host", r.Host), slog.F("err", err))
+		s.ErrorWith("Failed to upgrade client", slog.F("host", r.Host), slog.F("err", err))
 		return
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	s.WithCaller().DebugWith(
+	s.DebugWith(
 		"Upgraded client HTTP connection to WebSocket.",
-		nil,
 		slog.F("remote_addr", r.RemoteAddr),
 	)
 
@@ -69,7 +68,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
 	wsURL, wErr := conf.FormatToWS(clientUrl)
 	if wErr != nil {
-		s.WithCaller().ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
+		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
 		notifier <- wErr
 		return
 	}
@@ -78,12 +77,12 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 	if customDNS != "" {
 		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
 		if dErr != nil {
-			s.WithCaller().ErrorWith("Failed to resolve host:", nil, slog.F("host", clientUrl.Hostname()), slog.F("err", dErr))
+			s.ErrorWith("Failed to resolve host:", slog.F("host", clientUrl.Hostname()), slog.F("err", dErr))
 			notifier <- dErr
 			return
 		}
 		wsURLStr = strings.Replace(wsURL.String(), clientUrl.Hostname(), ip, 1)
-		s.WithCaller().DebugWith("Connecting to client", nil, slog.F("url", wsURL), slog.F("resolved_ip", ip))
+		s.DebugWith("Connecting to client", slog.F("url", wsURL), slog.F("resolved_ip", ip))
 	}
 
 	wsConfig := conf.DefaultWebSocketDialer
@@ -92,7 +91,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		if tlsCertPath != "" && tlsKeyPath != "" {
 			cert, lErr := tls.LoadX509KeyPair(tlsCertPath, tlsKeyPath)
 			if lErr != nil {
-				s.WithCaller().ErrorWith("Failed to load TLS certificate", nil, slog.F("err", lErr))
+				s.ErrorWith("Failed to load TLS certificate", slog.F("err", lErr))
 				notifier <- lErr
 				return
 			}
@@ -105,7 +104,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		"Sec-WebSocket-Operation": {"server"},
 	})
 	if err != nil {
-		s.WithCaller().ErrorWith("Failed to open WebSocket connection", nil, slog.F("url", wsURL), slog.F("err", err))
+		s.ErrorWith("Failed to open WebSocket connection", slog.F("url", wsURL), slog.F("err", err))
 		notifier <- err
 		return
 	}
@@ -122,7 +121,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 	if certID != 0 {
 		keyPair, kErr := s.getCert(certID)
 		if kErr != nil {
-			s.WithCaller().ErrorWith("Can't find certificate", nil, slog.F("id", certID), slog.F("err", kErr))
+			s.ErrorWith("Can't find certificate", slog.F("id", certID), slog.F("err", kErr))
 			notifier <- kErr
 			return
 		}
@@ -130,7 +129,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 
 		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
 		if sErr != nil {
-			s.WithCaller().ErrorWith("Failed to create client ssh signer", nil, slog.F("certID", certID), slog.F("err", sErr))
+			s.ErrorWith("Failed to create client ssh signer", slog.F("certID", certID), slog.F("err", sErr))
 			notifier <- sErr
 			return
 		}
