@@ -21,27 +21,30 @@ import (
 
 // ServerConfig holds all configuration for a server instance
 type ServerConfig struct {
-	Verbose      string
-	Address      string
-	Port         int
-	Keepalive    time.Duration
-	Colorless    bool
-	Auth         bool
-	CertJarFile  string
-	CaStore      bool
-	CaStorePath  string
-	TemplatePath string
-	ServerHeader string
-	HttpRedirect string
-	StatusCode   int
-	HttpVersion  bool
-	HttpHealth   bool
-	CustomProto  string
-	ListenerCert string
-	ListenerKey  string
-	ListenerCA   string
-	JsonLog      bool
-	CallerLog    bool
+	Verbose          string
+	Address          string
+	Port             int
+	Keepalive        time.Duration
+	Colorless        bool
+	Auth             bool
+	CertJarFile      string
+	CaStore          bool
+	CaStorePath      string
+	TemplatePath     string
+	ServerHeader     string
+	HttpRedirect     string
+	StatusCode       int
+	HttpVersion      bool
+	HttpHealth       bool
+	HttpDirIndex     bool
+	HttpDirIndexPath string
+	HttpApiOn        bool
+	CustomProto      string
+	ListenerCert     string
+	ListenerKey      string
+	ListenerCA       string
+	JsonLog          bool
+	CallerLog        bool
 }
 
 // RunServer starts a server with the given configuration
@@ -87,14 +90,17 @@ func RunServer(cfg *ServerConfig) {
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
-		certJarFile:  cfg.CertJarFile,
-		authOn:       cfg.Auth,
-		caStoreOn:    cfg.CaStore,
-		urlRedirect:  &url.URL{},
-		serverHeader: cfg.ServerHeader,
-		httpVersion:  cfg.HttpVersion,
-		httpHealth:   cfg.HttpHealth,
-		customProto:  cfg.CustomProto,
+		certJarFile:      cfg.CertJarFile,
+		authOn:           cfg.Auth,
+		caStoreOn:        cfg.CaStore,
+		urlRedirect:      &url.URL{},
+		serverHeader:     cfg.ServerHeader,
+		httpVersion:      cfg.HttpVersion,
+		httpHealth:       cfg.HttpHealth,
+		httpDirIndex:     cfg.HttpDirIndex,
+		httpDirIndexPath: cfg.HttpDirIndexPath,
+		httpApiOn:        cfg.HttpApiOn,
+		customProto:      cfg.CustomProto,
 	}
 
 	if cfg.TemplatePath != "" {

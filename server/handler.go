@@ -37,6 +37,10 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 		UrlRedirect:  s.urlRedirect,
 		VersionOn:    s.httpVersion,
 		HealthOn:     s.httpHealth,
+		DirIndexOn:   s.httpDirIndex,
+		DirIndexPath: s.httpDirIndexPath,
+		ApiOn:        s.httpApiOn,
+		CertTrack:    s.certTrack,
 	}); hErr != nil {
 		s.ErrorWith("Error handling HTTP request", slog.F("err", hErr))
 		w.WriteHeader(http.StatusInternalServerError)

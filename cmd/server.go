@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"time"
 
 	"slider/pkg/conf"
@@ -24,27 +25,30 @@ its integrated Console by pressing CTR^C at any time.`,
 
 // Server flags
 var (
-	sVerbose      string
-	sAddress      string
-	sPort         int
-	sKeepalive    time.Duration
-	sColorless    bool
-	sAuth         bool
-	sCertJarFile  string
-	sCaStore      bool
-	sCaStorePath  string
-	sTemplatePath string
-	sServerHeader string
-	sHttpRedirect string
-	sStatusCode   int
-	sHttpVersion  bool
-	sHttpHealth   bool
-	sCustomProto  string
-	sListenerCert string
-	sListenerKey  string
-	sListenerCA   string
-	sJsonLog      bool
-	sCallerLog    bool
+	sVerbose          string
+	sAddress          string
+	sPort             int
+	sKeepalive        time.Duration
+	sColorless        bool
+	sAuth             bool
+	sCertJarFile      string
+	sCaStore          bool
+	sCaStorePath      string
+	sTemplatePath     string
+	sServerHeader     string
+	sHttpRedirect     string
+	sStatusCode       int
+	sHttpVersion      bool
+	sHttpHealth       bool
+	sHttpDirIndex     bool
+	sHttpDirIndexPath string
+	sHttpApiOn        bool
+	sCustomProto      string
+	sListenerCert     string
+	sListenerKey      string
+	sListenerCA       string
+	sJsonLog          bool
+	sCallerLog        bool
 )
 
 func init() {
@@ -66,6 +70,8 @@ func init() {
 	serverCmd.Flags().IntVar(&sStatusCode, "http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
 	serverCmd.Flags().BoolVar(&sHttpVersion, "http-version", false, "Enables /version HTTP path")
 	serverCmd.Flags().BoolVar(&sHttpHealth, "http-health", false, "Enables /health HTTP path")
+	serverCmd.Flags().BoolVar(&sHttpDirIndex, "http-dir-index", false, "Enables /directory-index HTTP path with file browsing")
+	serverCmd.Flags().StringVar(&sHttpDirIndexPath, "http-dir-index-path", "/dir", "Sets custom directory index path")
 	serverCmd.Flags().StringVar(&sCustomProto, "proto", conf.Proto, "Set your own proto string")
 	serverCmd.Flags().StringVar(&sListenerCert, "listener-cert", "", "Certificate for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerKey, "listener-key", "", "Key for SSL listener")
@@ -73,37 +79,42 @@ func init() {
 	if conf.Version == "development" {
 		serverCmd.Flags().BoolVar(&sCallerLog, "caller-log", false, "Display caller information in logs")
 		serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
+		serverCmd.Flags().BoolVar(&sHttpApiOn, "http-api-on", false, fmt.Sprintf("Enables REST API on /api/%s", conf.ApiVersion))
 	}
 
 	// Mark flag dependencies
 	serverCmd.MarkFlagsRequiredTogether("listener-cert", "listener-key")
 	serverCmd.MarkFlagsRequiredTogether("listener-ca", "listener-cert", "listener-key")
+	serverCmd.MarkFlagsRequiredTogether("http-api-on", "listener-cert", "listener-key")
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
 	// Build configuration from flags
 	cfg := &server.ServerConfig{
-		Verbose:      sVerbose,
-		Address:      sAddress,
-		Port:         sPort,
-		Keepalive:    sKeepalive,
-		Colorless:    sColorless,
-		Auth:         sAuth,
-		CertJarFile:  sCertJarFile,
-		CaStore:      sCaStore,
-		CaStorePath:  sCaStorePath,
-		TemplatePath: sTemplatePath,
-		ServerHeader: sServerHeader,
-		HttpRedirect: sHttpRedirect,
-		StatusCode:   sStatusCode,
-		HttpVersion:  sHttpVersion,
-		HttpHealth:   sHttpHealth,
-		CustomProto:  sCustomProto,
-		ListenerCert: sListenerCert,
-		ListenerKey:  sListenerKey,
-		ListenerCA:   sListenerCA,
-		JsonLog:      sJsonLog,
-		CallerLog:    sCallerLog,
+		Verbose:          sVerbose,
+		Address:          sAddress,
+		Port:             sPort,
+		Keepalive:        sKeepalive,
+		Colorless:        sColorless,
+		Auth:             sAuth,
+		CertJarFile:      sCertJarFile,
+		CaStore:          sCaStore,
+		CaStorePath:      sCaStorePath,
+		TemplatePath:     sTemplatePath,
+		ServerHeader:     sServerHeader,
+		HttpRedirect:     sHttpRedirect,
+		StatusCode:       sStatusCode,
+		HttpVersion:      sHttpVersion,
+		HttpHealth:       sHttpHealth,
+		HttpDirIndex:     sHttpDirIndex,
+		HttpDirIndexPath: sHttpDirIndexPath,
+		HttpApiOn:        sHttpApiOn,
+		CustomProto:      sCustomProto,
+		ListenerCert:     sListenerCert,
+		ListenerKey:      sListenerKey,
+		ListenerCA:       sListenerCA,
+		JsonLog:          sJsonLog,
+		CallerLog:        sCallerLog,
 	}
 
 	// Call the new RunServer function

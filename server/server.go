@@ -46,6 +46,9 @@ type server struct {
 	serverKey            ssh.Signer
 	httpVersion          bool
 	httpHealth           bool
+	httpDirIndex         bool
+	httpDirIndexPath     string
+	httpApiOn            bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry
