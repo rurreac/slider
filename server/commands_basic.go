@@ -23,7 +23,7 @@ func (c *BgCommand) Name() string        { return bgCmd }
 func (c *BgCommand) Description() string { return bgDesc }
 func (c *BgCommand) Usage() string       { return bgCmd }
 func (c *BgCommand) Run(ctx *ExecutionContext, args []string) error {
-	ctx.Server().console.PrintlnInfo("Logging...\n\r")
+	ctx.UI().PrintlnGreyOut("Logging...")
 	return ErrBackgroundConsole
 }
 

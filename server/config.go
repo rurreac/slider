@@ -82,10 +82,7 @@ func RunServer(cfg *ServerConfig) {
 		sshConf: sshConf,
 		console: Console{
 			FirstRun: true,
-			History: &CustomHistory{
-				entries: make([]string, 0),
-				maxSize: conf.DefaultHistorySize,
-			},
+			History:  DefaultHistory,
 		},
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
@@ -99,7 +96,6 @@ func RunServer(cfg *ServerConfig) {
 		httpHealth:       cfg.HttpHealth,
 		httpDirIndex:     cfg.HttpDirIndex,
 		httpDirIndexPath: cfg.HttpDirIndexPath,
-		httpApiOn:        cfg.HttpApiOn,
 		customProto:      cfg.CustomProto,
 	}
 
