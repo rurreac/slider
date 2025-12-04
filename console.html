@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slider Web Console</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <style>
+        :root {
+            /* Slider Native - Dark Theme (Default) */
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --container-bg: #2d2d2d;
+            --input-bg: #1e1e1e;
+            --input-border: #444;
+
+            /* Concept 1: Cyan Accent */
+            --accent-color: #11a8cd;
+            --accent-hover: #0d8a9c;
+
+            /* Status Colors (Exact Terminal Match) */
+            --status-connected: #0dbc79;
+            --status-disconnected: #cd3131;
+            --status-connecting: #e5e510;
+
+            --error-bg: #3a1e1e;
+            --error-text: #f44336;
+            --info-text: #888;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+        }
+
+        [data-theme="light"] {
+            /* Slider Native - Light Theme */
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --container-bg: #f5f5f5;
+            --input-bg: #ffffff;
+            --input-border: #cccccc;
+
+            /* Concept 1: Darker Cyan/Blue for Light Mode Contrast */
+            --accent-color: #007acc;
+            --accent-hover: #005fa3;
+
+            /* Status Colors (Keep consistent or slightly adjust for light mode if needed, but terminal colors are usually standard) */
+            --status-connected: #008000;
+            /* Darker green for light bg */
+            --status-disconnected: #d32f2f;
+            --status-connecting: #f57f17;
+
+            --error-bg: #ffebee;
+            --error-text: #d32f2f;
+            --info-text: #666666;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        /* Add a cyan # to the header to match the prompt concept */
+        h1::after {
+            content: " #";
+            color: var(--accent-color);
+        }
+
+        .info {
+            color: var(--info-text);
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        #terminal {
+            height: 600px;
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1e1e1e;
+            padding: 10px;
+            /* Always dark for terminal */
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: rgba(13, 188, 121, 0.1);
+            /* Low opacity green */
+            color: var(--status-connected);
+            border: 1px solid var(--status-connected);
+        }
+
+        .status.disconnected {
+            background: rgba(205, 49, 49, 0.1);
+            /* Low opacity red */
+            color: var(--status-disconnected);
+            border: 1px solid var(--status-disconnected);
+        }
+
+        .status.connecting {
+            background: rgba(229, 229, 16, 0.1);
+            /* Low opacity yellow */
+            color: var(--status-connecting);
+            border: 1px solid var(--status-connecting);
+        }
+
+        .login-container {
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 30px;
+            background: var(--container-bg);
+            border-radius: 10px;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            transition: background-color 0.3s, box-shadow 0.3s;
+            border-top: 1px solid var(--accent-color);
+            /* Top accent border */
+        }
+
+        .login-container h2 {
+            color: var(--text-color);
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            color: var(--text-color);
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            color: var(--text-color);
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            box-sizing: border-box;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(17, 168, 205, 0.2);
+            /* Cyan glow */
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: 4px;
+            color: #ffffff;
+            /* White text on Cyan/Blue looks better */
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.1s;
+        }
+
+        .btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn:disabled {
+            background: #888;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            background: var(--error-bg);
+            color: var(--error-text);
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            border-left: 4px solid var(--error-text);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            color: var(--text-color);
+            transition: background-color 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--shadow-color);
+        }
+
+        .theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">
+            <!-- Sun Icon (default for light mode) -->
+            <svg class="sun-icon hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path
+                    d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000 1.41.996.996 0 001.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06z" />
+            </svg>
+            <!-- Moon Icon (default for dark mode) -->
+            <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path
+                    d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
+            </svg>
+        </button>
+
+        <h1>Slider Web Console</h1>
+        <div class="info">
+            Connect to your Slider server via WebSocket.
+        </div>
+
+        <!-- Login Form -->
+        <div id="loginContainer" class="login-container">
+            <h2>Authentication Required</h2>
+            <div id="errorMessage" class="error-message hidden"></div>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="authToken">Authentication Token (Fingerprint):</label>
+                    <input type="text" id="authToken" name="authToken" placeholder="Enter your fingerprint token"
+                        autocomplete="off" required />
+                </div>
+                <button type="submit" class="btn" id="connectBtn">Connect</button>
+            </form>
+        </div>
+
+        <!-- Terminal (hidden initially) -->
+        <div id="terminalContainer" class="hidden">
+            <div id="terminal"></div>
+            <div id="status" class="status connecting">Connecting...</div>
+        </div>
+    </div>
+
+    <script>
+        // Theme Management
+        const themeToggleBtn = document.getElementById('themeToggle');
+        const sunIcon = themeToggleBtn.querySelector('.sun-icon');
+        const moonIcon = themeToggleBtn.querySelector('.moon-icon');
+
+        function setTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+
+            if (theme === 'light') {
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+        }
+
+        function getPreferredTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                return savedTheme;
+            }
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        // Initialize theme
+        setTheme(getPreferredTheme());
+
+        // Listen for system preference changes
+        window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', e => {
+            if (!localStorage.getItem('theme')) {
+                setTheme(e.matches ? 'light' : 'dark');
+            }
+        });
+
+        // Toggle theme on click
+        themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = document.body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(newTheme);
+        });
+
+        // Configuration 
+        const currentScheme = window.location.protocol;
+        const currentHost = window.location.host;
+        let wsScheme = 'ws:';
+        if (currentScheme == 'https:') {
+            wsScheme = 'wss:';
+        }
+        const WS_URL = `${wsScheme}//${currentHost}/console/ws`;
+
+        // DOM elements
+        const loginContainer = document.getElementById('loginContainer');
+        const terminalContainer = document.getElementById('terminalContainer');
+        const loginForm = document.getElementById('loginForm');
+        const authTokenInput = document.getElementById('authToken');
+        const connectBtn = document.getElementById('connectBtn');
+        const errorMessage = document.getElementById('errorMessage');
+        const statusEl = document.getElementById('status');
+
+        let term = null;
+        let fitAddon = null;
+        let ws = null;
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+
+        function setStatus(status, message) {
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = message;
+        }
+
+        function initializeTerminal() {
+            // Create terminal instance
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 13,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#1e1e1e',
+                    foreground: '#d4d4d4',
+                    cursor: '#d4d4d4',
+                    black: '#000000',
+                    red: '#cd3131',
+                    green: '#0dbc79',
+                    yellow: '#e5e510',
+                    blue: '#2472c8',
+                    magenta: '#bc3fbc',
+                    cyan: '#11a8cd',
+                    white: '#e5e5e5',
+                    brightBlack: '#666666',
+                    brightRed: '#f14c4c',
+                    brightGreen: '#23d18b',
+                    brightYellow: '#f5f543',
+                    brightBlue: '#3b8eea',
+                    brightMagenta: '#d670d6',
+                    brightCyan: '#29b8db',
+                    brightWhite: '#e5e5e5'
+                }
+            });
+
+            // Load fit addon for responsive terminal
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+
+            // Open terminal in DOM
+            term.open(document.getElementById('terminal'));
+            fitAddon.fit();
+
+            // Capture the Tab key to prevent browser focus-switching 
+            // and ensure it's sent to the terminal for autocompletion.
+            term.onKey(({ domEvent }) => {
+                if (domEvent.key === 'Tab') {
+                    domEvent.preventDefault();
+                }
+            });
+
+            // Handle terminal resize
+            window.addEventListener('resize', () => {
+                if (fitAddon && term) {
+                    fitAddon.fit();
+
+                    // Send resize event to server
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows
+                        }));
+                    }
+                }
+            });
+        }
+
+        function connectWebSocket(token) {
+            setStatus('connecting', 'Connecting...');
+
+            // Connect to WebSocket with authentication (via query param)
+            ws = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+
+            ws.onopen = () => {
+                setStatus('connected', 'Connected to Slider console');
+
+                // Hide login form and show terminal
+                loginContainer.classList.add('hidden');
+                terminalContainer.classList.remove('hidden');
+
+                // Initialize terminal after showing container
+                initializeTerminal();
+
+                // Terminal input (all keys, including Tab, Ctrl+C, etc.) → WebSocket
+                term.onData(data => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(data);
+                    }
+                });
+
+                // Initial resize after a short delay
+                setTimeout(() => {
+                    fitAddon.fit();
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows
+                        }));
+                    }
+                }, 100);
+            };
+
+            // WebSocket → Terminal output
+            ws.onmessage = (event) => {
+                if (event.data instanceof Blob) {
+                    // Binary message
+                    event.data.arrayBuffer().then(buffer => {
+                        const text = new TextDecoder().decode(buffer);
+                        term.write(text);
+                    });
+                } else {
+                    // Text message
+                    term.write(event.data);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                if (loginContainer.classList.contains('hidden')) {
+                    // Already connected, show error in terminal
+                    setStatus('disconnected', 'Connection error');
+                    if (term) {
+                        term.writeln('\r\n\x1b[31mWebSocket error occurred\x1b[0m');
+                    }
+                } else {
+                    // Connection failed during login
+                    showError('Connection error. Please check your token and try again.');
+                    connectBtn.disabled = false;
+                }
+            };
+
+            ws.onclose = () => {
+                if (loginContainer.classList.contains('hidden')) {
+                    // Was connected, now disconnected
+                    setStatus('disconnected', 'Disconnected from server');
+                    if (term) {
+                        term.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
+                    }
+                } else {
+                    // Connection failed during login (likely auth failure)
+                    showError('Authentication failed. Please check your token and try again.');
+                    connectBtn.disabled = false;
+                }
+            };
+        }
+
+        // Handle login form submission
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            hideError();
+
+            const token = authTokenInput.value.trim();
+            if (!token) {
+                showError('Please enter an authentication token.');
+                return;
+            }
+
+            // Disable button during connection
+            connectBtn.disabled = true;
+            connectBtn.textContent = 'Connecting...';
+
+            // Attempt to connect
+            connectWebSocket(token);
+        });
+
+        // Focus on input field on load
+        authTokenInput.focus();
+    </script>
+</body>
+
+</html>
