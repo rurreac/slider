@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"time"
 
 	"slider/pkg/conf"
@@ -70,8 +69,6 @@ func init() {
 	serverCmd.Flags().IntVar(&sStatusCode, "http-status-code", 200, "Status code [200|301|302|400|401|403|500|502|503]")
 	serverCmd.Flags().BoolVar(&sHttpVersion, "http-version", false, "Enables /version HTTP path")
 	serverCmd.Flags().BoolVar(&sHttpHealth, "http-health", false, "Enables /health HTTP path")
-	serverCmd.Flags().BoolVar(&sHttpDirIndex, "http-dir-index", false, "Enables /directory-index HTTP path with file browsing")
-	serverCmd.Flags().StringVar(&sHttpDirIndexPath, "http-dir-index-path", "/dir", "Sets custom directory index path")
 	serverCmd.Flags().StringVar(&sCustomProto, "proto", conf.Proto, "Set your own proto string")
 	serverCmd.Flags().StringVar(&sListenerCert, "listener-cert", "", "Certificate for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerKey, "listener-key", "", "Key for SSL listener")
@@ -79,13 +76,13 @@ func init() {
 	if conf.Version == "development" {
 		serverCmd.Flags().BoolVar(&sCallerLog, "caller-log", false, "Display caller information in logs")
 		serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
-		serverCmd.Flags().BoolVar(&sHttpApiOn, "http-api-on", false, fmt.Sprintf("Enables REST API on /api/%s", conf.ApiVersion))
+		serverCmd.Flags().BoolVar(&sHttpDirIndex, "http-dir-index", false, "Enables /dir HTTP path with file browsing")
+		serverCmd.Flags().StringVar(&sHttpDirIndexPath, "http-dir-index-path", "/dir", "Sets custom directory index path")
 	}
 
 	// Mark flag dependencies
 	serverCmd.MarkFlagsRequiredTogether("listener-cert", "listener-key")
 	serverCmd.MarkFlagsRequiredTogether("listener-ca", "listener-cert", "listener-key")
-	serverCmd.MarkFlagsRequiredTogether("http-api-on", "listener-cert", "listener-key")
 }
 
 func runServer(cmd *cobra.Command, args []string) error {
