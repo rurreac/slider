@@ -3,8 +3,9 @@ package instance
 import (
 	"encoding/binary"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"slider/pkg/types"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type socksConfig struct {
