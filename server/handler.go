@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"os"
 	"slider/pkg/conf"
+	"slider/pkg/listener"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
-	"slider/pkg/types"
 	"strings"
 
 	"github.com/creack/pty"
@@ -21,11 +21,22 @@ import (
 	"golang.org/x/term"
 )
 
-func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
-	upgradeHeader := r.Header.Get("Upgrade")
+// buildRouter creates the HTTP router with all configured endpoints
+func (s *server) buildRouter() http.Handler {
+	// Get base router with common endpoints
+	mux := listener.NewRouter(&listener.RouterConfig{
+		TemplatePath: s.templatePath,
+		ServerHeader: s.serverHeader,
+		StatusCode:   s.statusCode,
+		HealthOn:     s.httpHealth,
+		VersionOn:    s.httpVersion,
+		DirIndexOn:   s.httpDirIndex,
+		DirIndexPath: s.httpDirIndexPath,
+	})
 
-	// Explicitly handle Console WebSocket endpoint
-	if r.URL.Path == "/console/ws" {
+	// Add server-specific routes
+	mux.HandleFunc("/console/ws", func(w http.ResponseWriter, r *http.Request) {
+		upgradeHeader := r.Header.Get("Upgrade")
 		if strings.ToLower(upgradeHeader) == "websocket" {
 			_ = s.handleWebSocketConsole(w, r)
 			return
@@ -36,46 +47,20 @@ func (s *server) handleHTTPClient(w http.ResponseWriter, r *http.Request) {
 			slog.F("headers", r.Header))
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte("This endpoint requires a WebSocket connection."))
-		return
-	}
+	})
 
-	// Regular client WebSocket connection
-	if strings.ToLower(upgradeHeader) == "websocket" {
-		proto := conf.HttpVersionResponse.ProtoVersion
-		if proto != s.customProto {
-			proto = s.customProto
-		}
-		secProto := r.Header.Get("Sec-WebSocket-Protocol")
-		secOperation := r.Header.Get("Sec-WebSocket-Operation")
-		if secProto == proto && secOperation == "client" {
+	// Wrap with WebSocket upgrade check for client connections
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if listener.IsSliderWebSocket(r, s.customProto, "client") {
 			s.handleWebSocket(w, r)
 			return
 		}
-		s.DebugWith("Received unsupported protocol",
-			slog.F("protocol", secProto),
-			slog.F("operation", secOperation))
-	}
-
-	if hErr := conf.HandleHttpRequest(w, r, &types.HttpHandler{
-		TemplatePath: s.templatePath,
-		ServerHeader: s.serverHeader,
-		StatusCode:   s.statusCode,
-		UrlRedirect:  s.urlRedirect,
-		VersionOn:    s.httpVersion,
-		HealthOn:     s.httpHealth,
-		DirIndexOn:   s.httpDirIndex,
-		DirIndexPath: s.httpDirIndexPath,
-		ApiOn:        s.httpApiOn,
-		CertTrack:    s.certTrack,
-	}); hErr != nil {
-		s.ErrorWith("Error handling HTTP request", slog.F("err", hErr))
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Internal Server Error"))
-	}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	upgrader := conf.DefaultWebSocketUpgrader
+	upgrader := listener.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -96,7 +81,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
-	wsURL, wErr := conf.FormatToWS(clientUrl)
+	wsURL, wErr := listener.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
 		notifier <- wErr
@@ -115,7 +100,7 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		s.DebugWith("Connecting to client", slog.F("url", wsURL), slog.F("resolved_ip", ip))
 	}
 
-	wsConfig := conf.DefaultWebSocketDialer
+	wsConfig := listener.DefaultWebSocketDialer
 	if wsURL.Scheme == "wss" {
 		wsConfig.TLSClientConfig.InsecureSkipVerify = true
 		if tlsCertPath != "" && tlsKeyPath != "" {
@@ -203,7 +188,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Configure WebSocket upgrader
-	upgrader := conf.DefaultWebSocketUpgrader
+	upgrader := listener.DefaultWebSocketUpgrader
 	upgrader.CheckOrigin = func(r *http.Request) bool {
 		// Allow all origins for now - can be restricted later
 		return true

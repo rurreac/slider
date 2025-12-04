@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slider/pkg/conf"
+	"slider/pkg/listener"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -55,7 +56,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	clientURL := connectFlags.Args()[0]
-	cu, uErr := conf.ResolveURL(clientURL)
+	cu, uErr := listener.ResolveURL(clientURL)
 	if uErr != nil {
 		return fmt.Errorf("failed to resolve URL: %w", uErr)
 	}

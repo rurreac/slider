@@ -13,6 +13,7 @@ import (
 
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
+	"slider/pkg/listener"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
 
@@ -100,7 +101,7 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	if cfg.TemplatePath != "" {
-		tErr := conf.CheckTemplate(cfg.TemplatePath)
+		tErr := listener.CheckTemplate(cfg.TemplatePath)
 		if tErr != nil {
 			s.Fatalf("Wrong template: %s", tErr)
 		}
@@ -108,7 +109,7 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	s.statusCode = cfg.StatusCode
-	if !conf.CheckStatusCode(cfg.StatusCode) {
+	if !listener.CheckStatusCode(cfg.StatusCode) {
 		s.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
 		s.statusCode = http.StatusOK
 	}
@@ -193,7 +194,7 @@ func RunServer(cfg *ServerConfig) {
 	}
 
 	if cfg.HttpRedirect != "" {
-		wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
+		wr, wErr := listener.ResolveURL(cfg.HttpRedirect)
 		if wErr != nil {
 			s.FatalWith("Bad Redirect URL", slog.F("url", cfg.HttpRedirect), slog.F("err", wErr))
 		}
@@ -228,7 +229,7 @@ func RunServer(cfg *ServerConfig) {
 
 	s.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
 	go func() {
-		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
+		handler := s.buildRouter()
 
 		if tlsOn {
 			httpSrv := &http.Server{
