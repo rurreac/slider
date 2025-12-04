@@ -82,7 +82,9 @@ func init() {
 
 	// Mark flag dependencies
 	serverCmd.MarkFlagsRequiredTogether("listener-cert", "listener-key")
-	serverCmd.MarkFlagsRequiredTogether("listener-ca", "listener-cert", "listener-key")
+	if sListenerCA != "" {
+		serverCmd.MarkFlagsRequiredTogether("listener-ca", "listener-cert", "listener-key")
+	}
 }
 
 func runServer(cmd *cobra.Command, args []string) error {

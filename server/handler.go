@@ -35,6 +35,16 @@ func (s *server) buildRouter() http.Handler {
 	})
 
 	// Add server-specific routes
+
+	// Authentication endpoints
+	mux.HandleFunc("/auth", s.handleAuthPage)        // GET: Login page
+	mux.HandleFunc("/auth/token", s.handleAuthToken) // POST: Token exchange
+	mux.HandleFunc("/auth/logout", s.handleLogout)   // POST: Logout
+
+	// Console page endpoint (protected by auth middleware)
+	mux.Handle("/console", s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
+
+	// WebSocket console endpoint (auth handled differently due to WebSocket constraints)
 	mux.HandleFunc("/console/ws", func(w http.ResponseWriter, r *http.Request) {
 		upgradeHeader := r.Header.Get("Upgrade")
 		if strings.ToLower(upgradeHeader) == "websocket" {
@@ -158,34 +168,37 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 
 // handleWebSocketConsole upgrades HTTP to WebSocket and bridges to a PTY console
 func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) error {
-	// Validate token from query parameter (browsers can't send headers with WebSocket)
-	token := r.URL.Query().Get("token")
+	// Extract token from cookie (web browsers) or query parameter (legacy/direct connections)
+	token := extractTokenFromRequest(r)
+
+	// Fallback to query parameter if no cookie found
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+
 	if token == "" {
 		s.DebugWith("WebSocket connection rejected: missing token",
 			slog.F("remote_addr", r.RemoteAddr))
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("Missing 'token' query parameter"))
+		_, _ = w.Write([]byte("Missing authentication token"))
 		return fmt.Errorf("missing token")
 	}
 
-	// Validate token against cert jar
-	if s.certTrack == nil || len(s.certTrack.Certs) == 0 {
-		s.DebugWith(
-			"WebSocket connection rejected: no certificates available for validation",
+	// Try to validate as JWT first, fall back to fingerprint for backward compatibility
+	fingerprint, certID, err := s.validateToken(token)
+	if err != nil {
+		s.DebugWith("WebSocket connection rejected: invalid token",
 			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("fingerprint", token))
+			slog.F("err", err))
 		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("Unauthorized"))
-		return fmt.Errorf("no certificates available for validation")
+		_, _ = w.Write([]byte("Invalid or expired token"))
+		return err
 	}
-	if _, ok := scrypt.IsAllowedFingerprint(token, s.certTrack.Certs); !ok {
-		s.DebugWith("WebSocket connection rejected: invalid fingerprint",
-			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("fingerprint", token))
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("Invalid fingerprint"))
-		return fmt.Errorf("invalid fingerprint")
-	}
+
+	s.DebugWith("WebSocket console authenticated",
+		slog.F("remote_addr", r.RemoteAddr),
+		slog.F("fingerprint", fingerprint),
+		slog.F("cert_id", certID))
 
 	// Configure WebSocket upgrader
 	upgrader := listener.DefaultWebSocketUpgrader

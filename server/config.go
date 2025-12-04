@@ -100,12 +100,16 @@ func RunServer(cfg *ServerConfig) {
 		customProto:      cfg.CustomProto,
 	}
 
+	// Set template path for HTML pages
 	if cfg.TemplatePath != "" {
 		tErr := listener.CheckTemplate(cfg.TemplatePath)
 		if tErr != nil {
 			s.Fatalf("Wrong template: %s", tErr)
 		}
 		s.templatePath = cfg.TemplatePath
+	} else {
+		// Default to ./templates directory
+		s.templatePath = "templates"
 	}
 
 	s.statusCode = cfg.StatusCode
