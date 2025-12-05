@@ -77,9 +77,9 @@ func init() {
 	serverCmd.Flags().StringVar(&sListenerCA, "listener-ca", "", "CA for verifying client certificates")
 	serverCmd.Flags().BoolVar(&sHeadless, "headless", false, "Disables the internal console (CTR^C)")
 	serverCmd.Flags().BoolVar(&sHttpConsole, "http-console", false, "Enables /login and /console HTTP endpoints")
+	serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
 	if conf.Version == "development" {
 		serverCmd.Flags().BoolVar(&sCallerLog, "caller-log", false, "Display caller information in logs")
-		serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
 		serverCmd.Flags().BoolVar(&sHttpDirIndex, "http-dir-index", false, "Enables /dir HTTP path with file browsing")
 		serverCmd.Flags().StringVar(&sHttpDirIndexPath, "http-dir-index-path", "/dir", "Sets custom directory index path")
 	}
