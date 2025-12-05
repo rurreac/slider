@@ -48,6 +48,8 @@ var (
 	sListenerCA       string
 	sJsonLog          bool
 	sCallerLog        bool
+	sHeadless         bool
+	sHttpConsole      bool
 )
 
 func init() {
@@ -73,6 +75,8 @@ func init() {
 	serverCmd.Flags().StringVar(&sListenerCert, "listener-cert", "", "Certificate for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerKey, "listener-key", "", "Key for SSL listener")
 	serverCmd.Flags().StringVar(&sListenerCA, "listener-ca", "", "CA for verifying client certificates")
+	serverCmd.Flags().BoolVar(&sHeadless, "headless", false, "Disables the internal console (CTR^C)")
+	serverCmd.Flags().BoolVar(&sHttpConsole, "http-console", false, "Enables /login and /console HTTP endpoints")
 	if conf.Version == "development" {
 		serverCmd.Flags().BoolVar(&sCallerLog, "caller-log", false, "Display caller information in logs")
 		serverCmd.Flags().BoolVar(&sJsonLog, "json-log", false, "Enables JSON formatted logging")
@@ -114,6 +118,8 @@ func runServer(cmd *cobra.Command, args []string) error {
 		ListenerCA:       sListenerCA,
 		JsonLog:          sJsonLog,
 		CallerLog:        sCallerLog,
+		Headless:         sHeadless,
+		HttpConsole:      sHttpConsole,
 	}
 
 	// Call the new RunServer function

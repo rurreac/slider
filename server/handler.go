@@ -36,28 +36,31 @@ func (s *server) buildRouter() http.Handler {
 
 	// Add server-specific routes
 
-	// Authentication endpoints
-	mux.HandleFunc("/auth", s.handleAuthPage)        // GET: Login page
-	mux.HandleFunc("/auth/token", s.handleAuthToken) // POST: Token exchange
-	mux.HandleFunc("/auth/logout", s.handleLogout)   // POST: Logout
+	// HTTP Console endpoints (only if enabled)
+	if s.httpConsoleOn {
+		// Authentication endpoints
+		mux.HandleFunc("/auth", s.handleAuthPage)        // GET: Login page
+		mux.HandleFunc("/auth/token", s.handleAuthToken) // POST: Token exchange
+		mux.HandleFunc("/auth/logout", s.handleLogout)   // POST: Logout
 
-	// Console page endpoint (protected by auth middleware)
-	mux.Handle("/console", s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
+		// Console page endpoint (protected by auth middleware)
+		mux.Handle("/console", s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
 
-	// WebSocket console endpoint (auth handled differently due to WebSocket constraints)
-	mux.HandleFunc("/console/ws", func(w http.ResponseWriter, r *http.Request) {
-		upgradeHeader := r.Header.Get("Upgrade")
-		if strings.ToLower(upgradeHeader) == "websocket" {
-			_ = s.handleWebSocketConsole(w, r)
-			return
-		}
-		// If path matches but not a WebSocket request, return 400 instead of 404
-		s.DebugWith("Received non-WebSocket request to console endpoint",
-			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("headers", r.Header))
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte("This endpoint requires a WebSocket connection."))
-	})
+		// WebSocket console endpoint (auth handled differently due to WebSocket constraints)
+		mux.HandleFunc("/console/ws", func(w http.ResponseWriter, r *http.Request) {
+			upgradeHeader := r.Header.Get("Upgrade")
+			if strings.ToLower(upgradeHeader) == "websocket" {
+				_ = s.handleWebSocketConsole(w, r)
+				return
+			}
+			// If path matches but not a WebSocket request, return 400 instead of 404
+			s.DebugWith("Received non-WebSocket request to console endpoint",
+				slog.F("remote_addr", r.RemoteAddr),
+				slog.F("headers", r.Header))
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("This endpoint requires a WebSocket connection."))
+		})
+	}
 
 	// Wrap with WebSocket upgrade check for client connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

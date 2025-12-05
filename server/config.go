@@ -46,6 +46,8 @@ type ServerConfig struct {
 	ListenerCA       string
 	JsonLog          bool
 	CallerLog        bool
+	Headless         bool
+	HttpConsole      bool
 }
 
 // RunServer starts a server with the given configuration
@@ -97,6 +99,7 @@ func RunServer(cfg *ServerConfig) {
 		httpHealth:       cfg.HttpHealth,
 		httpDirIndex:     cfg.HttpDirIndex,
 		httpDirIndexPath: cfg.HttpDirIndexPath,
+		httpConsoleOn:    cfg.HttpConsole,
 		customProto:      cfg.CustomProto,
 	}
 
@@ -252,28 +255,36 @@ func RunServer(cfg *ServerConfig) {
 		}
 	}()
 
-	s.Printf("Press CTR^C to access the Slider Console")
-
 	// Capture Interrupt Signal to toggle log output and activate Console
-	var cmdOutput string
-	for consoleToggle := true; consoleToggle; {
+	if cfg.Headless {
+		// In headless mode, just wait for interrupt signal to exit
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-		for range sig {
-			// Stop capturing so we can capture as well on the console
-			signal.Stop(sig)
-			close(sig)
-			// Send logs to a buffer
-			s.LogToBuffer()
-			// Run a Slider Console (NewConsole locks until termination),
-			// 'cmdOutput' will always be equal to "bg" or "exit"
-			cmdOutput = s.NewConsole()
-			// Restore logs from buffer and resume output to stdout
-			s.BufferOut()
-			s.LogToStdout()
-		}
-		if cmdOutput == "exit" {
-			consoleToggle = false
+		<-sig
+		s.Infof("Received interrupt signal, shutting down...")
+	} else {
+		// Normal mode with console
+		s.Printf("Press CTR^C to access the Slider Console")
+		var cmdOutput string
+		for consoleToggle := true; consoleToggle; {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+			for range sig {
+				// Stop capturing so we can capture as well on the console
+				signal.Stop(sig)
+				close(sig)
+				// Send logs to a buffer
+				s.LogToBuffer()
+				// Run a Slider Console (NewConsole locks until termination),
+				// 'cmdOutput' will always be equal to "bg" or "exit"
+				cmdOutput = s.NewConsole()
+				// Restore logs from buffer and resume output to stdout
+				s.BufferOut()
+				s.LogToStdout()
+			}
+			if cmdOutput == "exit" {
+				consoleToggle = false
+			}
 		}
 	}
 

@@ -49,6 +49,7 @@ type server struct {
 	httpDirIndex         bool
 	httpDirIndexPath     string
 	httpApiOn            bool
+	httpConsoleOn        bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry
