@@ -37,6 +37,7 @@ var (
 	hookClientCert  string
 	hookClientKey   string
 	hookCA          string
+	hookServerName  string
 )
 
 func init() {
@@ -47,11 +48,12 @@ func init() {
 	hookCmd.Flags().StringVar(&hookClientCert, "client-cert", "", "Client certificate for mTLS")
 	hookCmd.Flags().StringVar(&hookClientKey, "client-key", "", "Client private key for mTLS")
 	hookCmd.Flags().StringVar(&hookCA, "ca", "", "CA certificate for server verification")
+	hookCmd.Flags().StringVar(&hookServerName, "server-name", "", "Server name for TLS verification")
 
 	// Mark flag dependencies
 	hookCmd.MarkFlagsRequiredTogether("client-cert", "client-key")
-	if hookCA != "" {
-		hookCmd.MarkFlagsRequiredTogether("ca", "client-cert", "client-key")
+	if hookServerName != "" {
+		hookCmd.MarkFlagsRequiredTogether("ca", "server-name")
 	}
 }
 
@@ -67,14 +69,14 @@ func runHook(cmd *cobra.Command, args []string) error {
 	// Get authentication token if fingerprint is provided
 	var token string
 	if hookFingerprint != "" {
-		token, err = getAuthToken(parsedURL, hookFingerprint, hookClientCert, hookClientKey, hookCA)
+		token, err = getAuthToken(parsedURL, hookFingerprint, hookClientCert, hookClientKey, hookCA, hookServerName)
 		if err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
 	}
 
 	// Connect to WebSocket console
-	if err := connectToConsole(parsedURL, token, hookClientCert, hookClientKey, hookCA); err != nil {
+	if err := connectToConsole(parsedURL, token, hookClientCert, hookClientKey); err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 
@@ -82,7 +84,7 @@ func runHook(cmd *cobra.Command, args []string) error {
 }
 
 // getAuthToken exchanges a fingerprint for a JWT token
-func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath string) (string, error) {
+func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serverName string) (string, error) {
 	// Build auth token endpoint URL
 	authURL := *baseURL
 	authURL.Path = "/auth/token"
@@ -98,8 +100,8 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath strin
 
 	// Configure HTTP client with mTLS if needed
 	client := &http.Client{}
-	if certPath != "" && keyPath != "" {
-		tlsConfig, err := buildTLSConfig(certPath, keyPath, caPath)
+	if (certPath != "" && keyPath != "") || caPath != "" {
+		tlsConfig, err := buildTLSConfig(certPath, keyPath, caPath, serverName)
 		if err != nil {
 			return "", err
 		}
@@ -140,15 +142,12 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath strin
 }
 
 // buildTLSConfig creates a TLS configuration for mTLS
-func buildTLSConfig(certPath, keyPath, caPath string) (*tls.Config, error) {
+func buildTLSConfig(certPath, keyPath, caPath, serverName string) (*tls.Config, error) {
 	tlsConfig := &tls.Config{}
 
-	// Load client certificate
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load client certificate: %w", err)
+	if serverName != "" {
+		tlsConfig.ServerName = serverName
 	}
-	tlsConfig.Certificates = []tls.Certificate{cert}
 
 	// Load CA certificate if provided
 	if caPath != "" {
@@ -161,15 +160,27 @@ func buildTLSConfig(certPath, keyPath, caPath string) (*tls.Config, error) {
 			return nil, fmt.Errorf("failed to parse CA certificate")
 		}
 		tlsConfig.RootCAs = caCertPool
-	} else {
-		tlsConfig.InsecureSkipVerify = true
+	}
+
+	if certPath != "" && keyPath != "" {
+		// Load client certificate
+		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+
+		// If CA is not provided, skip verification
+		if caPath == "" {
+			tlsConfig.InsecureSkipVerify = true
+		}
 	}
 
 	return tlsConfig, nil
 }
 
 // connectToConsole establishes a WebSocket connection and bridges it with the local terminal
-func connectToConsole(baseURL *url.URL, token, certPath, keyPath, caPath string) error {
+func connectToConsole(baseURL *url.URL, token, certPath, keyPath string) error {
 	// Convert HTTP URL to WebSocket URL
 	wsURL, err := listener.FormatToWS(baseURL)
 	if err != nil {
