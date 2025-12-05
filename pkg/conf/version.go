@@ -16,14 +16,13 @@ const Banner = `
   ╚══════╝╚══════╝╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝`
 
 var (
-	Version    = "development"
-	Proto      = "slider-v1"
-	ApiVersion = "v1"
-	binOS      = runtime.GOOS
-	binArch    = runtime.GOARCH
-	commit     = "undefined"
-	date       = "undefined"
-	goVer      = "undefined"
+	Version = "development"
+	Proto   = "slider-v1"
+	binOS   = runtime.GOOS
+	binArch = runtime.GOARCH
+	commit  = "undefined"
+	date    = "undefined"
+	goVer   = "undefined"
 )
 
 func PrintVersion() {
@@ -32,7 +31,6 @@ func PrintVersion() {
 	twl.Init(os.Stdout, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(twl, "\tVersion:\t%s\t\n", Version)
 	_, _ = fmt.Fprintf(twl, "\tProto:\t%s\t\n", Proto)
-	_, _ = fmt.Fprintf(twl, "\tAPI Version:\t%s\t\n", ApiVersion)
 	_, _ = fmt.Fprintf(twl, "\tTarget System:\t%s/%s\t\n", binOS, binArch)
 	_, _ = fmt.Fprintf(twl, "\tGit Commit:\t%s\t\n", commit)
 	_, _ = fmt.Fprintf(twl, "\tRelease Date:\t%s\t\n", date)
