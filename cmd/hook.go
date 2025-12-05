@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"strings"
 	"syscall"
 
-	pkglistener "slider/pkg/listener"
+	"slider/pkg/listener"
 
 	"github.com/gorilla/websocket"
 	"github.com/spf13/cobra"
@@ -24,9 +25,7 @@ var hookCmd = &cobra.Command{
 	Short: "Connect to a Slider Server console via WebSocket",
 	Long: `Connects to a Slider Server's web console endpoint (/console/ws)
 and provides access to the slider console through your local terminal.
-
-Example:
-  slider hook https://localhost:8080 --fingerprint abc123`,
+`,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runHook,
 	SilenceUsage: true,
@@ -34,10 +33,10 @@ Example:
 
 // Hook flags
 var (
-	hookFingerprint  string
-	hookListenerCert string
-	hookListenerKey  string
-	hookListenerCA   string
+	hookFingerprint string
+	hookClientCert  string
+	hookClientKey   string
+	hookCA          string
 )
 
 func init() {
@@ -45,19 +44,22 @@ func init() {
 
 	// Define flags
 	hookCmd.Flags().StringVar(&hookFingerprint, "fingerprint", "", "Certificate fingerprint for authentication")
-	hookCmd.Flags().StringVar(&hookListenerCert, "listener-cert", "", "Client certificate for mTLS")
-	hookCmd.Flags().StringVar(&hookListenerKey, "listener-key", "", "Client private key for mTLS")
-	hookCmd.Flags().StringVar(&hookListenerCA, "listener-ca", "", "CA certificate for server verification")
+	hookCmd.Flags().StringVar(&hookClientCert, "client-cert", "", "Client certificate for mTLS")
+	hookCmd.Flags().StringVar(&hookClientKey, "client-key", "", "Client private key for mTLS")
+	hookCmd.Flags().StringVar(&hookCA, "ca", "", "CA certificate for server verification")
 
 	// Mark flag dependencies
-	hookCmd.MarkFlagsRequiredTogether("listener-ca", "listener-cert", "listener-key")
+	hookCmd.MarkFlagsRequiredTogether("client-cert", "client-key")
+	if hookCA != "" {
+		hookCmd.MarkFlagsRequiredTogether("ca", "client-cert", "client-key")
+	}
 }
 
 func runHook(cmd *cobra.Command, args []string) error {
 	serverURL := args[0]
 
 	// Parse and validate server URL
-	parsedURL, err := pkglistener.ResolveURL(serverURL)
+	parsedURL, err := listener.ResolveURL(serverURL)
 	if err != nil {
 		return fmt.Errorf("invalid server URL: %w", err)
 	}
@@ -65,14 +67,14 @@ func runHook(cmd *cobra.Command, args []string) error {
 	// Get authentication token if fingerprint is provided
 	var token string
 	if hookFingerprint != "" {
-		token, err = getAuthToken(parsedURL, hookFingerprint, hookListenerCert, hookListenerKey, hookListenerCA)
+		token, err = getAuthToken(parsedURL, hookFingerprint, hookClientCert, hookClientKey, hookCA)
 		if err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
 	}
 
 	// Connect to WebSocket console
-	if err := connectToConsole(parsedURL, token, hookListenerCert, hookListenerKey, hookListenerCA); err != nil {
+	if err := connectToConsole(parsedURL, token, hookClientCert, hookClientKey, hookCA); err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 
@@ -150,9 +152,15 @@ func buildTLSConfig(certPath, keyPath, caPath string) (*tls.Config, error) {
 
 	// Load CA certificate if provided
 	if caPath != "" {
-		// For now, we'll skip CA verification setup
-		// This can be enhanced later if needed
-		tlsConfig.InsecureSkipVerify = true
+		caCert, err := os.ReadFile(caPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
 	} else {
 		tlsConfig.InsecureSkipVerify = true
 	}
@@ -163,7 +171,7 @@ func buildTLSConfig(certPath, keyPath, caPath string) (*tls.Config, error) {
 // connectToConsole establishes a WebSocket connection and bridges it with the local terminal
 func connectToConsole(baseURL *url.URL, token, certPath, keyPath, caPath string) error {
 	// Convert HTTP URL to WebSocket URL
-	wsURL, err := pkglistener.FormatToWS(baseURL)
+	wsURL, err := listener.FormatToWS(baseURL)
 	if err != nil {
 		return fmt.Errorf("failed to convert URL to WebSocket: %w", err)
 	}
@@ -199,8 +207,6 @@ func connectToConsole(baseURL *url.URL, token, certPath, keyPath, caPath string)
 		return fmt.Errorf("failed to connect to WebSocket: %w", err)
 	}
 	defer wsConn.Close()
-
-	fmt.Println("Connected to remote console. Press Ctrl+C to exit.")
 
 	// Put terminal in raw mode
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
