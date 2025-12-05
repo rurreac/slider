@@ -542,6 +542,24 @@ is ephemeral it will be just dump to the console.
 If we generated our own certificates for server or client listeners with this CA, we can also provide this CA to authenticate
 listener client certificates.
 
+Once you have the dump the CA certificate and key, you can use them to create your own certificates for client listeners as in the example below:
+
+1. Generate key:
+```
+c_name="http-listener"
+openssl genpkey -algorithm ED25519 -out $c_name.key
+```
+2. Generate certificate (replace host/IP as necessary):
+```
+openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
+-addext "subjectAltName = DNS:localhost,IP:127.0.0.1"
+```
+3. Sign certificate using CA:
+```
+openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
+-CAcreateserial -out signed-$c_name.crt -days 9999 -sha256 -copy_extensions copyall
+```
+
 ![Console Certs](./doc/console_certs.gif)
 
 ##### Portfwd
