@@ -25,7 +25,7 @@ type ClientConfig struct {
 	Colorless     bool
 	Fingerprint   string
 	Key           string
-	Listener      bool
+	ListenerOn    bool
 	Port          int
 	Address       string
 	Retry         bool
@@ -116,8 +116,8 @@ func RunClient(cfg *ClientConfig) {
 		"Sec-WebSocket-Operation": {"client"},
 	}
 
-	if cfg.Listener {
-		c.isListener = cfg.Listener
+	if cfg.ListenerOn {
+		c.isListener = cfg.ListenerOn
 		c.serverHeader = cfg.ServerHeader
 
 		if cfg.TemplatePath != "" {

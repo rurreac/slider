@@ -27,7 +27,7 @@ var (
 	colorless     bool
 	fingerprint   string
 	key           string
-	listener      bool
+	listenerOn    bool
 	port          int
 	address       string
 	retry         bool
@@ -57,7 +57,7 @@ func init() {
 	clientCmd.Flags().BoolVar(&colorless, "colorless", false, "Disables logging colors")
 	clientCmd.Flags().StringVar(&fingerprint, "fingerprint", "", "Server fingerprint for host verification (listener)")
 	clientCmd.Flags().StringVar(&key, "key", "", "Private key for authenticating to a Server")
-	clientCmd.Flags().BoolVar(&listener, "listener", false, "Client will listen for incoming Server connections")
+	clientCmd.Flags().BoolVar(&listenerOn, "listener", false, "Client will listen for incoming Server connections")
 	clientCmd.Flags().IntVar(&port, "port", 8081, "Listener port")
 	clientCmd.Flags().StringVar(&address, "address", "0.0.0.0", "Address the Listener will bind to")
 	clientCmd.Flags().BoolVar(&retry, "retry", false, "Retries reconnection indefinitely")
@@ -93,7 +93,7 @@ func init() {
 
 func runClient(cmd *cobra.Command, args []string) error {
 	// Custom validation for conditional exclusion
-	if !listener {
+	if !listenerOn {
 		// When not in listener mode, these flags should not be used
 		conditionalFlags := []string{"address", "port", "fingerprint", "http-template",
 			"http-server-header", "http-redirect", "http-status-code", "http-version",
@@ -107,10 +107,10 @@ func runClient(cmd *cobra.Command, args []string) error {
 	}
 
 	// Validate argument count based on listener mode
-	if !listener && len(args) != 1 {
+	if !listenerOn && len(args) != 1 {
 		return fmt.Errorf("client requires exactly one valid server address as an argument when not in listener mode")
 	}
-	if listener && len(args) > 0 {
+	if listenerOn && len(args) > 0 {
 		return fmt.Errorf("server address should not be provided in listener mode")
 	}
 
@@ -121,7 +121,7 @@ func runClient(cmd *cobra.Command, args []string) error {
 		Colorless:     colorless,
 		Fingerprint:   fingerprint,
 		Key:           key,
-		Listener:      listener,
+		ListenerOn:    listenerOn,
 		Port:          port,
 		Address:       address,
 		Retry:         retry,
@@ -143,7 +143,7 @@ func runClient(cmd *cobra.Command, args []string) error {
 	}
 
 	// Add server URL if not in listener mode
-	if !listener {
+	if !listenerOn {
 		cfg.ServerURL = args[0]
 	}
 
