@@ -176,11 +176,13 @@ func RunServer(cfg *ServerConfig) {
 	s.CertificateAuthority = serverKeyPair.CertificateAuthority
 	s.sshConf.AddHostKey(s.serverKey)
 
-	serverFp, fErr := scrypt.GenerateFingerprint(s.serverKey.PublicKey())
+	// Generate server fingerprint
+	var fErr error
+	s.fingerprint, fErr = scrypt.GenerateFingerprint(s.serverKey.PublicKey())
 	if fErr != nil {
 		s.Fatalf("Failed to generate server fingerprint")
 	}
-	s.Infof("Server Fingerprint: %s", serverFp)
+	s.Infof("Server Fingerprint: %s", s.fingerprint)
 
 	if cfg.Auth {
 		s.Warnf("Client Authentication enabled, a valid certificate will be required")

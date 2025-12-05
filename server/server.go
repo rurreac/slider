@@ -36,6 +36,7 @@ type server struct {
 	certTrackMutex       sync.Mutex
 	certJarFile          string
 	authOn               bool
+	fingerprint          string
 	certSaveOn           bool
 	caStoreOn            bool
 	keepalive            time.Duration

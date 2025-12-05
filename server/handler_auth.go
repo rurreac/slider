@@ -74,22 +74,27 @@ func (s *server) handleAuthToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate fingerprint against cert jar
-	if s.certTrack == nil || len(s.certTrack.Certs) == 0 {
-		s.DebugWith("Auth token request rejected: no certificates available",
-			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("fingerprint", fingerprint))
-		sendErrorJSON(w, http.StatusUnauthorized, "unauthorized", "No certificates available for validation")
-		return
-	}
+	// Validate fingerprint against server fingerprint first (id=0)
+	var certID int64
+	if fingerprint != s.fingerprint {
+		// Validate fingerprint against cert jar
+		if s.certTrack == nil || len(s.certTrack.Certs) == 0 {
+			s.DebugWith("Auth token request rejected: no certificates available",
+				slog.F("remote_addr", r.RemoteAddr),
+				slog.F("fingerprint", fingerprint))
+			sendErrorJSON(w, http.StatusUnauthorized, "unauthorized", "No certificates available for validation")
+			return
+		}
 
-	certID, ok := scrypt.IsAllowedFingerprint(fingerprint, s.certTrack.Certs)
-	if !ok {
-		s.DebugWith("Auth token request rejected: invalid fingerprint",
-			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("fingerprint", fingerprint))
-		sendErrorJSON(w, http.StatusUnauthorized, "invalid_fingerprint", "Certificate fingerprint not found")
-		return
+		var ok bool
+		certID, ok = scrypt.IsAllowedFingerprint(fingerprint, s.certTrack.Certs)
+		if !ok {
+			s.DebugWith("Auth token request rejected: invalid fingerprint",
+				slog.F("remote_addr", r.RemoteAddr),
+				slog.F("fingerprint", fingerprint))
+			sendErrorJSON(w, http.StatusUnauthorized, "invalid_fingerprint", "Certificate fingerprint not found")
+			return
+		}
 	}
 
 	// Generate JWT token
