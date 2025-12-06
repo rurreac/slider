@@ -161,7 +161,9 @@
             </svg>
         </button>
 
+        {{if .AuthOn}}
         <button id="logoutBtn" class="logout-btn">Logout</button>
+        {{end}}
 
         <h1>Slider Console</h1>
         <div class="info">
@@ -204,11 +206,11 @@
             setTheme(current === 'light' ? 'dark' : 'light');
         });
 
-        // Logout functionality
+        /*{{ if .AuthOn }}*/
         document.getElementById('logoutBtn').addEventListener('click', async () => {
             try {
                 // Call server to clear the cookie (better than client-side for httpOnly cookies)
-                await fetch('/auth/logout', {
+                await fetch('{{.AuthLogoutPath}}', {
                     method: 'POST',
                     credentials: 'same-origin'
                 });
@@ -216,8 +218,9 @@
                 console.error('Logout error:', error);
             }
             // Redirect to auth page regardless
-            window.location.href = '/auth';
+            window.location.href = '{{.AuthPath}}';
         });
+        /*{{ end }}*/
 
         // WebSocket configuration
         const currentScheme = window.location.protocol;
@@ -226,7 +229,7 @@
         if (currentScheme === 'https:') {
             wsScheme = 'wss:';
         }
-        const WS_URL = wsScheme + '//' + currentHost + '/console/ws';
+        const WS_URL = wsScheme + '//' + currentHost + '{{.ConsoleWsPath}}';
 
         // Terminal setup
         const statusEl = document.getElementById('status');

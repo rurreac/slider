@@ -7,6 +7,14 @@ import (
 	"strings"
 )
 
+const (
+	AuthPath       = "/auth"
+	AuthLoginPath  = AuthPath + "/token"
+	AuthLogoutPath = AuthPath + "/logout"
+	ConsolePath    = "/console"
+	ConsoleWsPath  = ConsolePath + "/ws"
+)
+
 // RouterConfig holds options for enabling/disabling endpoints
 type RouterConfig struct {
 	// Response settings
@@ -21,6 +29,7 @@ type RouterConfig struct {
 	// Server-only features
 	DirIndexOn   bool
 	DirIndexPath string
+	ConsoleOn    bool
 }
 
 // NewRouter creates an http.ServeMux with configured handlers

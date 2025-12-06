@@ -32,6 +32,7 @@ func (s *server) buildRouter() http.Handler {
 		VersionOn:    s.httpVersion,
 		DirIndexOn:   s.httpDirIndex,
 		DirIndexPath: s.httpDirIndexPath,
+		ConsoleOn:    s.httpConsoleOn,
 	})
 
 	// Add server-specific routes
@@ -39,15 +40,19 @@ func (s *server) buildRouter() http.Handler {
 	// HTTP Console endpoints (only if enabled)
 	if s.httpConsoleOn {
 		// Authentication endpoints
-		mux.HandleFunc("/auth", s.handleAuthPage)        // GET: Login page
-		mux.HandleFunc("/auth/token", s.handleAuthToken) // POST: Token exchange
-		mux.HandleFunc("/auth/logout", s.handleLogout)   // POST: Logout
+		mux.HandleFunc(listener.AuthPath, s.handleAuthPage)       // GET: Login page
+		mux.HandleFunc(listener.AuthLoginPath, s.handleAuthToken) // POST: JWT from fingerprint
+		mux.HandleFunc(listener.AuthLogoutPath, s.handleLogout)   // POST: Logout
 
 		// Console page endpoint (protected by auth middleware)
-		mux.Handle("/console", s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
+		if s.authOn {
+			mux.Handle(listener.ConsolePath, s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
+		} else {
+			mux.Handle(listener.ConsolePath, http.HandlerFunc(s.handleConsolePage))
+		}
 
 		// WebSocket console endpoint (auth handled differently due to WebSocket constraints)
-		mux.HandleFunc("/console/ws", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc(listener.ConsoleWsPath, func(w http.ResponseWriter, r *http.Request) {
 			upgradeHeader := r.Header.Get("Upgrade")
 			if strings.ToLower(upgradeHeader) == "websocket" {
 				_ = s.handleWebSocketConsole(w, r)
@@ -171,37 +176,39 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 
 // handleWebSocketConsole upgrades HTTP to WebSocket and bridges to a PTY console
 func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) error {
-	// Extract token from cookie (web browsers) or query parameter (legacy/direct connections)
-	token := extractTokenFromRequest(r)
+	if s.authOn {
+		// Extract token from cookie (web browsers) or query parameter (legacy/direct connections)
+		token := extractTokenFromRequest(r)
 
-	// Fallback to query parameter if no cookie found
-	if token == "" {
-		token = r.URL.Query().Get("token")
-	}
+		// Fallback to query parameter if no cookie found
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
 
-	if token == "" {
-		s.DebugWith("WebSocket connection rejected: missing token",
-			slog.F("remote_addr", r.RemoteAddr))
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("Missing authentication token"))
-		return fmt.Errorf("missing token")
-	}
+		if token == "" {
+			s.DebugWith("WebSocket connection rejected: missing token",
+				slog.F("remote_addr", r.RemoteAddr))
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("Missing authentication token"))
+			return fmt.Errorf("missing token")
+		}
 
-	// Try to validate as JWT first, fall back to fingerprint for backward compatibility
-	fingerprint, certID, err := s.validateToken(token)
-	if err != nil {
-		s.DebugWith("WebSocket connection rejected: invalid token",
+		// Try to validate as JWT first, fall back to fingerprint for backward compatibility
+		fingerprint, certID, err := s.validateToken(token)
+		if err != nil {
+			s.DebugWith("WebSocket connection rejected: invalid token",
+				slog.F("remote_addr", r.RemoteAddr),
+				slog.F("err", err))
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("Invalid or expired token"))
+			return err
+		}
+
+		s.DebugWith("WebSocket console authenticated",
 			slog.F("remote_addr", r.RemoteAddr),
-			slog.F("err", err))
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("Invalid or expired token"))
-		return err
+			slog.F("fingerprint", fingerprint),
+			slog.F("cert_id", certID))
 	}
-
-	s.DebugWith("WebSocket console authenticated",
-		slog.F("remote_addr", r.RemoteAddr),
-		slog.F("fingerprint", fingerprint),
-		slog.F("cert_id", certID))
 
 	// Configure WebSocket upgrader
 	upgrader := listener.DefaultWebSocketUpgrader

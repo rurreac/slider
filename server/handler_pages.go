@@ -4,16 +4,35 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"slider/pkg/listener"
 	"slider/pkg/slog"
 	"sync"
 )
+
+type consolePageData struct {
+	AuthOn         bool
+	AuthPath       string
+	AuthLoginPath  string
+	AuthLogoutPath string
+	ConsoleWsPath  string
+}
 
 var (
 	// Template cache
 	templates     *template.Template
 	templatesOnce sync.Once
 	templatesErr  error
+	data          consolePageData
 )
+
+func init() {
+	data = consolePageData{
+		AuthPath:       listener.AuthPath,
+		AuthLoginPath:  listener.AuthLoginPath,
+		AuthLogoutPath: listener.AuthLogoutPath,
+		ConsoleWsPath:  listener.ConsoleWsPath,
+	}
+}
 
 // loadTemplates loads and parses all HTML templates
 func loadTemplates(templateDir string) (*template.Template, error) {
@@ -68,7 +87,8 @@ func (s *server) handleConsolePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authentication is already validated by middleware
+	// Authentication is already handled by the middleware, this is UI stuff
+	data.AuthOn = s.authOn
 
 	// Load templates
 	tmpl, err := loadTemplates(s.templatePath)
@@ -79,7 +99,7 @@ func (s *server) handleConsolePage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "console.html", nil); err != nil {
+	if err := tmpl.ExecuteTemplate(w, "console.html", data); err != nil {
 		s.ErrorWith("Failed to render console template", slog.F("err", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 	}
