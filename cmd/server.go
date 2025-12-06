@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"time"
 
 	"slider/pkg/conf"
@@ -123,4 +124,28 @@ func runServer(cmd *cobra.Command, args []string) error {
 	// Call the new RunServer function
 	server.RunServer(cfg)
 	return nil
+}
+
+// RunServerCommand executes the server command directly (for standalone server binary)
+func RunServerCommand() {
+	// Use the existing serverCmd but execute it as a root command
+	// We need to create a copy to avoid modifying the original
+	standaloneCmd := &cobra.Command{
+		Use:          serverCmd.Use,
+		Short:        serverCmd.Short,
+		Long:         serverCmd.Long,
+		Args:         serverCmd.Args,
+		RunE:         serverCmd.RunE,
+		SilenceUsage: serverCmd.SilenceUsage,
+	}
+
+	// Copy flags from the original command
+	standaloneCmd.Flags().AddFlagSet(serverCmd.Flags())
+
+	// Add version subcommand
+	standaloneCmd.AddCommand(versionCmd)
+
+	if err := standaloneCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

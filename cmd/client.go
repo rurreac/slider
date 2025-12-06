@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"slider/client"
@@ -150,4 +151,28 @@ func runClient(cmd *cobra.Command, args []string) error {
 	// Call the new RunClient function
 	client.RunClient(cfg)
 	return nil
+}
+
+// RunClientCommand executes the client command directly (for standalone client binary)
+func RunClientCommand() {
+	// Use the existing clientCmd but execute it as a root command
+	// We need to create a copy to avoid modifying the original
+	standaloneCmd := &cobra.Command{
+		Use:          "slider-client",
+		Short:        clientCmd.Short,
+		Long:         clientCmd.Long,
+		Args:         clientCmd.Args,
+		RunE:         clientCmd.RunE,
+		SilenceUsage: clientCmd.SilenceUsage,
+	}
+
+	// Copy flags from the original command
+	standaloneCmd.Flags().AddFlagSet(clientCmd.Flags())
+
+	// Add version subcommand
+	standaloneCmd.AddCommand(versionCmd)
+
+	if err := standaloneCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }
