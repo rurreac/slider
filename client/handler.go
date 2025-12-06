@@ -15,6 +15,7 @@ func (c *client) buildRouter() http.Handler {
 		StatusCode:   c.statusCode,
 		HealthOn:     c.httpHealth,
 		VersionOn:    c.httpVersion,
+		UrlRedirect:  c.urlRedirect,
 	})
 
 	// Wrap with WebSocket upgrade check for server connections
