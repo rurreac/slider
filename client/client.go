@@ -15,6 +15,7 @@ import (
 	"slices"
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
+	"slider/pkg/listener"
 	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
@@ -67,7 +68,7 @@ type listenerConf struct {
 var shutdown = make(chan bool, 1)
 
 func (c *client) startConnection(customDNS string) {
-	wsURL, wErr := conf.FormatToWS(c.serverURL)
+	wsURL, wErr := listener.FormatToWS(c.serverURL)
 	if wErr != nil {
 		c.Logger.ErrorWith("Failed to convert to WebSocket URL",
 			slog.F("url", c.serverURL.String()),

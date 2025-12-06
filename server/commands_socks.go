@@ -12,7 +12,7 @@ import (
 const (
 	// Console Socks Command
 	socksCmd   = "socks"
-	socksDesc  = "Runs a Socks5 server over an SSH Channel on a Session ID"
+	socksDesc  = "Runs a SOCKS5 server over an SSH Channel on a Session ID"
 	socksUsage = "Usage: socks [flags]"
 )
 

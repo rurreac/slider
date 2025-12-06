@@ -12,7 +12,7 @@ import (
 const (
 	// Console SSH Command
 	sshCmd   = "ssh"
-	sshDesc  = "Runs a Socks5 server over an SSH Channel on a Session ID"
+	sshDesc  = "Runs an local SSH server piped to an SSH Channel on a Session ID"
 	sshUsage = "Usage: ssh [flags]"
 )
 

@@ -12,18 +12,18 @@ func getPrompt() string {
 	return fmt.Sprintf("\rSlider%s ", escseq.CyanBoldText("#"))
 }
 
-func (c *Console) PrintlnWarn(m string, args ...interface{}) {
+func (c *Console) PrintlnWarn(m string, args ...any) {
 	msg := fmt.Sprintf(m, args...)
-	_, _ = fmt.Printf(escseq.YellowText("\r%s%s%s\r\n"), msg)
+	_, _ = fmt.Fprintf(c.Term, "\r%s\r\n", escseq.YellowText(msg))
 }
 
-func (c *Console) PrintlnInfo(m string, args ...interface{}) {
+func (c *Console) PrintlnGreyOut(m string, args ...any) {
 	msg := fmt.Sprintf(m, args...)
-	_, _ = fmt.Printf(escseq.GreyBoldText("\r%s%s%s\r\n"), msg)
+	_, _ = fmt.Fprintf(c.Term, "\r%s\r\n", escseq.GreyBoldText(msg))
 }
 
 func (c *Console) clearScreen() {
-	_, _ = fmt.Printf("%s", escseq.ClearScreen())
+	_, _ = fmt.Fprint(c.Term, escseq.ClearScreen())
 }
 
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
@@ -32,31 +32,31 @@ func (c *Console) PrintWarnSelect(selected string, args ...string) {
 }
 
 // PrintInfo displays an informational message with [*] prefix
-func (c *Console) PrintInfo(format string, args ...interface{}) {
+func (c *Console) PrintInfo(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(c.Term, "\r[%s] %s\r\n", escseq.BlueBrightBoldText("*"), msg)
 }
 
 // PrintWarn displays a warning message with [!] prefix
-func (c *Console) PrintWarn(format string, args ...interface{}) {
+func (c *Console) PrintWarn(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(c.Term, "\r[%s] %s\r\n", escseq.YellowBrightText("!"), msg)
 }
 
 // PrintError displays an error message with [-] prefix
-func (c *Console) PrintError(format string, args ...interface{}) {
+func (c *Console) PrintError(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(c.Term, "\r[%s] %s\r\n", escseq.RedBoldText("-"), msg)
 }
 
 // PrintSuccess displays a success message with [+] prefix
-func (c *Console) PrintSuccess(format string, args ...interface{}) {
+func (c *Console) PrintSuccess(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(c.Term, "\r[%s] %s\r\n", escseq.GreenBoldText("+"), msg)
 }
 
 // PrintDebug displays a debug message (alias for PrintInfo)
-func (c *Console) PrintDebug(format string, args ...interface{}) {
+func (c *Console) PrintDebug(format string, args ...any) {
 	c.PrintInfo(format, args...)
 }
 
@@ -69,11 +69,11 @@ func (c *Console) Println(m string) {
 	_, _ = fmt.Fprintf(c.Term, "\r%s\n", m)
 }
 
-func (c *Console) Printf(format string, args ...interface{}) {
+func (c *Console) Printf(format string, args ...any) {
 	_, _ = fmt.Fprintf(c.Term, "\r%s", fmt.Sprintf(format, args...))
 }
 
-func (c *Console) TermPrintf(format string, args ...interface{}) {
+func (c *Console) TermPrintf(format string, args ...any) {
 	fmt.Printf(fmt.Sprintf("\r%s", format), args...)
 }
 

@@ -11,6 +11,7 @@ import (
 
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
+	"slider/pkg/listener"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
 
@@ -24,7 +25,7 @@ type ClientConfig struct {
 	Colorless     bool
 	Fingerprint   string
 	Key           string
-	Listener      bool
+	ListenerOn    bool
 	Port          int
 	Address       string
 	Retry         bool
@@ -115,12 +116,12 @@ func RunClient(cfg *ClientConfig) {
 		"Sec-WebSocket-Operation": {"client"},
 	}
 
-	if cfg.Listener {
-		c.isListener = cfg.Listener
+	if cfg.ListenerOn {
+		c.isListener = cfg.ListenerOn
 		c.serverHeader = cfg.ServerHeader
 
 		if cfg.TemplatePath != "" {
-			tErr := conf.CheckTemplate(cfg.TemplatePath)
+			tErr := listener.CheckTemplate(cfg.TemplatePath)
 			if tErr != nil {
 				c.Logger.Fatalf("Wrong template: %s", tErr)
 			}
@@ -128,13 +129,13 @@ func RunClient(cfg *ClientConfig) {
 		}
 
 		c.statusCode = cfg.StatusCode
-		if !conf.CheckStatusCode(cfg.StatusCode) {
+		if !listener.CheckStatusCode(cfg.StatusCode) {
 			c.Logger.Warnf("Invalid status code (%d), will use %d", cfg.StatusCode, http.StatusOK)
 			c.statusCode = http.StatusOK
 		}
 
 		if cfg.HttpRedirect != "" {
-			wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
+			wr, wErr := listener.ResolveURL(cfg.HttpRedirect)
 			if wErr != nil {
 				c.Logger.Fatalf("Bad Redirect URL: %v", wErr)
 			}
@@ -172,7 +173,7 @@ func RunClient(cfg *ClientConfig) {
 		}
 
 		go func() {
-			handler := http.Handler(http.HandlerFunc(c.handleHTTPConn))
+			handler := c.buildRouter()
 
 			if tlsOn {
 				httpSrv := &http.Server{
@@ -196,20 +197,24 @@ func RunClient(cfg *ClientConfig) {
 		c.Logger.Infof("Listening on %s://%s", listenerProto, clientAddr.String())
 		<-shutdown
 	} else {
-		su, uErr := conf.ResolveURL(cfg.ServerURL)
+		su, uErr := listener.ResolveURL(cfg.ServerURL)
 		if uErr != nil {
 			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", cfg.ServerURL)
 		}
 
 		c.serverURL = su
-		c.wsConfig = conf.DefaultWebSocketDialer
-		if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
+		c.wsConfig = listener.DefaultWebSocketDialer
+		if cfg.ClientTlsCert != "" && cfg.ClientTlsKey != "" {
 			tlsCert, lErr := tls.LoadX509KeyPair(cfg.ClientTlsCert, cfg.ClientTlsKey)
 			if lErr != nil {
 				c.Logger.FatalWith("Failed to load TLS certificate",
 					slog.F("err", lErr))
 			}
 			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+		} else if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
+			c.Logger.FatalWith("Client TLS certificate or key provided but not both",
+				slog.F("cert", cfg.ClientTlsCert),
+				slog.F("key", cfg.ClientTlsKey))
 		}
 
 		for loop := true; loop; {
