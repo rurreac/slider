@@ -24,7 +24,7 @@ var hookCmd = &cobra.Command{
 	Use:   "hook [flags] <server_url>",
 	Short: "Connect to a Slider Server console via WebSocket",
 	Long: `Connects to a Slider Server's web console endpoint (/console/ws)
-and provides access to the slider console through your local terminal.
+and provides access to a remote slider console through your local terminal.
 `,
 	Args:         cobra.ExactArgs(1),
 	RunE:         runHook,

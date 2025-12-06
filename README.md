@@ -53,13 +53,6 @@ But be aware that size wise the difference between a full build and a server or 
 and the more compression the less noticeable. 
 Generally speaking you would like to stick with the full binary.
 
-Currently Slider uses the following external dependencies:
-* [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
-* [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
-* [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
-* [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
-* [pkg/sftp](https://github.com/pkg/sftp) - SFTP server side implementation
-
 
 ## Server
 
@@ -150,10 +143,8 @@ on *nix hosts, or `\certs` on Windows hosts.
 
 ![Sever Auth](./doc/server_auth.gif)
 
-##### `--json-log` (development only):
-Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). This is useful for log aggregation systems and automated log parsing.
-
-Since the Server is only interactive at the moment through the Console, using this flag in production is not really useful so it's only available in development mode.
+##### `--json-log`:
+Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). Might be useful for log aggregation systems, automated log parsing.
 
 ##### `--caller-log` (development only):
 Enables display of caller information (file name and line number) in log messages. This helps with debugging by showing exactly where each log message originated in the code. Works with both standard and JSON formatted logs.
@@ -697,28 +688,19 @@ The same considerations as for the server apply.
 ## Hook
 
 ```
-Connect to a Slider Server console via WebSocket
+Connects to a Slider Server's web console endpoint (/console/ws)
+and provides access to a remote slider console through your local terminal.
 
-  Connects to a Slider Server's web console endpoint (/console/ws)
-and provides access to the slider console through your local terminal.
+Usage:
+  slider hook [flags] <server_url>
 
-Usage: hook [flags] <server_url>
-
-  --fingerprint
-        Certificate fingerprint for authentication (default "")
-  --client-cert
-        Client certificate for mTLS (default "")
-  --client-key
-        Client private key for mTLS (default "")
-  --ca
-        CA certificate for server verification (default "")
-  --server-name
-        Server name for TLS verification (default "")
-
-Mutually required flags:
-
-  --client-cert, --client-key
-  --ca, --server-name
+Flags:
+      --ca string            CA certificate for server verification
+      --client-cert string   Client certificate for mTLS
+      --client-key string    Client private key for mTLS
+      --fingerprint string   Certificate fingerprint for authentication
+  -h, --help                 help for hook
+      --server-name string   Server name for TLS verification
 ```
 
 The `hook` command provides a way to connect to a Slider Server's web console directly from your local terminal, without needing a web browser. This might be useful if:
