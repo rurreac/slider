@@ -131,7 +131,7 @@ func RunServerCommand() {
 	// Use the existing serverCmd but execute it as a root command
 	// We need to create a copy to avoid modifying the original
 	standaloneCmd := &cobra.Command{
-		Use:          serverCmd.Use,
+		Use:          "slider-server",
 		Short:        serverCmd.Short,
 		Long:         serverCmd.Long,
 		Args:         serverCmd.Args,
