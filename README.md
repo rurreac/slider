@@ -93,8 +93,6 @@ Flags:
       --verbose string               Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
 
-![Sever](./doc/server.gif)
-
 ### Environment Variables
 
 ##### `SLIDER_HOME`:
@@ -140,8 +138,6 @@ environment variable.
 
 The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CERT_JAR](#slider_cert_jar)" + `/.certs`
 on *nix hosts, or `\certs` on Windows hosts.
-
-![Sever Auth](./doc/server_auth.gif)
 
 ##### `--json-log`:
 Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). Might be useful for log aggregation systems, automated log parsing.
@@ -333,8 +329,6 @@ the `-i` flag to specify the certificate ID that corresponds to the fingerprint 
 Depending on configuration, a TLS Listener may require you to provide a valid certificate for client authentication. 
 In this case, you can provide a certificate and key (flags `-c`, `-k`) signed with the same CA.
 
-![Console Connect](./doc/console_connect.gif)
-
 ##### Execute
 ```
 Slider# execute -h
@@ -364,8 +358,6 @@ Considerations on `execute`:
 
 If you need something more interactive or don't want to keep the console busy, consider using `ssh` or `shell` commands.
 
-![Console Execute](./doc/console_execute.gif)
-
 ##### SOCKS
 ```
 Slider# socks -h
@@ -392,8 +384,6 @@ or a port randomly selected if not specified.
 If a port is not specified using the `-p` flag, it will be automatically assigned.
 
 By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
-
-![Console Socks](./doc/console_socks.gif)
 
 ##### SSH
 ```
@@ -533,8 +523,6 @@ openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
 -CAcreateserial -out signed-$c_name.crt -days 9999 -sha256 -copy_extensions copyall
 ```
 
-![Console Certs](./doc/console_certs.gif)
-
 ##### Portfwd
 ```
 Slider# portfwd -h
@@ -594,8 +582,6 @@ Flags:
       --tls-key string              TLS client Key
       --verbose string              Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
-
-![Client](./doc/client.gif)
 
 ### Client Flags Overview
 
