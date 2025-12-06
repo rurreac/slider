@@ -33,6 +33,7 @@ func (s *server) buildRouter() http.Handler {
 		DirIndexOn:   s.httpDirIndex,
 		DirIndexPath: s.httpDirIndexPath,
 		ConsoleOn:    s.httpConsoleOn,
+		AuthOn:       s.authOn,
 	})
 
 	// Add server-specific routes
