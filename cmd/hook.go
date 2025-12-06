@@ -224,11 +224,6 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 		fmt.Println()
 	}()
 
-	// Setup signal handler for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	defer signal.Stop(sigChan)
-
 	// Channel to signal goroutine shutdown
 	done := make(chan struct{})
 
@@ -328,14 +323,8 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 		}
 	}
 
-	// Wait for either interrupt signal or connection closure
-	select {
-	case <-sigChan:
-		// User pressed Ctrl+C - send close message
-		wsConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-	case <-connClosed:
-		// Connection closed by server (e.g., exit command) - this is normal
-	}
+	// Connection closed by server (e.g., exit command) - this is normal
+	<-connClosed
 
 	// Signal all goroutines to stop
 	close(done)
