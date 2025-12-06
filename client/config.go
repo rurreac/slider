@@ -204,13 +204,17 @@ func RunClient(cfg *ClientConfig) {
 
 		c.serverURL = su
 		c.wsConfig = listener.DefaultWebSocketDialer
-		if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
+		if cfg.ClientTlsCert != "" && cfg.ClientTlsKey != "" {
 			tlsCert, lErr := tls.LoadX509KeyPair(cfg.ClientTlsCert, cfg.ClientTlsKey)
 			if lErr != nil {
 				c.Logger.FatalWith("Failed to load TLS certificate",
 					slog.F("err", lErr))
 			}
 			c.wsConfig.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+		} else if cfg.ClientTlsCert != "" || cfg.ClientTlsKey != "" {
+			c.Logger.FatalWith("Client TLS certificate or key provided but not both",
+				slog.F("cert", cfg.ClientTlsCert),
+				slog.F("key", cfg.ClientTlsKey))
 		}
 
 		for loop := true; loop; {
