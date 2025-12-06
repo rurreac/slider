@@ -181,7 +181,7 @@ func RunServer(cfg *ServerConfig) {
 	if fErr != nil {
 		s.Fatalf("Failed to generate server fingerprint")
 	}
-	s.Infof("Server Fingerprint: %s", s.fingerprint)
+	s.InfoWith("Initializing server", slog.F("fingerprint", s.fingerprint))
 
 	if cfg.Auth {
 		s.Warnf("Client Authentication enabled, a valid certificate will be required")
@@ -197,7 +197,7 @@ func RunServer(cfg *ServerConfig) {
 		s.sshConf.PublicKeyCallback = s.clientVerification
 	} else {
 		if s.certJarFile != "" {
-			s.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
+			s.WarnWith("Client Authentication is disabled, certificates will be ignored", slog.F("cert_jar", s.certJarFile))
 		}
 	}
 
@@ -232,6 +232,10 @@ func RunServer(cfg *ServerConfig) {
 				s.FatalWith("CA file is empty", slog.F("ca", cfg.ListenerCA), slog.F("err", rfErr))
 			}
 			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
+		}
+	} else {
+		if s.authOn && s.httpConsoleOn {
+			s.Fatalf("HTTP Console with authentication requires TLS")
 		}
 	}
 
