@@ -123,7 +123,7 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serv
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -209,7 +209,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 	if err != nil {
 		return fmt.Errorf("failed to connect to WebSocket: %w", err)
 	}
-	defer wsConn.Close()
+	defer func() { _ = wsConn.Close() }()
 
 	// Put terminal in raw mode
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -219,7 +219,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 
 	// Ensure terminal is ALWAYS restored, even on panic
 	defer func() {
-		term.Restore(int(os.Stdin.Fd()), oldState)
+		_ = term.Restore(int(os.Stdin.Fd()), oldState)
 		// Print newline after terminal is restored to ensure clean output
 		fmt.Println()
 	}()
@@ -245,7 +245,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 				}
 
 				if msgType == websocket.BinaryMessage || msgType == websocket.TextMessage {
-					os.Stdout.Write(msg)
+					_, _ = os.Stdout.Write(msg)
 				}
 			}
 		}
@@ -299,7 +299,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 						Rows: height,
 					}
 					if data, err := json.Marshal(resizeMsg); err == nil {
-						wsConn.WriteMessage(websocket.TextMessage, data)
+						_ = wsConn.WriteMessage(websocket.TextMessage, data)
 					}
 				}
 			}
@@ -319,7 +319,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 			Rows: height,
 		}
 		if data, err := json.Marshal(resizeMsg); err == nil {
-			wsConn.WriteMessage(websocket.TextMessage, data)
+			_ = wsConn.WriteMessage(websocket.TextMessage, data)
 		}
 	}
 

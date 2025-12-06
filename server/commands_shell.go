@@ -261,9 +261,9 @@ func (ic *InteractiveConsole) Run() error {
 
 	// Use the Console's ReadWriter for I/O
 	go func() {
-		_, _ = io.Copy(ic.Console.ReadWriter, conn)
+		_, _ = io.Copy(ic.ReadWriter, conn)
 		ic.ui.PrintWarn("Press ENTER until get back to console")
 	}()
-	_, _ = io.Copy(conn, ic.Console.ReadWriter)
+	_, _ = io.Copy(conn, ic.ReadWriter)
 	return nil
 }

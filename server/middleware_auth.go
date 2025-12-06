@@ -73,6 +73,6 @@ func (s *server) handleUnauthorized(w http.ResponseWriter, r *http.Request, mess
 		// Return JSON error for API clients
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error":"unauthorized","error_description":"` + message + `"}`))
+		_, _ = w.Write([]byte(`{"error":"unauthorized","error_description":"` + message + `"}`))
 	}
 }

@@ -205,5 +205,5 @@ func (s *server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	s.DebugWith("User logged out", slog.F("remote_addr", r.RemoteAddr))
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Logged out successfully"))
+	_, _ = w.Write([]byte("Logged out successfully"))
 }

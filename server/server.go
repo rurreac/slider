@@ -49,7 +49,6 @@ type server struct {
 	httpHealth           bool
 	httpDirIndex         bool
 	httpDirIndexPath     string
-	httpApiOn            bool
 	httpConsoleOn        bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string

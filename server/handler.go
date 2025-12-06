@@ -341,7 +341,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 			if webConsole, err = s.newWebConsole(ptyTTY, webTermHistory); err != nil {
 				webConsole.PrintError("Failed to create new terminal: %s", err)
 			}
-			webConsole.Term.Write([]byte("\r\n"))
+			_, _ = webConsole.Term.Write([]byte("\r\n"))
 			continue
 		}
 
