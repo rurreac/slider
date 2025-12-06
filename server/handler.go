@@ -28,6 +28,7 @@ func (s *server) buildRouter() http.Handler {
 		TemplatePath: s.templatePath,
 		ServerHeader: s.serverHeader,
 		StatusCode:   s.statusCode,
+		UrlRedirect:  s.urlRedirect,
 		HealthOn:     s.httpHealth,
 		VersionOn:    s.httpVersion,
 		DirIndexOn:   s.httpDirIndex,

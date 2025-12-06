@@ -3,6 +3,7 @@ package listener
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -21,6 +22,7 @@ type RouterConfig struct {
 	TemplatePath string
 	ServerHeader string
 	StatusCode   int
+	UrlRedirect  *url.URL
 
 	// Toggleable endpoints
 	HealthOn  bool
@@ -101,6 +103,12 @@ func templateHandler(cfg *RouterConfig) http.HandlerFunc {
 		if r.URL.Path != "/" {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("Not found"))
+			return
+		}
+
+		if cfg.UrlRedirect != nil {
+			w.Header().Add("Location", cfg.UrlRedirect.String())
+			w.WriteHeader(http.StatusFound)
 			return
 		}
 
