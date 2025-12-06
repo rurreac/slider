@@ -26,10 +26,13 @@ type RouterConfig struct {
 	HealthOn  bool
 	VersionOn bool
 
-	// Server-only features
+	// Development features
 	DirIndexOn   bool
 	DirIndexPath string
-	ConsoleOn    bool
+
+	// Console features
+	ConsoleOn bool
+	AuthOn    bool
 }
 
 // NewRouter creates an http.ServeMux with configured handlers
@@ -112,6 +115,20 @@ func templateHandler(cfg *RouterConfig) http.HandlerFunc {
 					return
 				}
 			}
+		}
+
+		// Redirect to Console if enabled and no auth required
+		if cfg.ConsoleOn && !cfg.AuthOn {
+			w.Header().Add("Location", ConsolePath)
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+
+		// Redirect to Auth if Console enabled and auth required
+		if cfg.ConsoleOn && cfg.AuthOn {
+			w.Header().Add("Location", AuthPath)
+			w.WriteHeader(http.StatusFound)
+			return
 		}
 
 		// No template configured or error reading it - return 404
