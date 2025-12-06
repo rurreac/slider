@@ -68,15 +68,16 @@ func runHook(cmd *cobra.Command, args []string) error {
 
 	// Get authentication token if fingerprint is provided
 	var token string
+	var tlsConfig *tls.Config
 	if hookFingerprint != "" {
-		token, err = getAuthToken(parsedURL, hookFingerprint, hookClientCert, hookClientKey, hookCA, hookServerName)
+		token, tlsConfig, err = getAuthToken(parsedURL, hookFingerprint, hookClientCert, hookClientKey, hookCA, hookServerName)
 		if err != nil {
 			return fmt.Errorf("authentication failed: %w", err)
 		}
 	}
 
 	// Connect to WebSocket console
-	if err := connectToConsole(parsedURL, token, hookClientCert, hookClientKey); err != nil {
+	if err := connectToConsole(parsedURL, token, tlsConfig); err != nil {
 		return fmt.Errorf("connection failed: %w", err)
 	}
 
@@ -84,7 +85,7 @@ func runHook(cmd *cobra.Command, args []string) error {
 }
 
 // getAuthToken exchanges a fingerprint for a JWT token
-func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serverName string) (string, error) {
+func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serverName string) (string, *tls.Config, error) {
 	// Build auth token endpoint URL
 	authURL := *baseURL
 	authURL.Path = "/auth/token"
@@ -95,15 +96,16 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serv
 	}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	// Configure HTTP client with mTLS if needed
 	client := &http.Client{}
+	tlsConfig := &tls.Config{}
 	if (certPath != "" && keyPath != "") || caPath != "" {
-		tlsConfig, err := buildTLSConfig(certPath, keyPath, caPath, serverName)
+		tlsConfig, err = buildTLSConfig(certPath, keyPath, caPath, serverName)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		client.Transport = &http.Transport{
 			TLSClientConfig: tlsConfig,
@@ -113,19 +115,19 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serv
 	// Make request
 	req, err := http.NewRequest("POST", authURL.String(), strings.NewReader(string(jsonData)))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return "", nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return "", nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("authentication failed (status %d): %s", resp.StatusCode, string(body))
+		return "", nil, fmt.Errorf("authentication failed (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	// Parse response
@@ -135,10 +137,10 @@ func getAuthToken(baseURL *url.URL, fingerprint, certPath, keyPath, caPath, serv
 		TokenType string `json:"token_type"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
+		return "", nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	return tokenResp.Token, nil
+	return tokenResp.Token, tlsConfig, nil
 }
 
 // buildTLSConfig creates a TLS configuration for mTLS
@@ -180,13 +182,13 @@ func buildTLSConfig(certPath, keyPath, caPath, serverName string) (*tls.Config, 
 }
 
 // connectToConsole establishes a WebSocket connection and bridges it with the local terminal
-func connectToConsole(baseURL *url.URL, token, certPath, keyPath string) error {
+func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) error {
 	// Convert HTTP URL to WebSocket URL
 	wsURL, err := listener.FormatToWS(baseURL)
 	if err != nil {
 		return fmt.Errorf("failed to convert URL to WebSocket: %w", err)
 	}
-	wsURL.Path = "/console/ws"
+	wsURL.Path = listener.ConsoleWsPath
 
 	// Add token as query parameter if available
 	if token != "" {
@@ -198,16 +200,6 @@ func connectToConsole(baseURL *url.URL, token, certPath, keyPath string) error {
 	// Configure WebSocket dialer
 	dialer := websocket.DefaultDialer
 	if wsURL.Scheme == "wss" {
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: true,
-		}
-		if certPath != "" && keyPath != "" {
-			cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-			if err != nil {
-				return fmt.Errorf("failed to load client certificate: %w", err)
-			}
-			tlsConfig.Certificates = []tls.Certificate{cert}
-		}
 		dialer.TLSClientConfig = tlsConfig
 	}
 
