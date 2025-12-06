@@ -71,7 +71,7 @@ func init() {
 	clientCmd.Flags().StringVar(&customProto, "proto", conf.Proto, "Set your own proto string")
 	clientCmd.Flags().StringVar(&listenerCert, "listener-cert", "", "Certificate for SSL listener")
 	clientCmd.Flags().StringVar(&listenerKey, "listener-key", "", "Key for SSL listener")
-	clientCmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying client certificates")
+	clientCmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying server certificates (mTLS)")
 	clientCmd.Flags().StringVar(&clientTlsCert, "tls-cert", "", "TLS client Certificate")
 	clientCmd.Flags().StringVar(&clientTlsKey, "tls-key", "", "TLS client Key")
 	clientCmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
