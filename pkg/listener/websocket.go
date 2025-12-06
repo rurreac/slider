@@ -1,16 +1,19 @@
-package conf
+package listener
 
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/gorilla/websocket"
+	"net/http"
 	"net/url"
+	"slider/pkg/conf"
 	"strings"
+
+	"github.com/gorilla/websocket"
 )
 
 var DefaultWebSocketDialer = &websocket.Dialer{
 	NetDial:          nil,
-	HandshakeTimeout: Timeout,
+	HandshakeTimeout: conf.Timeout,
 	Subprotocols:     nil,
 	// Use Default Buffer Size
 	ReadBufferSize:    0,
@@ -20,7 +23,7 @@ var DefaultWebSocketDialer = &websocket.Dialer{
 }
 
 var DefaultWebSocketUpgrader = &websocket.Upgrader{
-	HandshakeTimeout: Timeout,
+	HandshakeTimeout: conf.Timeout,
 }
 
 func FormatToWS(u *url.URL) (*url.URL, error) {
@@ -61,4 +64,22 @@ func ResolveURL(rawURL string) (*url.URL, error) {
 	}
 
 	return u, nil
+}
+
+// IsSliderWebSocket checks if the request is a slider WebSocket upgrade
+func IsSliderWebSocket(r *http.Request, customProto, operation string) bool {
+	upgradeHeader := r.Header.Get("Upgrade")
+	if strings.ToLower(upgradeHeader) != "websocket" {
+		return false
+	}
+
+	proto := HttpVersionResponse.ProtoVersion
+	if customProto != "" && customProto != HttpVersionResponse.ProtoVersion {
+		proto = customProto
+	}
+
+	secProto := r.Header.Get("Sec-WebSocket-Protocol")
+	secOperation := r.Header.Get("Sec-WebSocket-Operation")
+
+	return secProto == proto && secOperation == operation
 }

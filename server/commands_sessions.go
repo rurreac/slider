@@ -157,10 +157,17 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("failed to create SFTP client: %w", sErr)
 		}
 		defer func() { _ = sftpCli.Close() }()
-		server.newSftpConsole(session, sftpCli)
+
+		// Cast UI to *Console
+		console, ok := ui.(*Console)
+		if !ok {
+			return fmt.Errorf("UI is not a Console")
+		}
+
+		server.newSftpConsole(console, session, sftpCli)
 
 		// Reset autocomplete commands
-		server.console.setConsoleAutoComplete(server.commandRegistry)
+		console.setConsoleAutoComplete(server.commandRegistry)
 
 		return nil
 	}

@@ -18,10 +18,11 @@ import (
 )
 
 type Console struct {
-	Term      *term.Terminal
-	InitState *term.State
-	FirstRun  bool
-	History   *CustomHistory
+	Term       *term.Terminal
+	InitState  *term.State
+	FirstRun   bool
+	History    *CustomHistory
+	ReadWriter io.ReadWriter
 }
 
 type screenIO struct {
@@ -29,12 +30,12 @@ type screenIO struct {
 	io.Writer
 }
 
-func (s *server) consoleBanner() {
-	s.console.clearScreen()
-	s.console.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
-	s.console.PrintInfo("Type \"bg\" to return to logging.")
-	s.console.PrintInfo("Type \"help\" to see available commands.")
-	s.console.PrintInfo("Type \"exit\" to exit the console.\n")
+func (s *server) consoleBanner(ui *Console) {
+	ui.clearScreen()
+	ui.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
+	ui.PrintInfo("Type \"bg\" to return to logging.")
+	ui.PrintInfo("Type \"help\" to see available commands.")
+	ui.PrintInfo("Type \"exit\" to exit the console.\n")
 }
 
 func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
@@ -60,7 +61,7 @@ func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
 	}
 
 	if s.console.FirstRun {
-		s.consoleBanner()
+		s.consoleBanner(&s.console)
 		s.console.FirstRun = false
 	}
 

@@ -2,48 +2,34 @@ package client
 
 import (
 	"net/http"
-	"slider/pkg/conf"
+	"slider/pkg/listener"
 	"slider/pkg/slog"
-	"slider/pkg/types"
-	"strings"
 )
 
-func (c *client) handleHTTPConn(w http.ResponseWriter, r *http.Request) {
-	upgradeHeader := r.Header.Get("Upgrade")
-	if strings.ToLower(upgradeHeader) == "websocket" {
-		proto := conf.HttpVersionResponse.ProtoVersion
-		if c.customProto != conf.HttpVersionResponse.ProtoVersion {
-			proto = c.customProto
-		}
-		secProto := r.Header.Get("Sec-WebSocket-Protocol")
-		secOperation := r.Header.Get("Sec-WebSocket-Operation")
-		if secProto == proto && secOperation == "server" {
-			c.handleWebSocket(w, r)
-			return
-		}
-		c.Logger.DebugWith("Received unsupported protocol",
-			slog.F("proto", secProto),
-			slog.F("operation", secOperation))
-	}
-
-	if hErr := conf.HandleHttpRequest(w, r, &types.HttpHandler{
+// buildRouter creates the HTTP router with all configured endpoints
+func (c *client) buildRouter() http.Handler {
+	// Get base router with common endpoints
+	mux := listener.NewRouter(&listener.RouterConfig{
 		TemplatePath: c.templatePath,
 		ServerHeader: c.serverHeader,
 		StatusCode:   c.statusCode,
-		UrlRedirect:  c.urlRedirect,
-		VersionOn:    c.httpVersion,
 		HealthOn:     c.httpHealth,
-	}); hErr != nil {
-		c.Logger.DebugWith("Error handling HTTP request",
-			slog.F("err", hErr))
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte("Internal Server Error"))
-	}
+		VersionOn:    c.httpVersion,
+		UrlRedirect:  c.urlRedirect,
+	})
 
+	// Wrap with WebSocket upgrade check for server connections
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if listener.IsSliderWebSocket(r, c.customProto, "server") {
+			c.handleWebSocket(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	upgrader := conf.DefaultWebSocketUpgrader
+	upgrader := listener.DefaultWebSocketUpgrader
 
 	wsConn, err := upgrader.Upgrade(w, r, c.httpHeaders)
 	if err != nil {

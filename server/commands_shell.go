@@ -163,8 +163,13 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 					if ccErr != nil {
 						return fmt.Errorf("failed to create client TLS certificate: %w", ccErr)
 					}
+					// Cast UI to *Console
+					console, ok := ui.(*Console)
+					if !ok {
+						return fmt.Errorf("UI is not a Console")
+					}
 					interactiveConf := &InteractiveConsole{
-						Console:   &server.console,
+						Console:   console,
 						Session:   session,
 						port:      port,
 						tlsConfig: tlsConfig,
@@ -225,11 +230,14 @@ func (ic *InteractiveConsole) Run() error {
 		ic.ui.PrintWarn("Client does not support PTY")
 		ic.ui.PrintWarn("Pressing CTR^C will interrupt the shell")
 
-		conState, _ := term.GetState(int(os.Stdin.Fd()))
-		if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
-			return fmt.Errorf("failed to revert console state, aborting to avoid inconsistent shell")
+		// Only revert raw mode if we are on the local console (Stdin is a terminal)
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			conState, _ := term.GetState(int(os.Stdin.Fd()))
+			if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
+				return fmt.Errorf("failed to revert console state, aborting to avoid inconsistent shell")
+			}
+			defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 		}
-		defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
 
 		// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
 		go func() {
@@ -251,13 +259,11 @@ func (ic *InteractiveConsole) Run() error {
 		ic.clearScreen()
 	}
 
-	// os.StdIn is blocking and will be waiting for any input even if the connection is closed.
-	// After pressing a key, io.Copy will fail due to the attempt of copying to a closed writer,
-	// which will do the unlocking
+	// Use the Console's ReadWriter for I/O
 	go func() {
-		_, _ = io.Copy(os.Stdout, conn)
+		_, _ = io.Copy(ic.ReadWriter, conn)
 		ic.ui.PrintWarn("Press ENTER until get back to console")
 	}()
-	_, _ = io.Copy(conn, os.Stdin)
+	_, _ = io.Copy(conn, ic.ReadWriter)
 	return nil
 }

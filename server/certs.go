@@ -15,7 +15,7 @@ func (s *server) loadCertJar() error {
 	var sfErr error
 	s.certSaveOn, sfErr = safeEnabled()
 	if sfErr != nil {
-		s.Warnf("CertJar - %s", sfErr)
+		s.WarnWith("Can't save CertJar", slog.F("err", sfErr))
 	}
 
 	_, sErr := os.Stat(s.certJarFile)
@@ -58,7 +58,7 @@ func (s *server) loadCertJar() error {
 	s.certTrack.CertCount = ids[len(ids)-1]
 	s.certTrackMutex.Unlock()
 
-	s.Infof("Loaded %d certificates from %s", s.certTrack.CertActive, s.certJarFile)
+	s.InfoWith("Loaded certificates from cert jar", slog.F("cert_count", s.certTrack.CertActive), slog.F("cert_jar", s.certJarFile))
 
 	return nil
 }
@@ -77,7 +77,7 @@ func safeEnabled() (bool, error) {
 func (s *server) newCertItem() (*scrypt.KeyPair, error) {
 	keypair, err := scrypt.NewEd25519KeyPair()
 	if err != nil {
-		return &scrypt.KeyPair{}, fmt.Errorf("failed to generate certificate - %s", err)
+		return &scrypt.KeyPair{}, fmt.Errorf("failed to generate certificate: %s", err)
 	}
 
 	s.certTrackMutex.Lock()

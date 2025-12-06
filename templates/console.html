@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slider Console</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --text-color: #d4d4d4;
+            --container-bg: #2d2d2d;
+            --accent-color: #11a8cd;
+            --status-connected: #0dbc79;
+            --status-disconnected: #cd3131;
+            --status-connecting: #e5e510;
+            --info-text: #888;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+        }
+
+        [data-theme="light"] {
+            --bg-color: #ffffff;
+            --text-color: #333333;
+            --container-bg: #f5f5f5;
+            --accent-color: #007acc;
+            --status-connected: #008000;
+            --status-disconnected: #d32f2f;
+            --status-connecting: #f57f17;
+            --info-text: #666666;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 20px;
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        h1 {
+            color: var(--text-color);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        h1::after {
+            content: " #";
+            color: var(--accent-color);
+        }
+
+        .info {
+            color: var(--info-text);
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        #terminal {
+            height: 600px;
+            border: 1px solid var(--accent-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1e1e1e;
+            padding: 10px;
+        }
+
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: rgba(13, 188, 121, 0.1);
+            color: var(--status-connected);
+            border: 1px solid var(--status-connected);
+        }
+
+        .status.disconnected {
+            background: rgba(205, 49, 49, 0.1);
+            color: var(--status-disconnected);
+            border: 1px solid var(--status-disconnected);
+        }
+
+        .status.connecting {
+            background: rgba(229, 229, 16, 0.1);
+            color: var(--status-connecting);
+            border: 1px solid var(--status-connecting);
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 0;
+            right: 0;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 50%;
+            color: var(--text-color);
+            transition: background-color 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--shadow-color);
+        }
+
+        .theme-toggle svg {
+            width: 24px;
+            height: 24px;
+            fill: currentColor;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .logout-btn {
+            position: absolute;
+            top: 0;
+            right: 50px;
+            padding: 8px 16px;
+            background: var(--container-bg);
+            border: 1px solid var(--accent-color);
+            border-radius: 4px;
+            color: var(--text-color);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .logout-btn:hover {
+            background: var(--accent-color);
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">
+            <svg class="sun-icon hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path
+                    d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 00-1.41 0 .996.996 0 000 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 000-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 000-1.41.996.996 0 00-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 000 1.41.996.996 0 001.41 0l1.06-1.06c.39-.39.39-1.03 0-1.41s-1.03-.39-1.41 0l-1.06 1.06z" />
+            </svg>
+            <svg class="moon-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path
+                    d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z" />
+            </svg>
+        </button>
+
+        {{if .AuthOn}}
+        <button id="logoutBtn" class="logout-btn">Logout</button>
+        {{end}}
+
+        <h1>Slider Console</h1>
+        <div class="info">
+            Connected to your Slider server via WebSocket.
+        </div>
+
+        <div id="terminal"></div>
+        <div id="status" class="status connecting">Connecting...</div>
+    </div>
+
+    <script>
+        // Theme management
+        const themeToggle = document.getElementById('themeToggle');
+        const sunIcon = themeToggle.querySelector('.sun-icon');
+        const moonIcon = themeToggle.querySelector('.moon-icon');
+
+        function setTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+
+            if (theme === 'light') {
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+        }
+
+        function getPreferredTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved) return saved;
+            return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+
+        setTheme(getPreferredTheme());
+
+        themeToggle.addEventListener('click', () => {
+            const current = document.body.getAttribute('data-theme');
+            setTheme(current === 'light' ? 'dark' : 'light');
+        });
+
+        /*{{ if .AuthOn }}*/
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            try {
+                // Call server to clear the cookie (better than client-side for httpOnly cookies)
+                await fetch('{{.AuthLogoutPath}}', {
+                    method: 'POST',
+                    credentials: 'same-origin'
+                });
+            } catch (error) {
+                console.error('Logout error:', error);
+            }
+            // Redirect to auth page regardless
+            window.location.href = '{{.AuthPath}}';
+        });
+        /*{{ end }}*/
+
+        // WebSocket configuration
+        const currentScheme = window.location.protocol;
+        const currentHost = window.location.host;
+        let wsScheme = 'ws:';
+        if (currentScheme === 'https:') {
+            wsScheme = 'wss:';
+        }
+        const WS_URL = wsScheme + '//' + currentHost + '{{.ConsoleWsPath}}';
+
+        // Terminal setup
+        const statusEl = document.getElementById('status');
+        let term = null;
+        let fitAddon = null;
+        let ws = null;
+
+        function setStatus(status, message) {
+            statusEl.className = 'status ' + status;
+            statusEl.textContent = message;
+        }
+
+        function initializeTerminal() {
+            term = new Terminal({
+                cursorBlink: true,
+                fontSize: 13,
+                fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                theme: {
+                    background: '#1e1e1e',
+                    foreground: '#d4d4d4',
+                    cursor: '#d4d4d4',
+                    black: '#000000',
+                    red: '#cd3131',
+                    green: '#0dbc79',
+                    yellow: '#e5e510',
+                    blue: '#2472c8',
+                    magenta: '#bc3fbc',
+                    cyan: '#11a8cd',
+                    white: '#e5e5e5',
+                    brightBlack: '#666666',
+                    brightRed: '#f14c4c',
+                    brightGreen: '#23d18b',
+                    brightYellow: '#f5f543',
+                    brightBlue: '#3b8eea',
+                    brightMagenta: '#d670d6',
+                    brightCyan: '#29b8db',
+                    brightWhite: '#e5e5e5'
+                }
+            });
+
+            fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+
+            term.open(document.getElementById('terminal'));
+            fitAddon.fit();
+
+            term.onKey(({ domEvent }) => {
+                if (domEvent.key === 'Tab') {
+                    domEvent.preventDefault();
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                if (fitAddon && term) {
+                    fitAddon.fit();
+
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows
+                        }));
+                    }
+                }
+            });
+        }
+
+        function connectWebSocket() {
+            setStatus('connecting', 'Connecting...');
+
+            // Cookie is automatically sent by browser
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                setStatus('connected', 'Connected to Slider console');
+                initializeTerminal();
+
+                term.onData(data => {
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(data);
+                    }
+                });
+
+                setTimeout(() => {
+                    fitAddon.fit();
+                    if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'resize',
+                            cols: term.cols,
+                            rows: term.rows
+                        }));
+                    }
+                }, 100);
+            };
+
+            ws.onmessage = (event) => {
+                if (event.data instanceof Blob) {
+                    event.data.arrayBuffer().then(buffer => {
+                        const text = new TextDecoder().decode(buffer);
+                        term.write(text);
+                    });
+                } else {
+                    term.write(event.data);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                setStatus('disconnected', 'Connection error');
+                if (term) {
+                    term.writeln('\r\n\x1b[31mWebSocket error occurred\x1b[0m');
+                }
+            };
+
+            ws.onclose = () => {
+                setStatus('disconnected', 'Disconnected from server');
+                if (term) {
+                    term.writeln('\r\n\x1b[33mConnection closed\x1b[0m');
+                }
+            };
+        }
+
+        // Auto-connect on page load
+        connectWebSocket();
+    </script>
+</body>
+
+</html>

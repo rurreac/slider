@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slider/pkg/conf"
 	"strings"
 	"sync"
 )
@@ -11,6 +12,11 @@ type CustomHistory struct {
 	entries []string
 	maxSize int
 	mu      sync.Mutex
+}
+
+var DefaultHistory = &CustomHistory{
+	entries: make([]string, 0),
+	maxSize: conf.DefaultHistorySize,
 }
 
 func (h *CustomHistory) Add(entry string) {

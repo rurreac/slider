@@ -13,18 +13,18 @@ import (
 )
 
 // newSftpConsole provides an interactive SFTP session
-func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
+func (s *server) newSftpConsole(ui *Console, session *Session, sftpClient *sftp.Client) {
 	// Get current directory
 	localCwd, clErr := os.Getwd()
 	if clErr != nil {
 		localCwd = ""
-		s.console.PrintError("Unable to determine local directory: %v", clErr)
+		ui.PrintError("Unable to determine local directory: %v", clErr)
 	}
 	// Get current remote directory for prompt
 	remoteCwd, crErr := sftpClient.Getwd()
 	if crErr != nil {
 		remoteCwd = ""
-		s.console.PrintError("Unable to determine remote directory: %v", crErr)
+		ui.PrintError("Unable to determine remote directory: %v", crErr)
 	}
 
 	// Set client and server info
@@ -67,22 +67,29 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 	}
 
 	// Print welcome message and help info
-	s.console.PrintInfo("Starting interactive session")
-	s.console.PrintInfo("Type \"help\" for available commands")
-	s.console.PrintInfo("Type \"exit\" or press \"CTRL^C\" to return to Console")
+	ui.PrintInfo("Starting interactive session")
+	ui.PrintInfo("Type \"help\" for available commands")
+	ui.PrintInfo("Type \"exit\" or press \"CTRL^C\" to return to Console")
 
 	// Initialize SFTP command registry
 	s.initSftpRegistry(session, sftpClient, &remoteCwd, &localCwd)
 
 	// Set the terminal prompt and autocomplete
-	s.console.Term.SetPrompt(sftpPrompt())
-	s.console.setSftpConsoleAutoComplete(session.sftpCommandRegistry)
+	ui.Term.SetPrompt(sftpPrompt())
+	ui.setSftpConsoleAutoComplete(session.sftpCommandRegistry)
 
 	// Replace Console History with own History for SFTP Session
-	s.console.Term.History = session.SftpHistory
+	// Save current history first
+	mainHistory := ui.Term.History
+	ui.Term.History = session.SftpHistory
+
+	defer func() {
+		// Restore main history when done
+		ui.Term.History = mainHistory
+	}()
 
 	for {
-		input, rErr := s.console.Term.ReadLine()
+		input, rErr := ui.Term.ReadLine()
 		if rErr != nil {
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
 			// line, error = "", io.EOF and kills the terminal.
@@ -99,14 +106,20 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 		if cmdParts[0] == "" {
 			continue
 		}
+
+		// Check for exit
+		if cmdParts[0] == "exit" {
+			return
+		}
+
 		command := strings.ToLower(cmdParts[0])
 		args := cmdParts[1:]
 
-		// Create execution context for SFTP console (with session)
+		// Create execution context
 		ctx := &ExecutionContext{
 			server:  s,
 			session: session,
-			ui:      &s.console,
+			ui:      ui,
 		}
 
 		// Process commands
@@ -116,7 +129,7 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			_ = s.commandRegistry.Execute(ctx, "shell", eArgs)
 		case "execute":
 			if len(args) < 1 {
-				s.console.PrintWarn("Nothing to execute\n")
+				ui.PrintWarn("Nothing to execute\n")
 				continue
 			}
 			// Prepend cd command to execute from remoteCwd
@@ -124,7 +137,6 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			commandWithCd := fmt.Sprintf("cd %s && %s", remoteCwd, commandStr)
 			eArgs := []string{"-s", fmt.Sprintf("%d", session.sessionID), commandWithCd}
 			_ = s.commandRegistry.Execute(ctx, "execute", eArgs)
-			continue
 		default:
 			// This is meant to be a command to execute locally
 			if after, ok := strings.CutPrefix(command, "!"); ok {
@@ -140,14 +152,12 @@ func (s *server) newSftpConsole(session *Session, sftpClient *sftp.Client) {
 			err := session.sftpCommandRegistry.Execute(ctx, command, args)
 			if err != nil {
 				if errors.Is(err, ErrExitConsole) {
-					// Set Console History back
-					s.console.Term.History = s.console.History
 					// Exit SFTP session
 					return
 				}
-				s.console.PrintError("Error: %v", err)
+				ui.PrintError("Error: %v", err)
 			}
-			s.console.Term.SetPrompt(sftpPrompt())
+			ui.Term.SetPrompt(sftpPrompt())
 		}
 	}
 }

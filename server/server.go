@@ -36,6 +36,7 @@ type server struct {
 	certTrackMutex       sync.Mutex
 	certJarFile          string
 	authOn               bool
+	fingerprint          string
 	certSaveOn           bool
 	caStoreOn            bool
 	keepalive            time.Duration
@@ -46,6 +47,9 @@ type server struct {
 	serverKey            ssh.Signer
 	httpVersion          bool
 	httpHealth           bool
+	httpDirIndex         bool
+	httpDirIndexPath     string
+	httpConsoleOn        bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry

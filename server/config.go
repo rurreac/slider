@@ -13,6 +13,7 @@ import (
 
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
+	"slider/pkg/listener"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
 
@@ -21,27 +22,31 @@ import (
 
 // ServerConfig holds all configuration for a server instance
 type ServerConfig struct {
-	Verbose      string
-	Address      string
-	Port         int
-	Keepalive    time.Duration
-	Colorless    bool
-	Auth         bool
-	CertJarFile  string
-	CaStore      bool
-	CaStorePath  string
-	TemplatePath string
-	ServerHeader string
-	HttpRedirect string
-	StatusCode   int
-	HttpVersion  bool
-	HttpHealth   bool
-	CustomProto  string
-	ListenerCert string
-	ListenerKey  string
-	ListenerCA   string
-	JsonLog      bool
-	CallerLog    bool
+	Verbose          string
+	Address          string
+	Port             int
+	Keepalive        time.Duration
+	Colorless        bool
+	Auth             bool
+	CertJarFile      string
+	CaStore          bool
+	CaStorePath      string
+	TemplatePath     string
+	ServerHeader     string
+	HttpRedirect     string
+	StatusCode       int
+	HttpVersion      bool
+	HttpHealth       bool
+	HttpDirIndex     bool
+	HttpDirIndexPath string
+	CustomProto      string
+	ListenerCert     string
+	ListenerKey      string
+	ListenerCA       string
+	JsonLog          bool
+	CallerLog        bool
+	Headless         bool
+	HttpConsole      bool
 }
 
 // RunServer starts a server with the given configuration
@@ -79,34 +84,38 @@ func RunServer(cfg *ServerConfig) {
 		sshConf: sshConf,
 		console: Console{
 			FirstRun: true,
-			History: &CustomHistory{
-				entries: make([]string, 0),
-				maxSize: conf.DefaultHistorySize,
-			},
+			History:  DefaultHistory,
 		},
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
-		certJarFile:  cfg.CertJarFile,
-		authOn:       cfg.Auth,
-		caStoreOn:    cfg.CaStore,
-		urlRedirect:  &url.URL{},
-		serverHeader: cfg.ServerHeader,
-		httpVersion:  cfg.HttpVersion,
-		httpHealth:   cfg.HttpHealth,
-		customProto:  cfg.CustomProto,
+		certJarFile:      cfg.CertJarFile,
+		authOn:           cfg.Auth,
+		caStoreOn:        cfg.CaStore,
+		urlRedirect:      &url.URL{},
+		serverHeader:     cfg.ServerHeader,
+		httpVersion:      cfg.HttpVersion,
+		httpHealth:       cfg.HttpHealth,
+		httpDirIndex:     cfg.HttpDirIndex,
+		httpDirIndexPath: cfg.HttpDirIndexPath,
+		httpConsoleOn:    cfg.HttpConsole,
+		customProto:      cfg.CustomProto,
 	}
 
+	// Set template path for HTML pages
 	if cfg.TemplatePath != "" {
-		tErr := conf.CheckTemplate(cfg.TemplatePath)
+		tErr := listener.CheckTemplate(cfg.TemplatePath)
 		if tErr != nil {
 			s.Fatalf("Wrong template: %s", tErr)
 		}
 		s.templatePath = cfg.TemplatePath
+	} else {
+		// Default to ./templates directory
+		s.templatePath = "templates"
 	}
 
 	s.statusCode = cfg.StatusCode
-	if !conf.CheckStatusCode(cfg.StatusCode) {
+	if !listener.CheckStatusCode(cfg.StatusCode) {
 		s.Warnf("Invalid status code \"%d\", will use \"%d\"", cfg.StatusCode, http.StatusOK)
 		s.statusCode = http.StatusOK
 	}
@@ -166,11 +175,13 @@ func RunServer(cfg *ServerConfig) {
 	s.CertificateAuthority = serverKeyPair.CertificateAuthority
 	s.sshConf.AddHostKey(s.serverKey)
 
-	serverFp, fErr := scrypt.GenerateFingerprint(s.serverKey.PublicKey())
+	// Generate server fingerprint
+	var fErr error
+	s.fingerprint, fErr = scrypt.GenerateFingerprint(s.serverKey.PublicKey())
 	if fErr != nil {
 		s.Fatalf("Failed to generate server fingerprint")
 	}
-	s.Infof("Server Fingerprint: %s", serverFp)
+	s.InfoWith("Initializing server", slog.F("fingerprint", s.fingerprint))
 
 	if cfg.Auth {
 		s.Warnf("Client Authentication enabled, a valid certificate will be required")
@@ -186,12 +197,12 @@ func RunServer(cfg *ServerConfig) {
 		s.sshConf.PublicKeyCallback = s.clientVerification
 	} else {
 		if s.certJarFile != "" {
-			s.Warnf("Client Authentication is disabled, Certs File %s will be ignored", s.certJarFile)
+			s.WarnWith("Client Authentication is disabled, certificates will be ignored", slog.F("cert_jar", s.certJarFile))
 		}
 	}
 
 	if cfg.HttpRedirect != "" {
-		wr, wErr := conf.ResolveURL(cfg.HttpRedirect)
+		wr, wErr := listener.ResolveURL(cfg.HttpRedirect)
 		if wErr != nil {
 			s.FatalWith("Bad Redirect URL", slog.F("url", cfg.HttpRedirect), slog.F("err", wErr))
 		}
@@ -222,11 +233,15 @@ func RunServer(cfg *ServerConfig) {
 			}
 			tlsConfig = scrypt.GetTLSClientVerifiedConfig(caPem)
 		}
+	} else {
+		if s.authOn && s.httpConsoleOn {
+			s.Fatalf("HTTP Console with authentication requires TLS")
+		}
 	}
 
 	s.Infof("Starting listener %s://%s", listenerProto, serverAddr.String())
 	go func() {
-		handler := http.Handler(http.HandlerFunc(s.handleHTTPClient))
+		handler := s.buildRouter()
 
 		if tlsOn {
 			httpSrv := &http.Server{
@@ -245,28 +260,36 @@ func RunServer(cfg *ServerConfig) {
 		}
 	}()
 
-	s.Printf("Press CTR^C to access the Slider Console")
-
 	// Capture Interrupt Signal to toggle log output and activate Console
-	var cmdOutput string
-	for consoleToggle := true; consoleToggle; {
+	if cfg.Headless {
+		// In headless mode, just wait for interrupt signal to exit
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-		for range sig {
-			// Stop capturing so we can capture as well on the console
-			signal.Stop(sig)
-			close(sig)
-			// Send logs to a buffer
-			s.LogToBuffer()
-			// Run a Slider Console (NewConsole locks until termination),
-			// 'cmdOutput' will always be equal to "bg" or "exit"
-			cmdOutput = s.NewConsole()
-			// Restore logs from buffer and resume output to stdout
-			s.BufferOut()
-			s.LogToStdout()
-		}
-		if cmdOutput == "exit" {
-			consoleToggle = false
+		<-sig
+		s.Infof("Received interrupt signal, shutting down...")
+	} else {
+		// Normal mode with console
+		s.Printf("Press CTR^C to access the Slider Console")
+		var cmdOutput string
+		for consoleToggle := true; consoleToggle; {
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+			for range sig {
+				// Stop capturing so we can capture as well on the console
+				signal.Stop(sig)
+				close(sig)
+				// Send logs to a buffer
+				s.LogToBuffer()
+				// Run a Slider Console (NewConsole locks until termination),
+				// 'cmdOutput' will always be equal to "bg" or "exit"
+				cmdOutput = s.NewConsole()
+				// Restore logs from buffer and resume output to stdout
+				s.BufferOut()
+				s.LogToStdout()
+			}
+			if cmdOutput == "exit" {
+				consoleToggle = false
+			}
 		}
 	}
 

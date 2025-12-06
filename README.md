@@ -53,76 +53,45 @@ But be aware that size wise the difference between a full build and a server or 
 and the more compression the less noticeable. 
 Generally speaking you would like to stick with the full binary.
 
-Currently Slider uses the following external dependencies:
-* [gorilla/websocket](https://github.com/gorilla/websocket) - implementation of the WebSocket Protocol
-* [creack/pty](https://github.com/creack/pty) - managing PTYs on *nix systems
-* [UserExistsError/conpty](https://github.com/UserExistsError/conpty) - managing PTYs on Windows Systems
-* [armon/go-socks5](https://github.com/armon/go-socks5) - using an existing network connection as socks transport
-* [pkg/sftp](https://github.com/pkg/sftp) - SFTP server side implementation
-
 
 ## Server
 
 ```
-Slider Server
-
-  Creates a new Slider Server instance and waits for
+Creates a new Slider Server instance and waits for
 incoming Slider Client connections on the defined port.
 
-  Interaction with Slider Clients can be performed through
+Interaction with Slider Clients can be performed through
 its integrated Console by pressing CTR^C at any time.
 
-Usage: <slider_server> [flags]
+Usage:
+  slider server [flags]
 
-  --verbose
-        Adds verbosity [debug|info|warn|error|off] (default info)  
-  --caller-log
-        Display caller information in logs (default false)  
-  --address
-        Server will bind to this address (default 0.0.0.0)  
-  --port
-        port where Server will listen (default 8080)  
-  --keepalive
-        Sets keepalive interval vs Clients (default 1m0s)  
-  --colorless
-        Disables logging colors (default false)  
-  --auth
-        Enables Key authentication of Clients (default false)  
-  --certs
-        Path of a valid slider-certs json file (default "")  
-  --ca-store
-        Store Server JSON with key and CA for later use (default false)  
-  --ca-store-path
-        Path for reading and/or storing a Server JSON (default "")  
-  --http-template
-        Path of a default file to serve (default "")  
-  --http-server-header
-        Sets a server header value (default "")  
-  --http-redirect
-        Redirects incoming HTTP to given URL (default "")  
-  --http-status-code
-        Status code [200|301|302|400|401|403|500|502|503] (default 200)  
-  --http-version
-        Enables /version HTTP path (default false)  
-  --http-health
-        Enables /health HTTP path (default false)  
-  --proto
-        Set your own proto string (default slider-v1)  
-  --listener-cert
-        Certificate for SSL listener (default "")  
-  --listener-key
-        Key for SSL listener (default "")  
-  --listener-ca
-        CA for verifying client certificates (default "")  
-
-Mutually required flags:
-
-  --listener-key                   
-  --listener-cert                  
-  --listener-cert, --listener-key
+Flags:
+      --address string               Server will bind to this address (default "0.0.0.0")
+      --auth                         Requires authentication throughout the server
+      --ca-store                     Store Server JSON with key and CA for later use
+      --ca-store-path string         Path for reading and/or storing a Server JSON
+      --caller-log                   Display caller information in logs
+      --certs string                 Path of a valid slider-certs json file
+      --colorless                    Disables logging colors
+      --headless                     Disables the internal console (CTR^C) and enables the Websocket Console
+  -h, --help                         help for server
+      --http-console                 Enables /console HTTP endpoint
+      --http-health                  Enables /health HTTP path
+      --http-redirect string         Redirects incoming HTTP to given URL
+      --http-server-header string    Sets a server header value
+      --http-status-code int         Status code [200|301|302|400|401|403|500|502|503] (default 200)
+      --http-template string         Path of a default file to serve
+      --http-version                 Enables /version HTTP path
+      --json-log                     Enables JSON formatted logging
+      --keepalive duration           Sets keepalive interval vs Clients (default 1m0s)
+      --listener-ca string           CA for verifying client certificates
+      --listener-cert string         Certificate for SSL listener
+      --listener-key string          Key for SSL listener
+      --port int                     port where Server will listen (default 8080)
+      --proto string                 Set your own proto string (default "slider-v1")
+      --verbose string               Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
-
-![Sever](./doc/server.gif)
 
 ### Environment Variables
 
@@ -150,9 +119,8 @@ Local address to bind to. By default, Slider binds to all local addresses
 ##### `--auth` and `--certs`:
 By default, Slider Clients do not require any authentication to connect to Server.
 
-* `--auth`: Enables and requires SSH Key-Based authentication to all Clients.
-* `--certs`: Is an optional parameter, holding the path of a Certificate Jar file. This flag requires authentication is
-  enabled.
+* `--auth`: Requires key authentication to all Clients. If `--http-console` is enabled, the web console will require fingerprint authentication.
+* `--certs`: Is an optional parameter, holding the path of a Certificate Jar file. This flag requires authentication to be enabled.
 
 When `--auth` is passed, a few things will and may happen:
 1. If `--certs` flag is not provided:
@@ -171,12 +139,8 @@ environment variable.
 The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CERT_JAR](#slider_cert_jar)" + `/.certs`
 on *nix hosts, or `\certs` on Windows hosts.
 
-![Sever Auth](./doc/server_auth.gif)
-
-##### `--json-log` (development only):
-Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). This is useful for log aggregation systems and automated log parsing.
-
-Since the Server is only interactive at the moment through the Console, using this flag in production is not really useful so it's only available in development mode.
+##### `--json-log`:
+Enables JSON formatted logging output. When enabled, all log messages will be output in JSON format with structured fields including timestamp, scope, level, message, and caller information (if `--caller-log` is also enabled). Might be useful for log aggregation systems, automated log parsing.
 
 ##### `--caller-log` (development only):
 Enables display of caller information (file name and line number) in log messages. This helps with debugging by showing exactly where each log message originated in the code. Works with both standard and JSON formatted logs.
@@ -217,7 +181,16 @@ Disabled by default, it will serve a JSON with current Proto and Slider version 
 ##### `--http-redirect`:
 A redirect parameter must be at least a URL with a valid scheme and host (`http[s]://<host>[:<port>]`).
 
-HTTP connections will be redirected to the given URL, while Slider connections will proceed as usual.
+HTTP connections to the root path `/` will be redirected to the given URL, while the rest of the connections will proceed as usual.
+
+##### `--http-console`:
+Disabled by default. If enabled, it will serve the Slider Server Console at `/console` using xterm.js which connects to the Websocket Console. 
+If `--auth` is enabled then authentication will be required to access the Websocket Console. 
+In order to avoid sending credentials in plain text, enabling authentication also requires the server using TLS, otherwise it will refuse to start.
+If `--http-template` and `--http-redirect` are not provided, then the root path will redirect you to the authentication page (if `auth` is enabled) or directly to the console (if `auth` is disabled).
+
+##### `--headless`:
+Disabled by default. If enabled, it will disable the internal Console (accessed by CTR^C) and enable the Websocket Console.
 
 ##### `--verbose`:
 Choose the log level verbosity between debug, info, warn and error. When verbosity is set to `off` only non labeled and
@@ -356,8 +329,6 @@ the `-i` flag to specify the certificate ID that corresponds to the fingerprint 
 Depending on configuration, a TLS Listener may require you to provide a valid certificate for client authentication. 
 In this case, you can provide a certificate and key (flags `-c`, `-k`) signed with the same CA.
 
-![Console Connect](./doc/console_connect.gif)
-
 ##### Execute
 ```
 Slider# execute -h
@@ -387,9 +358,7 @@ Considerations on `execute`:
 
 If you need something more interactive or don't want to keep the console busy, consider using `ssh` or `shell` commands.
 
-![Console Execute](./doc/console_execute.gif)
-
-##### Socks
+##### SOCKS
 ```
 Slider# socks -h
 Usage: socks [flags]
@@ -415,8 +384,6 @@ or a port randomly selected if not specified.
 If a port is not specified using the `-p` flag, it will be automatically assigned.
 
 By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
-
-![Console Socks](./doc/console_socks.gif)
 
 ##### SSH
 ```
@@ -523,26 +490,38 @@ Mutually exclusive flags:
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be available.
 
 Usually if the Server was run with `--auth` enabled there will be at least 1 KeyPair in the Certificate Jar.
-The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the
-Server.
+The Private Key contained within the Keypair can be passed to the client so that it will authenticate against the Server.
 
-Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. Using the `-d`
-flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH
-endpoint (ssh, sftp, scp, ...).
+Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. 
+Using the `-d`flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH endpoint (ssh, sftp, scp, ...).
 
-Note that when dumping certificates `SLIDER_CERT_JAR`, defines if the Certificate with the given ID is saved or not, 
-by default, it will be stored locally, and you'll get the path.
+Note that when dumping certificates, `SLIDER_CERT_JAR` defines if the Certificate with the given ID is saved or not, by default, it will be stored locally, and you'll get the path.
 If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
 
-We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates
-for creating TLS listeners.
-If the server was run with the `--ca-store` flag, the CA certificate and key will be saved to disk, otherwise since it
-is ephemeral it will be just dump to the console.
+We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates for creating TLS listeners.
+If the server was run with the `--ca-store` flag, the CA certificate and key will be saved to disk, otherwise since it is ephemeral it will be just dump to the console.
 
 If we generated our own certificates for server or client listeners with this CA, we can also provide this CA to authenticate
 listener client certificates.
 
-![Console Certs](./doc/console_certs.gif)
+Once you have the dump the CA certificate and key, you can use them to create your own certificates for client listeners as in the example below:
+
+1. Generate ECDSA/prime256v1 key:
+```
+c_name="http-listener"
+openssl ecparam -genkey -name prime256v1 -out $c_name.key
+```
+      While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
+2. Generate certificate (replace host/IP as necessary):
+```
+openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
+-addext "subjectAltName = DNS:localhost,IP:127.0.0.1"
+```
+3. Sign certificate using CA:
+```
+openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
+-CAcreateserial -out signed-$c_name.crt -days 9999 -sha256 -copy_extensions copyall
+```
 
 ##### Portfwd
 ```
@@ -570,93 +549,39 @@ the SSH client.
 ## Client
 
 ```
-Slider Client
-
 Creates a new Slider Client instance and connects
 to the defined Slider Server.
 
-Usage: <slider_client> [flags] [<[server_address]:port>]
+Usage:
+  slider client [server_address] [flags]
 
-  --verbose
-        Adds verbosity [debug|info|warn|error|off] (default info)  
-  --json-log
-        Enables JSON formatted logging (default false)  
-  --caller-log
-        Display caller information in logs (default false)  
-  --keepalive
-        Sets keepalive interval in seconds. (default 1m0s)  
-  --colorless
-        Disables logging colors (default false)  
-  --fingerprint
-        Server fingerprint for host verification (listener) (default "")  
-  --key
-        Private key for authenticating to a Server (default "")  
-  --listener
-        Client will listen for incoming Server connections (default false)  
-  --port
-        Listener port (default 8081)  
-  --address
-        Address the Listener will bind to (default 0.0.0.0)  
-  --retry
-        Retries reconnection indefinitely (default false)  
-  --http-template
-        Path of a default file to serve (listener) (default "")  
-  --http-server-header
-        Sets a server header value (listener) (default "")  
-  --http-redirect
-        Redirects incoming HTTP to given URL (listener) (default "")  
-  --http-status-code
-        Template Status code [200|301|302|400|401|403|500|502|503] (listener) (default 200)  
-  --http-version
-        Enables /version HTTP path (default false)  
-  --http-health
-        Enables /health HTTP path (default false)  
-  --dns
-        Uses custom DNS server <host[:port]> for resolving server address (default "")  
-  --proto
-        Set your own proto string (default slider-v1)  
-  --listener-cert
-        Certificate for SSL listener (default "")  
-  --listener-key
-        Key for SSL listener (default "")  
-  --listener-ca
-        CA for verifying client certificates (default "")  
-  --tls-cert
-        TLS client Certificate (default "")  
-  --tls-key
-        TLS client Key (default "")  
-
-Mutually exclusive flags:
-
-  --listener, --key       
-  --listener, --dns       
-  --listener, --retry     
-  --listener, --tls-cert  
-  --listener, --tls-key   
-
-Mutually required flags:
-
-  --listener, --listener-key                   
-  --listener, --listener-cert                  
-  --listener, --listener-cert, --listener-key  
-
-Flag "--listener" with status "false" is incompatible with flags:
-
-  --address             
-  --port                
-  --fingerprint         
-  --http-template       
-  --http-server-header  
-  --http-redirect       
-  --http-status-code    
-  --http-version        
-  --http-health         
-  --listener-cert       
-  --listener-key        
-  --listener-ca        
+Flags:
+      --address string              Address the Listener will bind to (default "0.0.0.0")
+      --caller-log                  Display caller information in logs
+      --colorless                   Disables logging colors
+      --dns string                  Uses custom DNS server <host[:port]> for resolving server address
+      --fingerprint string          Server fingerprint for host verification (listener)
+  -h, --help                        help for client
+      --http-health                 Enables /health HTTP path
+      --http-redirect string        Redirects incoming HTTP to given URL (listener)
+      --http-server-header string   Sets a server header value (listener)
+      --http-status-code int        Template Status code [200|301|302|400|401|403|500|502|503] (listener) (default 200)
+      --http-template string        Path of a default file to serve (listener)
+      --http-version                Enables /version HTTP path
+      --json-log                    Enables JSON formatted logging
+      --keepalive duration          Sets keepalive interval in seconds (default 1m0s)
+      --key string                  Private key for authenticating to a Server
+      --listener                    Client will listen for incoming Server connections
+      --listener-ca string          CA for verifying server certificates (mTLS)
+      --listener-cert string        Certificate for SSL listener
+      --listener-key string         Key for SSL listener
+      --port int                    Listener port (default 8081)
+      --proto string                Set your own proto string (default "slider-v1")
+      --retry                       Retries reconnection indefinitely
+      --tls-cert string             TLS client Certificate
+      --tls-key string              TLS client Key
+      --verbose string              Adds verbosity [debug|info|warn|error|off] (default "info")
 ```
-
-![Client](./doc/client.gif)
 
 ### Client Flags Overview
 
@@ -746,13 +671,50 @@ The provided certificate must have been generated using the same CA.
 The same considerations as for the server apply.
 
 
-## Credits
+## Hook
 
-This project is built on top the idea of using SSH over a websocket connection. 
+```
+Connects to a Slider Server's web console endpoint (/console/ws)
+and provides access to a remote slider console through your local terminal.
 
-The concept is not new, there are quite a few online services for such matter and if you are interested only on 
-traversing through networks, then should definitively check [Chisel](https://github.com/jpillora/chisel) out, which 
-brought us here and is way more versed and versatile in this matter.
+Usage:
+  slider hook [flags] <server_url>
 
-Lastly, all console captures were taken using [VHS](https://github.com/charmbracelet/vhs). Tape samples in 
-the [doc](./doc) folder.
+Flags:
+      --ca string            CA certificate for server verification
+      --client-cert string   Client certificate for mTLS
+      --client-key string    Client private key for mTLS
+      --fingerprint string   Certificate fingerprint for authentication
+  -h, --help                 help for hook
+      --server-name string   Server name for TLS verification
+```
+
+The `hook` command provides a way to connect to a Slider Server's web console directly from your local terminal, without needing a web browser. This might be useful if:
+* Accessing the server console from remote environments without a graphical interface
+* Automating console interactions through scripts
+* Connecting to servers in headless mode
+
+### Hook Flags Overview
+
+##### `--fingerprint`:
+When the server has authentication enabled (`--auth`), you must provide a valid certificate fingerprint to authenticate. The hook command will:
+1. Exchange the fingerprint for a JWT token via the `/auth/token` endpoint
+2. Use the JWT token to authenticate the WebSocket connection to `/console/ws`
+
+This flag is required when connecting to servers with `--auth` enabled.
+
+##### `--client-cert` and `--client-key`:
+When connecting to a server that uses TLS with client certificate verification (`--listener-ca`), you must provide a valid client certificate and private key. These must be signed by the same CA that the server trusts.
+
+These flags are mutually required - if you provide one, you must provide the other.
+
+##### `--ca`:
+Specifies a CA certificate to verify the server's TLS certificate. Consider using this flag if:
+* The server uses a self-signed certificate
+* You want to verify the server's identity against a specific CA
+
+When using this flag, you should also provide `--server-name` to specify the expected server name.
+
+##### `--server-name`:
+Specifies the server name for TLS verification. This is used in combination with `--ca` to verify that the server's certificate matches the expected server name.
+

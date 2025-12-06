@@ -11,6 +11,8 @@ type UserInterface interface {
 	PrintError(format string, args ...any)
 	PrintSuccess(format string, args ...any)
 	PrintDebug(format string, args ...any)
+	PrintlnGreyOut(format string, args ...any)
 	Printf(format string, args ...any)
+	clearScreen()
 	Writer() io.Writer
 }
