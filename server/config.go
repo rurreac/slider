@@ -39,7 +39,6 @@ type ServerConfig struct {
 	HttpHealth       bool
 	HttpDirIndex     bool
 	HttpDirIndexPath string
-	HttpApiOn        bool
 	CustomProto      string
 	ListenerCert     string
 	ListenerKey      string

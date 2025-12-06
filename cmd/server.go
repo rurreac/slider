@@ -41,7 +41,6 @@ var (
 	sHttpHealth       bool
 	sHttpDirIndex     bool
 	sHttpDirIndexPath string
-	sHttpApiOn        bool
 	sCustomProto      string
 	sListenerCert     string
 	sListenerKey      string
@@ -111,7 +110,6 @@ func runServer(cmd *cobra.Command, args []string) error {
 		HttpHealth:       sHttpHealth,
 		HttpDirIndex:     sHttpDirIndex,
 		HttpDirIndexPath: sHttpDirIndexPath,
-		HttpApiOn:        sHttpApiOn,
 		CustomProto:      sCustomProto,
 		ListenerCert:     sListenerCert,
 		ListenerKey:      sListenerKey,
