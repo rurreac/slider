@@ -1,9 +1,9 @@
 package main
 
 import (
-	"slider/cmd"
+	"slider/server"
 )
 
 func main() {
-	cmd.RunServerCommand()
+	server.RunStandalone()
 }

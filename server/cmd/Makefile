@@ -58,21 +58,21 @@ list:
 .PHONY: macos-arm64-server
 macos-arm64-server:
 	@echo "Building Server for macOS (arm64)..."
-	GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-darwin-arm64 main.go
+	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-darwin-arm64 main.go
 	$(warning WARNING: UPX compression is not supported for macOS binaries.)
 
 # macOS (amd64)
 .PHONY: macos-amd64-server
 macos-amd64-server:
 	@echo "Building Server for macOS (amd64)..."
-	GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-darwin-amd64 main.go
+	GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-darwin-amd64 main.go
 	$(warning WARNING: UPX compression is not supported for macOS binaries.)
 
 # Windows (x86)
 .PHONY: windows-x86-server
 windows-x86-server:
 	@echo "Building Server for Windows (x86)..."
-	GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-x86.exe main.go
+	GOOS=windows GOARCH=386 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-x86.exe main.go
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-server-windows-x86.exe || echo "UPX compression failed, using uncompressed binary"
@@ -82,7 +82,7 @@ endif
 .PHONY: windows-amd64-server
 windows-amd64-server:
 	@echo "Building Server for Windows (amd64)..."
-	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-amd64.exe main.go
+	GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-amd64.exe main.go
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-server-windows-amd64.exe || echo "UPX compression failed, using uncompressed binary"
@@ -92,14 +92,14 @@ endif
 .PHONY: windows-arm64-server
 windows-arm64-server:
 	@echo "Building Server for Windows (arm64)..."
-	GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-arm64.exe main.go
+	GOOS=windows GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-windows-arm64.exe main.go
 	@echo "Note: UPX doesn't fully support Windows ARM64 binaries yet"
 
 # Linux (x86)
 .PHONY: linux-x86-server
 linux-x86-server:
 	@echo "Building Server for Linux (x86)..."
-	GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-x86 main.go
+	GOOS=linux GOARCH=386 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-x86 main.go
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-server-linux-x86 || echo "UPX compression failed, using uncompressed binary"
@@ -109,7 +109,7 @@ endif
 .PHONY: linux-amd64-server
 linux-amd64-server:
 	@echo "Building Server for Linux (amd64)..."
-	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-amd64 main.go
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-amd64 main.go
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-server-linux-amd64 || echo "UPX compression failed, using uncompressed binary"
@@ -119,7 +119,7 @@ endif
 .PHONY: linux-arm64-server
 linux-arm64-server:
 	@echo "Building Server for Linux (arm64)..."
-	GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-arm64 main.go
+	GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o $(BUILD_DIR)/slider-server-linux-arm64 main.go
 ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-server-linux-arm64 || echo "UPX compression failed, using uncompressed binary"
