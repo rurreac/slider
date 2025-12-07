@@ -63,32 +63,7 @@ builds:
         goarch: arm64
         goamd64: v1
 
-  - id: client
-    binary: slider-client_{{ .Os }}_{{ .Arch }}
-    main: ./client/cmd/main.go
-    flags:
-      - -trimpath
-    ldflags:
-      - -s -w
-      - -X slider/pkg/conf.version={{.Version}}
-      - -X slider/pkg/conf.binOS={{.Os}}
-      - -X slider/pkg/conf.binArch={{.Arch}}
-      - -X slider/pkg/conf.commit={{.Commit}}
-      - -X slider/pkg/conf.date={{.Date}}
-      - -X slider/pkg/conf.goVer={{.Env.GOVERSION}}
-    env:
-      - CGO_ENABLED=0
-      - GOVERSION={{ .Env.GOVERSION }}
-    goos: ['darwin', 'linux', 'windows']
-    goarch: [ '386', 'amd64', 'arm64' ]
-    ignore:
-      - goos: 'darwin'
-        goarch: '386'
-    no_unique_dist_dir: true
-    overrides:
-      - goos: darwin
-        goarch: arm64
-        goamd64: v1
+
 
 
 changelog:
