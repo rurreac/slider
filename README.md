@@ -11,13 +11,14 @@ Slider can be used to:
 * Run commands remotely, 
 * Upload / download files, 
 * Run a reverse socks v5 server, 
+* Port forwarding,
+and more.
 
 All through a cyphered connection, while allowing clients and servers authenticate and verify each other through
 [Ed25519](https://ed25519.cr.yp.to/) key pairs.
 
 ## How does it work?
-In a normal scenario, a Slider Server runs a web server on a given port, waiting for Slider clients to establish websocket
-connections. 
+In a normal scenario, a Slider Server runs a web server on a given port, waiting for Slider clients to establish websocket connections. 
 
 Those websocket connections are then transformed into network connections which are then reused to create an SSH Server on
 the Server side and an SSH Client on the Client side, encrypting this way the connection and providing a way to authenticate
@@ -34,9 +35,8 @@ For the sake of keeping the size contained, external libraries are used when the
 drastically simplify the core functionality, while for the rest, only the Standard Library is used.
 
 Currently, if compiled omitting the symbol table and debug information and omitting the DWARF symbol table 
-(`-ldflags "-s -w"`), the size is kept below 6mb. 
-If also compressing it using [UPX](https://github.com/upx/upx) with the `--brute` flag, the size is kept somewhere 
-around 2mb.
+(`-ldflags "-s -w"`), in some cases, the size is kept below 6mb. 
+If also compressing it using [UPX](https://github.com/upx/upx) with the `--brute` flag, the size is kept somewhere around 3mb.
 
 Slider Release Binaries are already compressed with [UPX](https://github.com/upx/upx) if supported.
 
