@@ -62,10 +62,6 @@ builds:
       - goos: darwin
         goarch: arm64
         goamd64: v1
-
-
-
-
 changelog:
   sort: asc
   filters:
