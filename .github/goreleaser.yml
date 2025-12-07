@@ -1,3 +1,4 @@
+version: 2
 before:
   hooks:
     - go mod tidy
@@ -96,7 +97,7 @@ archives:
     #
     # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, and `binary`.
     # Default: 'tar.gz'
-    format: tar.gz
+    formats: ['tar.gz']
     format_overrides:
       - # Which GOOS to override the format for.
         goos: windows
@@ -104,4 +105,4 @@ archives:
         # The format to use for the given GOOS.
         #
         # Valid options are `tar.gz`, `tgz`, `tar.xz`, `txz`, tar`, `gz`, `zip`, `binary`, and `none`.
-        format: zip
+        formats: ['zip']
