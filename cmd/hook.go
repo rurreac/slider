@@ -9,9 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"slider/pkg/listener"
 
@@ -276,38 +274,23 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 	}()
 
 	// Goroutine: Handle terminal resize
-	go func() {
-		sigwinch := make(chan os.Signal, 1)
-		signal.Notify(sigwinch, syscall.SIGWINCH)
-		defer signal.Stop(sigwinch)
-
-		for {
-			select {
-			case <-done:
-				return
-			case <-sigwinch:
-				width, height, err := term.GetSize(int(os.Stdin.Fd()))
-				if err == nil {
-					// Use struct to ensure consistent JSON field ordering
-					resizeMsg := struct {
-						Type string `json:"type"`
-						Cols int    `json:"cols"`
-						Rows int    `json:"rows"`
-					}{
-						Type: "resize",
-						Cols: width,
-						Rows: height,
-					}
-					if data, err := json.Marshal(resizeMsg); err == nil {
-						_ = wsConn.WriteMessage(websocket.TextMessage, data)
-					}
-				}
-			}
-		}
-	}()
+	go monitorWindowResize(wsConn, done)
 
 	// Send initial terminal size
-	if width, height, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+	sendTermSize(wsConn)
+
+	// Connection closed by server (e.g., exit command) - this is normal
+	<-connClosed
+
+	// Signal all goroutines to stop
+	close(done)
+
+	return nil
+}
+
+func sendTermSize(conn *websocket.Conn) {
+	width, height, err := term.GetSize(int(os.Stdin.Fd()))
+	if err == nil {
 		// Use struct to ensure consistent JSON field ordering
 		resizeMsg := struct {
 			Type string `json:"type"`
@@ -319,15 +302,7 @@ func connectToConsole(baseURL *url.URL, token string, tlsConfig *tls.Config) err
 			Rows: height,
 		}
 		if data, err := json.Marshal(resizeMsg); err == nil {
-			_ = wsConn.WriteMessage(websocket.TextMessage, data)
+			_ = conn.WriteMessage(websocket.TextMessage, data)
 		}
 	}
-
-	// Connection closed by server (e.g., exit command) - this is normal
-	<-connClosed
-
-	// Signal all goroutines to stop
-	close(done)
-
-	return nil
 }
