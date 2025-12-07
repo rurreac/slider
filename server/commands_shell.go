@@ -7,9 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/signal"
 	"slider/pkg/conf"
-	"syscall"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -240,18 +238,7 @@ func (ic *InteractiveConsole) Run() error {
 		}
 
 		// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
-		go func() {
-			sig := make(chan os.Signal, 1)
-			signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-			for range sig {
-				// Stop capture
-				signal.Stop(sig)
-				close(sig)
-				if cErr := conn.Close(); cErr != nil {
-					ic.ui.PrintDebug("Failed to close Shell connection - %v", cErr)
-				}
-			}
-		}()
+		go ic.CaptureInterrupts(conn)
 	}
 
 	// Clear screen (Windows Command Prompt already does that)
