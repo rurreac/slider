@@ -49,6 +49,7 @@ func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
 
 	// Set Console
 	s.console.Term = term.NewTerminal(screen, getPrompt())
+	s.console.ReadWriter = screen
 	s.console.setConsoleAutoComplete(registry)
 	s.console.Term.History = s.console.History
 

@@ -4,12 +4,13 @@ package interpreter
 
 import (
 	"fmt"
-	"github.com/UserExistsError/conpty"
-	"golang.org/x/sys/windows"
 	"os"
 	"os/user"
 	"runtime"
 	"strings"
+
+	"github.com/UserExistsError/conpty"
+	"golang.org/x/sys/windows"
 )
 
 const (
