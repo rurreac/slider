@@ -48,7 +48,7 @@ For building binaries with the same compression level as the ones available for 
 make <TARGET> UPX_BRUTE=yes
 ```
 Makefiles for building [Server](server/cmd) or [Client](client/cmd) only, are also included just in case it fits best your purpose. 
-The combined Slider Server/Client binary is the recommended way to go but standalone Client binaries are available for download as well.
+The combined Slider Server/Client binary is the recommended way to go. For those binaries that allow UPX packing, the final size of a standalone binary is practically identical to the combined binary.
 
 ## Server
 
