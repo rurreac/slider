@@ -14,13 +14,13 @@ import (
 
 // newSftpConsole provides an interactive SFTP session
 func (s *server) newSftpConsole(ui *Console, session *Session, sftpClient *sftp.Client) {
-	// Get current directory
+	// Get the current directory
 	localCwd, clErr := os.Getwd()
 	if clErr != nil {
 		localCwd = ""
 		ui.PrintError("Unable to determine local directory: %v", clErr)
 	}
-	// Get current remote directory for prompt
+	// Get the current remote directory for prompt
 	remoteCwd, crErr := sftpClient.Getwd()
 	if crErr != nil {
 		remoteCwd = ""
@@ -28,8 +28,19 @@ func (s *server) newSftpConsole(ui *Console, session *Session, sftpClient *sftp.
 	}
 
 	// Set client and server info
-	cliHomeDir := session.clientInterpreter.HomeDir
-	cliSystem := strings.ToLower(session.clientInterpreter.System)
+	// Set client and server info
+	cliHomeDir := ""
+	cliSystem := "linux"
+	cliUser := "remote"
+	cliHostname := "remote"
+
+	if session.clientInterpreter != nil {
+		cliHomeDir = session.clientInterpreter.HomeDir
+		cliSystem = strings.ToLower(session.clientInterpreter.System)
+		cliUser = strings.ToLower(session.clientInterpreter.User)
+		cliHostname = strings.ToLower(session.clientInterpreter.Hostname)
+	}
+
 	svrSystem := strings.ToLower(s.serverInterpreter.System)
 
 	// Fixing some path inconsistencies between SFTP client and server
@@ -44,9 +55,6 @@ func (s *server) newSftpConsole(ui *Console, session *Session, sftpClient *sftp.
 	if cliSystem != "windows" && svrSystem == "windows" {
 		remoteCwd = strings.ReplaceAll(remoteCwd, "\\", "/")
 	}
-
-	cliUser := strings.ToLower(session.clientInterpreter.User)
-	cliHostname := strings.ToLower(session.clientInterpreter.Hostname)
 
 	// Define SFTP prompt
 	sftpPrompt := func() string {

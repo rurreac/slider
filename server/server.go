@@ -8,9 +8,11 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
 	"slider/pkg/slog"
+	"slider/server/remote"
 )
 
 const (
@@ -45,14 +47,23 @@ type server struct {
 	serverHeader         string
 	statusCode           int
 	serverKey            ssh.Signer
+	port                 int
 	httpVersion          bool
 	httpHealth           bool
 	httpDirIndex         bool
 	httpDirIndexPath     string
 	httpConsoleOn        bool
+	promiscuous          bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry
+	remoteSessions       map[string]*RemoteSessionState
+	remoteSessionsMutex  sync.Mutex
+}
+
+type RemoteSessionState struct {
+	SocksInstance *instance.Config
+	SSHInstance   *instance.Config
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -73,4 +84,28 @@ func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*
 	s.WarnWith("Rejected client", slog.F("addr", conn.RemoteAddr()), slog.F("fingerprint", fp))
 
 	return nil, fmt.Errorf("client key not authorized")
+}
+
+// GetLogger returns the server logger
+func (s *server) GetLogger() *slog.Logger {
+	return s.Logger
+}
+
+// GetInterpreter returns the server interpreter
+func (s *server) GetInterpreter() *interpreter.Interpreter {
+	return s.serverInterpreter
+}
+
+// GetSession retrieves a session by ID
+func (s *server) GetSession(id int) (remote.Session, error) {
+	sess, err := s.getSession(id)
+	if err != nil {
+		return nil, err
+	}
+	return sess, nil
+}
+
+// GetKeepalive returns the keepalive duration in seconds
+func (s *server) GetKeepalive() int {
+	return int(s.keepalive.Seconds())
 }

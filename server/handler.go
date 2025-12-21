@@ -95,12 +95,15 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	)
 
 	session := s.newWebSocketSession(wsConn)
-	defer s.dropWebSocketSession(session)
+	defer func() {
+		s.dropWebSocketSession(session)
+		s.NotifyUpstreamDisconnect(session.sessionID)
+	}()
 
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string) {
+func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
 	wsURL, wErr := listener.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
@@ -134,9 +137,14 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		}
 
 	}
+	operation := "server"
+	if promiscuous {
+		operation = "client"
+	}
+
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
 		"Sec-WebSocket-Protocol":  {customProto},
-		"Sec-WebSocket-Operation": {"server"},
+		"Sec-WebSocket-Operation": {operation},
 	})
 	if err != nil {
 		s.ErrorWith("Failed to open WebSocket connection", slog.F("url", wsURL), slog.F("err", err))
@@ -172,17 +180,23 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 	}
 	session.setSSHConf(&sshConf)
 
-	s.NewSSHServer(session)
+	session.setSSHConf(&sshConf)
+
+	if promiscuous {
+		// If connecting in promiscuous mode, we act as a client
+		s.NewSSHClient(session)
+	} else {
+		// Standard connection, we act as a server
+		s.NewSSHServer(session)
+	}
 
 }
 
 // handleWebSocketConsole upgrades HTTP to WebSocket and bridges to a PTY console
 func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) error {
 	if s.authOn {
-		// Extract token from cookie (web browsers) or query parameter (legacy/direct connections)
+		// Extract token from cookie or query parameter
 		token := extractTokenFromRequest(r)
-
-		// Fallback to query parameter if no cookie found
 		if token == "" {
 			token = r.URL.Query().Get("token")
 		}
@@ -212,11 +226,9 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 			slog.F("cert_id", certID))
 	}
 
-	// Configure WebSocket upgrader
 	upgrader := listener.DefaultWebSocketUpgrader
 	upgrader.CheckOrigin = func(r *http.Request) bool {
-		// Allow all origins for now - can be restricted later
-		return true
+		return true // Allow all origins
 	}
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)

@@ -1,5 +1,7 @@
 package types
 
+import "golang.org/x/crypto/ssh"
+
 // PtyRequest is the structure of an SSH_MSG_CHANNEL_REQUEST
 // "pty-req" as described in RFC4254
 // https://datatracker.ietf.org/doc/html/rfc4254#section-6.2
@@ -37,9 +39,18 @@ type TcpIpReqSuccess struct {
 	BoundPort uint32
 }
 
+// CustomTcpIpChannelMsg is a wrapper for TcpIpChannelMsg to include the channel
 type CustomTcpIpChannelMsg struct {
 	IsSshConn bool
 	*TcpIpChannelMsg
+	Channel ssh.Channel
+}
+
+// ForwardRequestPayload defines the payload for slider-forward-request
+type ForwardRequestPayload struct {
+	Target  []int64
+	ReqType string
+	Payload []byte
 }
 
 type CustomTcpIpFwdRequest struct {

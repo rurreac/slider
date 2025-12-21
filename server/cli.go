@@ -37,6 +37,7 @@ func NewCommand() *cobra.Command {
 		callerLog        bool
 		headless         bool
 		httpConsole      bool
+		promiscuous      bool
 	)
 
 	cmd := &cobra.Command{
@@ -77,6 +78,7 @@ its integrated Console by pressing CTR^C at any time.`,
 				CallerLog:        callerLog,
 				Headless:         headless,
 				HttpConsole:      httpConsole,
+				Promiscuous:      promiscuous,
 			}
 
 			// Call the RunServer function
@@ -107,6 +109,7 @@ its integrated Console by pressing CTR^C at any time.`,
 	cmd.Flags().StringVar(&listenerCA, "listener-ca", "", "CA for verifying client certificates")
 	cmd.Flags().BoolVar(&headless, "headless", false, "Disables the internal console (CTR^C) and enables the Websocket Console")
 	cmd.Flags().BoolVar(&httpConsole, "http-console", false, "Enables /console HTTP endpoint")
+	cmd.Flags().BoolVar(&promiscuous, "promiscuous", false, "Enables Promiscuous mode (allows server chaining)")
 	cmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
 	if conf.Version == "development" {
 		cmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
