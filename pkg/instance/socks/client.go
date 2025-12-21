@@ -99,57 +99,42 @@ func (c *Client) ConnectViaSocks(destination types.TcpIpChannelMsg, clientChanne
 
 // performHandshake performs a SOCKS5 handshake following RFC1928
 func (c *Client) performHandshake(socksChannel io.ReadWriter, destination types.TcpIpChannelMsg) error {
-	// Start with SOCKS5 handshake:
-	// - protocol version (5) +
-	// - number of authentication methods +
-	// - auth (0 for no auth)
+	// Send SOCKS5 greeting: version 5, 1 method, no auth (0x00)
 	_, _ = socksChannel.Write([]byte{0x05, 0x01, 0x00})
 
-	// Read the server response
+	// Read server response
 	respBuf := make([]byte, 2)
 	_, err := socksChannel.Read(respBuf)
 	if err != nil {
 		return fmt.Errorf("could not read socks5 handshake response - %v", err)
 	}
 
-	// Answer must be:
-	// - protocol version (5) +
-	// - success (0)
+	// Verify response: version 5, method accepted (0x00)
 	if respBuf[0] != 0x05 || respBuf[1] != 0x00 {
 		return fmt.Errorf("invalid socks5 handshake response - %v", respBuf)
 	}
 
-	// Send connect request to the destination:
-	// - protocol version (5) +
-	// - connect command (1) +
-	// - RSV (reserved) +
-	// - ATYP (address type of following address, assumes "domainname" 3)
-	// - destination host
-	// - destination port (2 bytes length)
+	// Build connect request: version, command (CONNECT=1), reserved, address type (domain=3), host, port
 	req := []byte{0x05, 0x01, 0x00, 0x03, byte(len(destination.DstHost))}
 	req = append(req, []byte(destination.DstHost)...)
 
-	// Add port in network byte order (big endian)
 	portBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(portBytes, uint16(destination.DstPort))
 	req = append(req, portBytes...)
 
-	// Send connect request
 	_, err = socksChannel.Write(req)
 	if err != nil {
 		return fmt.Errorf("could not write socks5 handshake connect request - %v", err)
 	}
 
-	// Read connect response
+	// Read connect response header
 	respHdr := make([]byte, 4)
 	_, err = socksChannel.Read(respHdr)
 	if err != nil {
 		return fmt.Errorf("could not read socks5 handshake connect response - %v", err)
 	}
 
-	// Check if connection was successful:
-	// - socks version (5) +
-	// - success (0)
+	// Verify connection success: version 5, status success (0x00)
 	if respHdr[0] != 0x05 || respHdr[1] != 0x00 {
 		return fmt.Errorf("unsuccessful socks5 handshake response - %v", respHdr)
 	}

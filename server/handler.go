@@ -195,10 +195,8 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 // handleWebSocketConsole upgrades HTTP to WebSocket and bridges to a PTY console
 func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) error {
 	if s.authOn {
-		// Extract token from cookie (web browsers) or query parameter (legacy/direct connections)
+		// Extract token from cookie or query parameter
 		token := extractTokenFromRequest(r)
-
-		// Fallback to query parameter if no cookie found
 		if token == "" {
 			token = r.URL.Query().Get("token")
 		}
@@ -228,11 +226,9 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 			slog.F("cert_id", certID))
 	}
 
-	// Configure WebSocket upgrader
 	upgrader := listener.DefaultWebSocketUpgrader
 	upgrader.CheckOrigin = func(r *http.Request) bool {
-		// Allow all origins for now - can be restricted later
-		return true
+		return true // Allow all origins
 	}
 
 	wsConn, err := upgrader.Upgrade(w, r, nil)

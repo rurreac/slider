@@ -146,9 +146,7 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			}
 		}()
 
-		// On Windows, non-PTY shell often needs specific flags or behavior
-		// Original code for Windows had Args: []string{"/qa"} for some reason.
-		// Let's keep it if we are on Windows.
+		// Windows non-PTY shell requires /qa flag
 		if s.interpreter.System == "windows" {
 			cmd.Args = append(cmd.Args, "/qa")
 		}

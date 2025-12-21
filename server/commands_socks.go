@@ -229,8 +229,6 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 					ui.PrintSuccess("Remote Socks Endpoint running on port: %d Target: %s", port, target)
 					return nil
 				case <-timeout:
-					// Don't kill it, just report timeout waiting (it might still start?)
-					// But we should probably return error.
 					return fmt.Errorf("remote socks endpoint reached timeout trying to start")
 				}
 			}

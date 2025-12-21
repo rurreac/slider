@@ -241,6 +241,7 @@ func (ic *InteractiveConsole) Run() error {
 	if dErr != nil {
 		return fmt.Errorf("failed to bind to port %d - %w", ic.port, dErr)
 	}
+	defer func() { _ = conn.Close() }()
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
 	// If the session doesn't support PTY, revert Raw Terminal
@@ -306,8 +307,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 	}
 	defer func() { _ = sshChan.Close() }()
 
-	// We need to handle requests from the remote side (e.g., exit-status)?
-	// Usually a shell channel sends exit-status or just closes.
+	// Discard channel requests (exit-status, etc.)
 	go ssh.DiscardRequests(reqs)
 
 	// 4. Setup Terminal
@@ -330,17 +330,9 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		defer func() { _ = term.Restore(fd, state) }()
 
 		// 5. Handle Resizing
-		// Send initial size
 		w, h, _ := term.GetSize(fd)
 		sendWindowChange(sshChan, w, h)
-		// Unblock the client shell by sending SLIDER_ENV=true
 		sendEnv(sshChan, "SLIDER_ENV", "true")
-
-		// Loop for resizing (using a signal or polling? ssh/terminal libs usually use signal)
-		// We can't easily capture signals in a library function without disrupting global handlers,
-		// but Slider seems to have a global signal handler?
-		// check InteractiveConsole implementation for CaptureInterrupts references.
-		// For now, send initial size is good. Dynamic resize might require a signal listener.
 	}
 
 	// 6. Pipe IO (Don't wait for Stdin to close, as it blocks)

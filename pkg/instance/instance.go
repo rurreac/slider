@@ -603,7 +603,7 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 	}
 	defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 
-	// Capture interrupt signal once to simulate that we can actually interact with a CTR^C
+	// Capture interrupt signal for Ctrl+C handling
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)

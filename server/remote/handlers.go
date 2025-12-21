@@ -18,7 +18,7 @@ import (
 )
 
 // HandleSession handles the "session" SSH channel
-func HandleSession(nc ssh.NewChannel, sess Session, srv Server) error {
+func HandleSession(nc ssh.NewChannel, sess Session, _ Server) error {
 	sshChan, chanReq, err := nc.Accept()
 	if err != nil {
 		sess.GetLogger().DErrorWith(
@@ -35,11 +35,6 @@ func HandleSession(nc ssh.NewChannel, sess Session, srv Server) error {
 		slog.F("channel_type", nc.ChannelType()),
 	)
 
-	// Note: handleChanRequests is still on the server side or handled via session
-	// For now, we expect the caller to handle the requests if we don't have a common way.
-	// But actually, we should probably handle them here or provide a handler.
-	// In the original code, it was: go s.handleChanRequests(session, chanReq)
-	// We'll need a way for the handler to process requests.
 	go handleChanRequests(sess, chanReq)
 	return nil
 }
@@ -51,9 +46,6 @@ func handleChanRequests(sess Session, chanReq <-chan *ssh.Request) {
 		switch r.Type {
 		case "pty-req":
 			ok = true
-			// Note: session.rawTerm is unexported. We might need a setter.
-			// For now, we'll assume it's set via a method if needed.
-			// sess.SetRawTerm(true)
 			_ = replyConnRequest(sess, r, ok, nil)
 			sess.GetLogger().DebugWith("Client Requested Raw Terminal",
 				slog.F("session_id", sess.GetID()),
@@ -92,7 +84,7 @@ func replyConnRequest(sess Session, request *ssh.Request, ok bool, payload []byt
 }
 
 // HandleForwardedTcpIp handles "forwarded-tcpip" channels
-func HandleForwardedTcpIp(nc ssh.NewChannel, sess Session, srv Server) error {
+func HandleForwardedTcpIp(nc ssh.NewChannel, sess Session, _ Server) error {
 	go sess.HandleForwardedTcpIpChannel(nc)
 	return nil
 }
@@ -112,7 +104,7 @@ func HandleSftp(nc ssh.NewChannel, sess Session, srv Server) error {
 
 	go func() {
 		// Serve SFTP
-		opts := []sftp.ServerOption{}
+		var opts []sftp.ServerOption
 		interp := srv.GetInterpreter()
 		if interp != nil && interp.HomeDir != "" {
 			opts = append(opts, sftp.WithServerWorkingDirectory(interp.HomeDir))
@@ -239,8 +231,7 @@ func HandleShell(nc ssh.NewChannel, sess Session, srv Server) error {
 			slog.F("env_count", len(envVars)))
 
 		cmd := exec.Command(shellCmd, shellArgs...)
-		// Do not use os.Environ() to avoid leaking parent console handles or sensitive env vars
-		// Only pass the collected env vars and a default PATH if needed
+		// Use collected env vars to avoid leaking parent console handles
 		cmd.Env = envVars
 		if len(cmd.Env) == 0 {
 			cmd.Env = os.Environ()

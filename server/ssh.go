@@ -30,8 +30,7 @@ func (s *server) NewSSHServer(session *Session) {
 	var err error
 
 	sshConf := session.sshConf
-	// Use a new SSH Configuration with authentication disabled
-	// when the Server connects to a Listener Client
+	// Disable authentication for listener clients
 	if session.isListener {
 		sshConf.NoClientAuth = true
 	}
@@ -165,12 +164,7 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 
 	} else {
 		// LEAF (or end of path)
-		// Unwrap and send original request
-		// Note: We use sshConn (Server connection) NOT sshClient.
-		// Wait, if it's a Client Session (Standard), we communicate via `ssh.ServerConn`?
-		// `nextHopSession` is a session on THIS server.
-		// If it is a Standard Client, `sshConn` is the connection *from* the client.
-		// We want to send a request *to* the client.
+		// Send request to target client via ServerConn
 
 		// If nextHopSession.sshConn is nil?
 		if nextHopSession.sshConn == nil {
@@ -196,8 +190,7 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 		var payload []byte
 		switch r.Type {
 		case "window-size":
-			// Could be checking size from os.Stdin Fd
-			//  but os.Stdout Fd is the one that works with Windows as well
+			// Get terminal size from stdout (cross-platform compatible)
 			width, height, err := term.GetSize(int(os.Stdout.Fd()))
 			if err != nil {
 				session.Logger.Errorf("Failed to obtain terminal size")
@@ -229,12 +222,8 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 			}
 			session.setInterpreter(ci.Interpreter)
 
-			// Reply with our own (Server) interpreter so the client knows who we are
+			// Reply with server interpreter for client identification
 			serverInterp := *s.serverInterpreter
-			// Note: If we don't support PTY, we might want to suggest a fallback shell
-			// based on the client's reported capabilities, but for now just identification
-			// is most important.
-
 			interpreterPayload, jErr := json.Marshal(serverInterp)
 			if jErr != nil {
 				session.Logger.DErrorWith("Error marshaling Server Info",

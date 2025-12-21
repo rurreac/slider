@@ -23,33 +23,13 @@ func (s *server) NewSSHClient(session *Session) {
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
-	// In promiscuous mode, we are the CLIENT connecting to another SERVER.
-	// We need to perform the SSH handshake as a client.
-
-	// Determine AuthMethod
+	// Determine auth method for outgoing connection
 	var authMethods []ssh.AuthMethod
 	if s.authOn {
-		// If we require auth, we should probably authenticate ourselves to the other server?
-		// User requirement: "Servers authentication in a chain would be dependent of the --auth flag.
-		// If the flag is not present within the server running in promiscuous mode, no authentication
-		// would be required, otherwise it would require validation against the promiscous server cert jar."
-
-		// If THIS server has --auth, it means IT expects auth.
-		// But here we are connecting OUT.
-		// The requirement says: "If the flag is not present within the server running in promiscuous mode,
-		// no authentication would be required, otherwise it would require validation against the promiscous server cert jar."
-		// This likely refers to INCOMING connections to the promiscuous server.
-		// But valid for OUTGOING?
-		// Just in case, let's offer our Server Key as a Public Key auth method.
-
-		// Create a signer from our server key
-		signer := s.serverKey
-		authMethods = append(authMethods, ssh.PublicKeys(signer))
+		// When --auth is enabled, authenticate using server's public key
+		authMethods = append(authMethods, ssh.PublicKeys(s.serverKey))
 	} else {
-		// Use "none" auth or similar?
-		// ssh.ClientConfig usually requires at least one AuthMethod.
-		// "none" is implicit if we don't provide others? No, must specify.
-		// Let's try "none" if no auth.
+		// No authentication required; use keyboard-interactive fallback for compatibility
 		authMethods = append(authMethods, ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) (answers []string, err error) {
 			return nil, nil
 		}))
@@ -71,10 +51,7 @@ func (s *server) NewSSHClient(session *Session) {
 		return
 	}
 
-	// Intercept requests to handle keep-alive
-	// ssh.Client by default rejects all global requests. We need to handle 'keep-alive'.
-	// We will handle requests in a separate goroutine and pass nil to NewClient for requests
-	// (or we could pass a pipe if we needed NewClient to see some, but currently only keep-alive matters)
+	// Handle global requests (keep-alive) in separate goroutine
 
 	// Identify ourselves to the upstream server
 	interp, iErr := interpreter.NewInterpreter()
@@ -113,10 +90,8 @@ func (s *server) NewSSHClient(session *Session) {
 		}
 	}()
 
-	// Since we are consuming reqChan, we pass nil to NewClient.
-	// Note: NewClient uses reqChan to handle server-initiated global requests.
-	// If we consume it, NewClient won't see them. This is fine as long as we handle what we need.
-	client := ssh.NewClient(cConn, nil, nil) // passing nil for channels as we handle them
+	// Pass nil for channels since we consume reqChan directly
+	client := ssh.NewClient(cConn, nil, nil)
 
 	s.DebugWith("SSH Client Connection Established", slog.F("session_id", session.sessionID))
 

@@ -114,28 +114,15 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		// 2. Remote Sessions Listing
 		server.remoteSessionsMutex.Lock()
-		// We need the key to get the fake ID, or store UnifiedID in State?
-		// RemoteSessionState doesn't store UnifiedID.
-		// We can get keys.
 		keys := slices.Collect(maps.Keys(server.remoteSessions))
 		server.remoteSessionsMutex.Unlock()
 
 		for _, key := range keys {
-			// Key format "ssh:OwnerID:Path"
-			// Extract info? Or just list it?
-			// Maybe best to store UnifiedID in config loggers/fields if possible.
-			// Or just assume user knows.
-			// Reconstructing UnifiedID from key requires iteration of unifiedMap.
-			// For visualization, we can show "Remote(Path)".
-
 			server.remoteSessionsMutex.Lock()
 			state := server.remoteSessions[key]
 			server.remoteSessionsMutex.Unlock()
 
 			if state.SSHInstance != nil {
-				// We don't have easy UnifiedID here without reverse lookup.
-				// But instance.Config has SessionID field!
-				// We set SessionID = UnifiedID in other commands.
 				totalGlobalTcpIp += listSessionForwarding(tw, state.SSHInstance.SessionID, state.SSHInstance)
 			}
 		}
@@ -147,13 +134,12 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	// Flags Processing
 	if !isRemote {
 		// Local Strategy
-		var session *Session
-		if *pSession > 0 {
-			var err error
-			session, err = server.getSession(int(uSess.ActualID))
-			if err != nil {
-				return fmt.Errorf("local session %d not found", uSess.ActualID)
-			}
+		if *pSession <= 0 {
+			return fmt.Errorf("invalid session ID")
+		}
+		session, err := server.getSession(int(uSess.ActualID))
+		if err != nil {
+			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
 		if *pLocal {
@@ -200,7 +186,6 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 			return handleLocalForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 		if *pReverse {
-			// This will fail with "remote global requests not implemented yet"
 			return handleReverseForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 	}
@@ -255,7 +240,7 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	return count
 }
 
-func handleLocalForward(server *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
 	if remove {
 		port, pErr := parsePort(arg)
 		if pErr != nil {
@@ -308,7 +293,7 @@ func handleLocalForward(server *server, ui UserInterface, sshInst *instance.Conf
 	}
 }
 
-func handleReverseForward(server *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
 	if remove {
 		port, pErr := parsePort(arg)
 		if pErr != nil {

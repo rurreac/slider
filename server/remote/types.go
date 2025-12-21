@@ -25,5 +25,5 @@ type Server interface {
 	GetLogger() *slog.Logger
 	GetInterpreter() *interpreter.Interpreter
 	GetSession(id int) (Session, error)
-	GetKeepalive() int // actually time.Duration but let's see
+	GetKeepalive() int
 }
