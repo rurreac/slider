@@ -6,6 +6,8 @@ import (
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
+	"slider/pkg/types"
+	"slider/server/remote"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -33,8 +35,8 @@ type Session struct {
 	sessionID           int64
 	wsConn              *websocket.Conn
 	sshConn             *ssh.ServerConn
+	sshClient           *ssh.Client
 	sshChannel          ssh.Channel
-	rawTerm             bool
 	KeepAliveChan       chan bool
 	keepAliveOn         bool
 	SocksInstance       *instance.Config
@@ -48,6 +50,8 @@ type Session struct {
 	SftpHistory         *CustomHistory
 	sftpCommandRegistry *CommandRegistry
 	sftpContext         *SftpCommandContext
+	Router              *remote.Router
+	initTermSize        types.TermDimensions
 }
 
 // newWebSocketSession adds a new session and stores the client info
@@ -174,6 +178,17 @@ func (session *Session) addSessionSSHConnection(sshConn *ssh.ServerConn) {
 	session.sessionMutex.Unlock()
 }
 
+func (session *Session) setSSHClient(client *ssh.Client) {
+	session.sessionMutex.Lock()
+	session.sshClient = client
+	if client != nil {
+		session.SocksInstance.SetSSHConn(client)
+		session.ShellInstance.SetSSHConn(client)
+		session.SSHInstance.SetSSHConn(client)
+	}
+	session.sessionMutex.Unlock()
+}
+
 func (session *Session) addSessionChannel(channel ssh.Channel) {
 	session.sessionMutex.Lock()
 	session.sshChannel = channel
@@ -214,6 +229,9 @@ func (session *Session) setInterpreter(interpreter *interpreter.Interpreter) {
 func (session *Session) IsPtyOn() bool {
 	session.sessionMutex.Lock()
 	defer session.sessionMutex.Unlock()
+	if session.clientInterpreter == nil {
+		return false
+	}
 	return session.clientInterpreter.PtyOn
 }
 
@@ -237,14 +255,21 @@ func (session *Session) keepAlive(keepalive time.Duration) {
 			return
 		case <-ticker.C:
 			ok, p, sendErr := session.sendRequest("keep-alive", true, []byte("ping"))
-			if sendErr != nil || !ok || string(p) != "pong" {
+			if sendErr != nil {
 				session.Logger.ErrorWith("KeepAlive Connection Error Received",
 					slog.F("session_id", session.sessionID),
-					slog.F("ok", ok),
-					slog.F("payload", p),
 					slog.F("err", sendErr),
 				)
 				return
+			}
+			if !ok || string(p) != "pong" {
+				// Just warn, don't kill connection.
+				// The fact that we got a reply (even false) means the connection is alive.
+				session.Logger.WarnWith("KeepAlive Reply mismatch (non-fatal)",
+					slog.F("session_id", session.sessionID),
+					slog.F("ok", ok),
+					slog.F("payload", string(p)),
+				)
 			}
 		}
 	}
@@ -255,7 +280,14 @@ func (session *Session) sendRequest(requestType string, wantReply bool, payload 
 	var pOk bool
 	var resPayload []byte
 
-	pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
+	// pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
+	if session.sshClient != nil {
+		pOk, resPayload, err = session.sshClient.SendRequest(requestType, wantReply, payload)
+	} else if session.sshConn != nil {
+		pOk, resPayload, err = session.sshConn.SendRequest(requestType, wantReply, payload)
+	} else {
+		return false, nil, fmt.Errorf("no active connection")
+	}
 	if err != nil {
 		return false, nil, fmt.Errorf("connection request failed \"'%v' - '%s' - '%v'\"", pOk, resPayload, err)
 	}
@@ -287,7 +319,11 @@ func (session *Session) socksEnable(port int, exposePort bool, notifier chan err
 }
 
 func (session *Session) shellEnable(port int, exposePort bool, tlsOn bool, interactiveOn bool, notifier chan error) {
-	session.ShellInstance.SetPtyOn(session.clientInterpreter.PtyOn)
+	ptyOn := false
+	if session.clientInterpreter != nil {
+		ptyOn = session.clientInterpreter.PtyOn
+	}
+	session.ShellInstance.SetPtyOn(ptyOn)
 	session.ShellInstance.SetExpose(exposePort)
 
 	if tlsOn {
@@ -311,7 +347,11 @@ func (session *Session) sshEnable(port int, exposePort bool, notifier chan error
 	if session.SSHInstance.AuthOn {
 		session.SSHInstance.SetAllowedFingerprint(session.certInfo.fingerprint)
 	}
-	session.SSHInstance.SetPtyOn(session.clientInterpreter.PtyOn)
+	ptyOn := false
+	if session.clientInterpreter != nil {
+		ptyOn = session.clientInterpreter.PtyOn
+	}
+	session.SSHInstance.SetPtyOn(ptyOn)
 	session.SSHInstance.SetExpose(exposePort)
 
 	if sErr := session.SSHInstance.StartEndpoint(port); sErr != nil {
@@ -326,7 +366,11 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 		EndpointType: instance.ExecEndpoint,
 	})
 	config.SetSSHConn(session.sshConn)
-	config.SetPtyOn(session.clientInterpreter.PtyOn)
+	ptyOn := false
+	if session.clientInterpreter != nil {
+		ptyOn = session.clientInterpreter.PtyOn
+	}
+	config.SetPtyOn(ptyOn)
 	config.SetEnvVarList(envVarList)
 
 	return config
@@ -335,7 +379,18 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 func (session *Session) newSftpClient() (*sftp.Client, error) {
 	session.Logger.Debugf("Opening SFTP channel to client")
 
-	sftpChan, requests, err := session.sshConn.OpenChannel("sftp", nil)
+	var sftpChan ssh.Channel
+	var requests <-chan *ssh.Request
+	var err error
+
+	if session.sshClient != nil {
+		sftpChan, requests, err = session.sshClient.OpenChannel("sftp", nil)
+	} else if session.sshConn != nil {
+		sftpChan, requests, err = session.sshConn.OpenChannel("sftp", nil)
+	} else {
+		return nil, fmt.Errorf("no active connection")
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to open SFTP channel: %v", err)
 	}
@@ -367,4 +422,50 @@ func (session *Session) newSftpClient() (*sftp.Client, error) {
 		slog.F("session_id", session.sessionID),
 	)
 	return client, nil
+}
+
+// GetSSHClient returns the SSH client connection (for promiscuous mode)
+func (session *Session) GetSSHClient() *ssh.Client {
+	session.sessionMutex.Lock()
+	defer session.sessionMutex.Unlock()
+	return session.sshClient
+}
+
+// GetLogger returns the session logger
+func (session *Session) GetLogger() *slog.Logger {
+	return session.Logger
+}
+
+// GetID returns the session ID
+func (session *Session) GetID() int64 {
+	return session.sessionID
+}
+
+// GetSSHConn returns the SSH server connection
+func (session *Session) GetSSHConn() ssh.Conn {
+	session.sessionMutex.Lock()
+	defer session.sessionMutex.Unlock()
+	return session.sshConn
+}
+
+// AddSessionChannel satisfies the remote.Session interface
+func (session *Session) AddSessionChannel(ch ssh.Channel) {
+	session.addSessionChannel(ch)
+}
+
+// HandleForwardedTcpIpChannel satisfies the remote.Session interface
+func (session *Session) HandleForwardedTcpIpChannel(nc ssh.NewChannel) {
+	session.handleForwardedTcpIpChannel(nc)
+}
+
+func (session *Session) SetInitTermSize(size types.TermDimensions) {
+	session.sessionMutex.Lock()
+	session.initTermSize = size
+	session.sessionMutex.Unlock()
+}
+
+func (session *Session) GetInitTermSize() types.TermDimensions {
+	session.sessionMutex.Lock()
+	defer session.sessionMutex.Unlock()
+	return session.initTermSize
 }

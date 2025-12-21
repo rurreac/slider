@@ -28,14 +28,22 @@ func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, rem
 	session.sftpCommandRegistry = NewCommandRegistry()
 
 	// Initialize SFTP context
+	// Defaults
+	cliSystem := "linux"
+	cliHomeDir := ""
+	if session.clientInterpreter != nil {
+		cliSystem = session.clientInterpreter.System
+		cliHomeDir = session.clientInterpreter.HomeDir
+	}
+
 	session.sftpContext = &SftpCommandContext{
 		sftpCli:    sftpClient,
 		session:    session,
 		remoteCwd:  remoteCwd,
 		localCwd:   localCwd,
-		cliSystem:  session.clientInterpreter.System,
+		cliSystem:  cliSystem,
 		svrSystem:  s.serverInterpreter.System,
-		cliHomeDir: session.clientInterpreter.HomeDir,
+		cliHomeDir: cliHomeDir,
 		srvHomeDir: s.serverInterpreter.HomeDir,
 	}
 
@@ -81,7 +89,8 @@ func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, rem
 	session.sftpCommandRegistry.RegisterAlias("move", mvCmd)
 
 	// Register chmod command (remote only, non-Windows)
-	if session.clientInterpreter.System != "windows" {
+	canChmod := session.clientInterpreter == nil || session.clientInterpreter.System != "windows"
+	if canChmod {
 		session.sftpCommandRegistry.Register(&SftpChmodCommand{})
 	}
 

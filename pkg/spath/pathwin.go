@@ -290,7 +290,7 @@ func winClean(path string) string {
 					// Not rooted and can't go up, so keep the .. component
 					components = append(components, "..")
 				}
-				// If rooted and can't go up, simply ignore the .. component
+				// If rooted and can't go up, ignore the .. component
 			default:
 				// Add normal component
 				components = append(components, component)

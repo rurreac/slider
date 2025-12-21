@@ -8,15 +8,16 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"slider/pkg/conf"
+	"slider/pkg/instance/portforward"
+	"slider/pkg/instance/shell"
+	"slider/pkg/instance/socks"
+	"slider/pkg/instance/sshservice"
 	"slider/pkg/scrypt"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
-	"strconv"
 	"sync"
 	"syscall"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -32,6 +33,13 @@ const (
 	ExecEndpoint       = "exec-endpoint"
 )
 
+// ChannelOpener defines the interface required to open channels and send requests
+// This allows abstracting specific SSH connections (like direct ssh.Conn or our custom RemoteConnection)
+type ChannelOpener interface {
+	OpenChannel(name string, payload []byte) (ssh.Channel, <-chan *ssh.Request, error)
+	SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error)
+}
+
 type Config struct {
 	Logger               *slog.Logger
 	SessionID            int64
@@ -46,7 +54,7 @@ type Config struct {
 	done                 chan bool
 	instanceMutex        sync.Mutex
 	sshServerConn        *ssh.ServerConn
-	sshSessionConn       ssh.Conn
+	sshSessionConn       ChannelOpener
 	sshClientChannel     <-chan ssh.NewChannel
 	EndpointType         string
 	tlsOn                bool
@@ -55,31 +63,45 @@ type Config struct {
 	certExists           bool
 	serverCertificate    *scrypt.GeneratedCertificate
 	envVarList           []struct{ Key, Value string }
-	portFwdMap           map[int]PortForwardControl
-	directTcpIpMap       map[int]DirectTcpIpControl
-	FTx                  ForwardedTx
-}
-
-type ForwardedTx struct {
-	ForwardedSshChannel ssh.Channel
-	ForwardingMutex     sync.Mutex
-}
-
-type PortForwardControl struct {
-	RcvChan  chan *types.TcpIpChannelMsg
-	DoneChan chan bool
-	*types.CustomTcpIpChannelMsg
-}
-
-type DirectTcpIpControl struct {
-	RcvChan  chan *types.TcpIpChannelMsg
-	DoneChan chan bool
-	*types.CustomTcpIpChannelMsg
+	portFwdManager       *portforward.Manager
+	socksClient          *socks.Client
+	serviceManager       *ServiceManager
+	shellService         *shell.Service
+	sshService           *sshservice.Service
 }
 
 func New(config *Config) *Config {
 	c := config
 	c.envVarList = make([]struct{ Key, Value string }, 0)
+
+	// Initialize ServiceManager
+	c.serviceManager = NewServiceManager()
+
+	// Initialize port forwarding manager and SOCKS client
+	if c.sshSessionConn != nil {
+		c.portFwdManager = portforward.NewManager(c.Logger, c.SessionID, c.sshSessionConn)
+		c.socksClient = socks.NewClient(c.Logger, c.SessionID, c.sshSessionConn)
+		c.shellService = shell.NewService(c.Logger, c.SessionID, c.sshSessionConn)
+
+		// Register services with ServiceManager
+		_ = c.serviceManager.RegisterService(c.socksClient)
+		_ = c.serviceManager.RegisterService(c.shellService)
+	}
+
+	// Initialize SSH service if ServerKey is available
+	if c.ServerKey != nil {
+		c.sshService = sshservice.NewService(&sshservice.Config{
+			Logger:             c.Logger,
+			SessionID:          c.SessionID,
+			ServerKey:          c.ServerKey,
+			AuthOn:             c.AuthOn,
+			AllowedFingerprint: c.allowedFingerprint,
+			PtyOn:              c.ptyOn,
+			PortFwdManager:     c.portFwdManager,
+		})
+		_ = c.serviceManager.RegisterService(c.sshService)
+	}
+
 	return c
 }
 
@@ -102,10 +124,28 @@ func (si *Config) setControls() {
 	si.instanceMutex.Unlock()
 }
 
-func (si *Config) SetSSHConn(conn ssh.Conn) {
+func (si *Config) SetSSHConn(conn ChannelOpener) {
 	si.instanceMutex.Lock()
 	si.sshSessionConn = conn
+	// Initialize or update port forwarding manager and SOCKS client when connection is set
+	if si.portFwdManager == nil {
+		si.portFwdManager = portforward.NewManager(si.Logger, si.SessionID, conn)
+	}
+	if si.socksClient == nil {
+		si.socksClient = socks.NewClient(si.Logger, si.SessionID, conn)
+		_ = si.serviceManager.RegisterService(si.socksClient)
+	}
+	if si.shellService == nil {
+		si.shellService = shell.NewService(si.Logger, si.SessionID, conn)
+		_ = si.serviceManager.RegisterService(si.shellService)
+	}
 	si.instanceMutex.Unlock()
+}
+
+func (si *Config) GetPortForwardManager() *portforward.Manager {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	return si.portFwdManager
 }
 
 func (si *Config) setPort(port int) {
@@ -182,12 +222,18 @@ func (si *Config) StartEndpoint(port int) error {
 		if aErr != nil {
 			break
 		}
+
+		// Map endpoint types to service types
+		var serviceType string
 		switch si.EndpointType {
 		case SocksEndpoint:
-			go si.runSocksComm(conn)
+			serviceType = "socks"
+			go si.handleServiceConnection(serviceType, conn)
 		case ShellEndpoint:
-			go si.runShellComm(conn)
+			serviceType = "shell"
+			go si.handleServiceConnection(serviceType, conn)
 		case SshEndpoint:
+			// SSH endpoint still uses the original logic due to its complexity
 			go si.runSshComm(conn)
 		default:
 			return fmt.Errorf("unknown endpoint type \"%s\"", si.EndpointType)
@@ -255,21 +301,6 @@ func (si *Config) runSshComm(conn net.Conn) {
 	}
 }
 
-func (si *Config) runSocksComm(conn net.Conn) {
-	defer func() { _ = conn.Close() }()
-	socksChan, reqs, oErr := si.sshSessionConn.OpenChannel("socks5", nil)
-	if oErr != nil {
-		si.Logger.ErrorWith("Failed to open \"socks5\" channel",
-			slog.F("session_id", si.SessionID),
-			slog.F("err", oErr))
-		return
-	}
-	defer func() { _ = socksChan.Close() }()
-	go ssh.DiscardRequests(reqs)
-
-	_, _ = sio.PipeWithCancel(socksChan, conn)
-}
-
 func (si *Config) runShellComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
@@ -311,6 +342,17 @@ func (si *Config) runShellComm(conn net.Conn) {
 	defer close(envChange)
 
 	si.interactiveConnPipe(conn, "shell", nil, winChange, envChange)
+}
+
+// handleServiceConnection dispatches a connection to the appropriate service via ServiceManager
+func (si *Config) handleServiceConnection(serviceType string, conn net.Conn) {
+	if err := si.serviceManager.HandleConnection(serviceType, conn); err != nil {
+		si.Logger.ErrorWith("Failed to handle service connection",
+			slog.F("session_id", si.SessionID),
+			slog.F("service_type", serviceType),
+			slog.F("err", err))
+		_ = conn.Close()
+	}
 }
 
 func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-chan *ssh.Request, scope string) {
@@ -402,437 +444,79 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 }
 
 func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier chan error) {
-	forwardReq := types.CustomTcpIpFwdRequest{
-		IsSshConn: false,
-		TcpIpFwdRequest: &types.TcpIpFwdRequest{
-			BindAddress: msg.SrcHost,
-			BindPort:    msg.SrcPort,
-		},
-	}
-
-	forwardReqBytes, mErr := json.Marshal(forwardReq)
-	if mErr != nil {
-		notifier <- fmt.Errorf("failed to marshal TcpIpFwdRequest request - %v", mErr)
+	if si.portFwdManager == nil {
+		notifier <- fmt.Errorf("port forwarding manager not initialized")
 		return
 	}
-
-	ok, respData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", true, forwardReqBytes)
-	if rErr != nil || !ok {
-		if rErr == nil {
-			rErr = fmt.Errorf("request was rejected, port likely in use")
-		}
-		notifier <- fmt.Errorf("failed to send \"tcpip-forward\" request - %v", rErr)
-		return
-	}
-	if len(respData) > 0 {
-		respPort := &types.TcpIpReqSuccess{}
-		if uErr := ssh.Unmarshal(respData, respPort); uErr != nil {
-			msg.SrcPort = respPort.BoundPort
-		}
-	}
-
-	si.addRemoteMapping(&types.TcpIpChannelMsg{
-		DstHost: msg.DstHost,
-		DstPort: msg.DstPort,
-		SrcHost: msg.SrcHost,
-		SrcPort: msg.SrcPort,
-	}, false)
-
-	bindPort := int(msg.SrcPort)
-	control := si.portFwdMap[bindPort]
-
-	for range control.RcvChan {
-		conn, cErr := net.Dial("tcp", net.JoinHostPort(msg.DstHost, strconv.Itoa(int(msg.DstPort))))
-		if cErr != nil {
-			si.Logger.ErrorWith("Failed to connect to host",
-				slog.F("session_id", si.SessionID),
-				slog.F("dst_host", msg.DstHost),
-				slog.F("dst_port", msg.DstPort),
-				slog.F("err", cErr))
-			si.portFwdMap[bindPort].DoneChan <- true
-			continue
-		}
-
-		// Connect the two channels
-		go func() {
-			defer func() {
-				_ = conn.Close()
-			}()
-			_, _ = sio.PipeWithCancel(conn, si.FTx.ForwardedSshChannel)
-			si.Logger.DebugWith("Completed MSG TCPIP Forwarded channel",
-				slog.F("session_id", si.SessionID),
-				slog.F("src_host", msg.SrcHost),
-				slog.F("src_port", msg.SrcPort),
-				slog.F("dst_host", msg.DstHost),
-				slog.F("dst_port", msg.DstPort))
-			control.DoneChan <- true
-		}()
-	}
+	si.portFwdManager.StartRemoteForward(msg, notifier)
 }
 
-func (si *Config) addLocalMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
-	si.instanceMutex.Lock()
-	if si.directTcpIpMap == nil {
-		si.directTcpIpMap = make(map[int]DirectTcpIpControl)
+func (si *Config) GetLocalMappings() map[int]*portforward.LocalForward {
+	if si.portFwdManager == nil {
+		return make(map[int]*portforward.LocalForward)
 	}
-	si.directTcpIpMap[int(t.SrcPort)] = DirectTcpIpControl{
-		DoneChan: make(chan bool, 1),
-		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
-			IsSshConn:       isSshConn,
-			TcpIpChannelMsg: t,
-		},
-	}
-	si.instanceMutex.Unlock()
+	return si.portFwdManager.GetLocalMappings()
 }
 
-func (si *Config) GetLocalMappings() map[int]DirectTcpIpControl {
-	si.instanceMutex.Lock()
-	defer si.instanceMutex.Unlock()
-	return si.directTcpIpMap
-}
-
-func (si *Config) GetLocalPortMapping(port int) (DirectTcpIpControl, error) {
-	si.instanceMutex.Lock()
-	defer si.instanceMutex.Unlock()
-	mapping, ok := si.directTcpIpMap[port]
-	if !ok {
-		return DirectTcpIpControl{}, fmt.Errorf("no mapping found for port %d", port)
+func (si *Config) GetLocalPortMapping(port int) (*portforward.LocalForward, error) {
+	if si.portFwdManager == nil {
+		return nil, fmt.Errorf("port forwarding manager not initialized")
 	}
-	return mapping, nil
+	return si.portFwdManager.GetLocalMapping(port)
 }
 
 func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan error) {
-	listener, lErr := net.Listen("tcp", fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
-	if lErr != nil {
-		notifier <- fmt.Errorf("failed to listen on %s:%d - %v", msg.SrcHost, msg.SrcPort, lErr)
+	if si.portFwdManager == nil {
+		notifier <- fmt.Errorf("port forwarding manager not initialized")
 		return
 	}
-	defer func() { _ = listener.Close() }()
-	si.Logger.DebugWith("Endpoint listening",
-		slog.F("session_id", si.SessionID),
-		slog.F("channel_type", "direct-tcpip"),
-		slog.F("src_host", msg.SrcHost),
-		slog.F("src_port", msg.SrcPort))
-
-	si.addLocalMapping(&msg, false)
-	mapping, mErr := si.GetLocalPortMapping(int(msg.SrcPort))
-	if mErr != nil {
-		notifier <- fmt.Errorf("failed to get local port mapping - %v", mErr)
-		return
-	}
-
-	for {
-		select {
-		case <-mapping.DoneChan:
-			si.Logger.DebugWith("Endpoint listener stopped",
-				slog.F("session_id", si.SessionID),
-				slog.F("channel_type", "direct-tcpip"),
-				slog.F("src_host", msg.SrcHost),
-				slog.F("src_port", msg.SrcPort))
-			delete(si.directTcpIpMap, int(msg.SrcPort))
-			return
-		default:
-			// Proceed
-		}
-
-		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
-		conn, cErr := listener.Accept()
-		if cErr != nil {
-			continue
-		}
-
-		oChan, oReq, oErr := si.sshSessionConn.OpenChannel("direct-tcpip", ssh.Marshal(msg))
-		if oErr != nil {
-			si.Logger.ErrorWith("Failed to open \"direct-tcpip\" channel",
-				slog.F("session_id", si.SessionID),
-				slog.F("channel_type", "direct-tcpip"),
-				slog.F("err", oErr))
-			_ = conn.Close()
-			continue
-		}
-		go ssh.DiscardRequests(oReq)
-
-		_, _ = sio.PipeWithCancel(conn, oChan)
-	}
-
+	si.portFwdManager.StartLocalForward(msg, notifier)
 }
 
 func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
-	// Just making sure that data received is what it should be
-	srcReqPayload := &types.TcpIpFwdRequest{}
-	if uErr := ssh.Unmarshal(req.Payload, srcReqPayload); uErr != nil {
-		si.Logger.ErrorWith("Failed to unmarshal TcpIpFwdRequest request",
-			slog.F("session_id", si.SessionID),
-			slog.F("request_type", "tcpip-forward"),
-			slog.F("err", uErr))
+	if si.portFwdManager == nil {
+		si.Logger.ErrorWith("Port forwarding manager not initialized",
+			slog.F("session_id", si.SessionID))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
 		return
 	}
-
-	// Send the request to the Slider client as it is
-	customReqPayload := &types.CustomTcpIpFwdRequest{
-		IsSshConn:       true,
-		TcpIpFwdRequest: srcReqPayload,
-	}
-	reqPayload, mErr := json.Marshal(customReqPayload)
-	if mErr != nil {
-		si.Logger.ErrorWith("Failed to marshal request",
-			slog.F("session_id", si.SessionID),
-			slog.F("request_type", "tcpip-forward"),
-			slog.F("err", mErr))
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-		return
-	}
-	rOk, sliderRespData, rErr := si.sshSessionConn.SendRequest("tcpip-forward", req.WantReply, reqPayload)
-	if rErr != nil || !rOk {
-		si.Logger.ErrorWith("Failed to send slider client request",
-			slog.F("session_id", si.SessionID),
-			slog.F("request_type", "tcpip-forward"),
-			slog.F("err", rErr))
-		if req.WantReply {
-			_ = req.Reply(false, nil)
-		}
-		return
-	}
-
-	sshRespPayload := &types.TcpIpReqSuccess{}
-	if req.WantReply {
-		// If the request was to bind to port 0, there should be data in the Slider response
-		if sliderRespData == nil && srcReqPayload.BindPort == 0 {
-			si.Logger.ErrorWith("Failed to bind to port",
-				slog.F("session_id", si.SessionID),
-				slog.F("request_type", "tcpip-forward"),
-				slog.F("bind_port", srcReqPayload.BindPort))
-			if req.WantReply {
-				_ = req.Reply(false, nil)
-			}
-			return
-		}
-
-		// If the request was to bind to port != 0, no data response is expected
-		respPayload := make([]byte, 0)
-		// If the request was to bind to port 0, we need to respond with the bound port
-		if srcReqPayload.BindPort == 0 {
-			if uErr := ssh.Unmarshal(sliderRespData, sshRespPayload); uErr != nil {
-				si.Logger.ErrorWith("Failed to unmarshal request",
-					slog.F("session_id", si.SessionID),
-					slog.F("request_type", "tcpip-forward"),
-					slog.F("err", uErr))
-				if req.WantReply {
-					_ = req.Reply(false, nil)
-				}
-				return
-			}
-
-			// Override the 0 port with the bound port for tracking
-			respPayload = ssh.Marshal(sshRespPayload)
-			srcReqPayload.BindPort = sshRespPayload.BoundPort
-		}
-
-		if wErr := req.Reply(true, respPayload); wErr != nil {
-			si.Logger.ErrorWith("Failed to reply to original request",
-				slog.F("session_id", si.SessionID),
-				slog.F("request_type", "tcpip-forward"),
-				slog.F("err", wErr))
-			return
-		}
-
-		si.addRemoteMapping(&types.TcpIpChannelMsg{
-			// Destination here corresponds to the SSH channel,
-			// the SSH client handles the forwarding to the actual destination
-			DstHost: "",
-			DstPort: 0,
-			SrcHost: srcReqPayload.BindAddress,
-			SrcPort: srcReqPayload.BindPort,
-		}, true)
-	}
-
-	control := si.portFwdMap[int(srcReqPayload.BindPort)]
-
-	for channelMsg := range control.RcvChan {
-
-		channel, tcpIpFwdReq, oErr := si.sshServerConn.OpenChannel("forwarded-tcpip", ssh.Marshal(channelMsg))
-		if oErr != nil {
-			si.Logger.ErrorWith("Failed to open channel to client",
-				slog.F("session_id", si.SessionID),
-				slog.F("request_channel", "forwarded-tcpip"),
-				slog.F("err", oErr))
-			control.DoneChan <- true
-			continue
-		}
-		go ssh.DiscardRequests(tcpIpFwdReq)
-
-		// Connect the two channels
-		go func() {
-			defer func() {
-				_ = channel.Close()
-			}()
-			_, _ = sio.PipeWithCancel(channel, si.FTx.ForwardedSshChannel)
-			control.DoneChan <- true
-			si.Logger.DebugWith("Completed SSH Port Forward channel from remote",
-				slog.F("session_id", si.SessionID),
-				slog.F("request_channel", "forwarded-tcpip"),
-				slog.F("src_host", srcReqPayload.BindAddress),
-				slog.F("src_port", srcReqPayload.BindPort),
-			)
-		}()
-	}
+	si.portFwdManager.HandleTcpIpForwardRequest(req, si.sshServerConn)
 }
 
-func (si *Config) addRemoteMapping(t *types.TcpIpChannelMsg, isSshConn bool) {
-	si.instanceMutex.Lock()
-	if si.portFwdMap == nil {
-		si.portFwdMap = make(map[int]PortForwardControl)
+func (si *Config) GetRemoteMappings() map[int]*portforward.RemoteForward {
+	if si.portFwdManager == nil {
+		return make(map[int]*portforward.RemoteForward)
 	}
-	si.portFwdMap[int(t.SrcPort)] = PortForwardControl{
-		RcvChan:  make(chan *types.TcpIpChannelMsg, 5),
-		DoneChan: make(chan bool, 5),
-		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
-			IsSshConn:       isSshConn,
-			TcpIpChannelMsg: t,
-		},
-	}
-	si.instanceMutex.Unlock()
+	return si.portFwdManager.GetRemoteMappings()
 }
 
-func (si *Config) GetRemoteMappings() map[int]PortForwardControl {
-	si.instanceMutex.Lock()
-	defer si.instanceMutex.Unlock()
-	return si.portFwdMap
-}
-
-func (si *Config) GetRemotePortMapping(port int) (PortForwardControl, error) {
-	si.instanceMutex.Lock()
-	defer si.instanceMutex.Unlock()
-	mapping, ok := si.portFwdMap[port]
-	if !ok {
-		return PortForwardControl{}, fmt.Errorf("no mapping found for port %d", port)
+func (si *Config) GetRemotePortMapping(port int) (*portforward.RemoteForward, error) {
+	if si.portFwdManager == nil {
+		return nil, fmt.Errorf("port forwarding manager not initialized")
 	}
-	return mapping, nil
+	return si.portFwdManager.GetRemoteMapping(port)
 }
 
 func (si *Config) cancelSshRemoteFwd() {
-	if len(si.portFwdMap) > 0 {
-		for _, portFwd := range si.portFwdMap {
-			if portFwd.IsSshConn {
-
-				payload := ssh.Marshal(&types.TcpIpFwdRequest{
-					BindAddress: portFwd.SrcHost,
-					BindPort:    portFwd.SrcPort,
-				})
-				ok, _, cErr := si.sshSessionConn.SendRequest("cancel-tcpip-forward", true, payload)
-				if cErr != nil || !ok {
-					si.Logger.ErrorWith("Failed to cancel reverse tcp forwarding",
-						slog.F("session_id", si.SessionID),
-						slog.F("request_channel", "cancel-tcpip-forward"),
-						slog.F("fwd_host", portFwd.SrcHost),
-						slog.F("fwd_port", portFwd.SrcPort),
-						slog.F("err", cErr))
-					continue
-				}
-				si.Logger.DebugWith("Cancelled reverse tcp forwarding",
-					slog.F("session_id", si.SessionID),
-					slog.F("request_channel", "cancel-tcpip-forward"),
-					slog.F("fwd_host", portFwd.SrcHost),
-					slog.F("fwd_port", portFwd.SrcPort))
-				delete(si.portFwdMap, int(portFwd.SrcPort))
-			}
-		}
+	if si.portFwdManager != nil {
+		si.portFwdManager.CancelAllSSHRemoteForwards()
 	}
 }
 
 func (si *Config) CancelMsgRemoteFwd(port int) error {
-	si.instanceMutex.Lock()
-	control, ok := si.portFwdMap[port]
-	if !ok {
-		si.instanceMutex.Unlock()
-		return fmt.Errorf("port %d not found", port)
+	if si.portFwdManager == nil {
+		return fmt.Errorf("port forwarding manager not initialized")
 	}
-	si.instanceMutex.Unlock()
-
-	if control.IsSshConn {
-		return fmt.Errorf("refusing to terminate ssh port forwarding, kill ssh endpoint instead")
-	}
-
-	payload := ssh.Marshal(&types.TcpIpFwdRequest{
-		BindAddress: control.SrcHost,
-		BindPort:    control.SrcPort,
-	})
-	rOk, _, cErr := si.sshSessionConn.SendRequest("cancel-tcpip-forward", true, payload)
-	if cErr != nil || !rOk {
-		return fmt.Errorf("failed to cancel reverse tcp forwarding - %v", cErr)
-	}
-
-	si.Logger.DebugWith("Cancelled reverse tcp forwarding",
-		slog.F("session_id", si.SessionID),
-		slog.F("request_channel", "cancel-tcpip-forward"),
-		slog.F("fwd_port", control.SrcPort))
-	close(control.RcvChan)
-	close(control.DoneChan)
-
-	// Remove from map after successfully closing the port forward
-	si.instanceMutex.Lock()
-	delete(si.portFwdMap, port)
-	si.instanceMutex.Unlock()
-
-	return nil
+	return si.portFwdManager.CancelRemoteForward(port)
 }
 
 func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
-	sessionClientChannel, request, aErr := nc.Accept()
-	if aErr != nil {
-		return fmt.Errorf("could not accept channel - %v", aErr)
+	if si.portFwdManager == nil {
+		return fmt.Errorf("port forwarding manager not initialized")
 	}
-	defer func() { _ = sessionClientChannel.Close() }()
-	go ssh.DiscardRequests(request)
-
-	var dti types.TcpIpChannelMsg
-	if uErr := ssh.Unmarshal(nc.ExtraData(), &dti); uErr != nil {
-		return fmt.Errorf("could not parse direct TCPIP - %v", uErr)
-	}
-	si.Logger.DebugWith("request to %s:%d from %s:%d",
-		slog.F("session_id", si.SessionID),
-		slog.F("request_channel", "direct-tcpip"),
-		slog.F("dst_host", dti.DstHost),
-		slog.F("dst_port", dti.DstPort),
-		slog.F("src_host", dti.SrcHost),
-		slog.F("src_port", dti.SrcPort))
-
-	// Create a connection to target via a socks5 channel
-	// We'll handle direct-tcpip by opening a socks5 channel to the client
-	socksChannel, socksRequests, oErr := si.sshSessionConn.OpenChannel("socks5", nil)
-	if oErr != nil {
-		return fmt.Errorf("could not open socks5 channel - %v", oErr)
-	}
-	defer func() { _ = socksChannel.Close() }()
-
-	// Discard the SSH requests from the socks channel
-	go ssh.DiscardRequests(socksRequests)
-
-	// Because SOCKS comes from SSH, we need to perform the negotiation handshake first
-	// https://datatracker.ietf.org/doc/html/rfc1928#section-3
-	socks := socksConfig{
-		socksChannel: socksChannel,
-		directTCPIP:  dti,
-	}
-
-	if ok, hErr := socks.handshake(); !ok || hErr != nil {
-		return hErr
-	}
-	// Now we can start piping data between the channels
-	si.Logger.DebugWith("connection established to %s:%d",
-		slog.F("session_id", si.SessionID),
-		slog.F("request_channel", "direct-tcpip"),
-		slog.F("dst_host", dti.DstHost),
-		slog.F("dst_port", dti.DstPort))
-
-	_, _ = sio.PipeWithCancel(sessionClientChannel, socksChannel)
-
-	return nil
+	return si.portFwdManager.HandleDirectTcpIpChannel(nc)
 }
 
 // sendInitTermSize receives a req-pty payload extracts the terminal size and sends it through an init-size channel payload
@@ -919,7 +603,7 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 	}
 	defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 
-	// Capture interrupt signal once to simulate that we can actually interact with a CTR^C
+	// Capture interrupt signal for Ctrl+C handling
 	go func() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
@@ -1084,6 +768,15 @@ func (si *Config) Stop() error {
 	si.stopSignal <- true
 	<-si.done
 	close(si.done)
+
+	// Stop all services managed by ServiceManager
+	if si.serviceManager != nil {
+		if err := si.serviceManager.StopAll(); err != nil {
+			si.Logger.WarnWith("Failed to stop all services",
+				slog.F("session_id", si.SessionID),
+				slog.F("err", err))
+		}
+	}
 
 	si.instanceMutex.Lock()
 	si.port = 0

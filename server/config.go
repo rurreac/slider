@@ -47,6 +47,7 @@ type ServerConfig struct {
 	CallerLog        bool
 	Headless         bool
 	HttpConsole      bool
+	Promiscuous      bool
 }
 
 // RunServer starts a server with the given configuration
@@ -81,7 +82,8 @@ func RunServer(cfg *ServerConfig) {
 		sessionTrack: &sessionTrack{
 			Sessions: make(map[int64]*Session),
 		},
-		sshConf: sshConf,
+		remoteSessions: make(map[string]*RemoteSessionState),
+		sshConf:        sshConf,
 		console: Console{
 			FirstRun: true,
 			History:  DefaultHistory,
@@ -91,6 +93,7 @@ func RunServer(cfg *ServerConfig) {
 		},
 		certJarFile:      cfg.CertJarFile,
 		authOn:           cfg.Auth,
+		port:             cfg.Port,
 		caStoreOn:        cfg.CaStore,
 		urlRedirect:      &url.URL{},
 		serverHeader:     cfg.ServerHeader,
@@ -100,6 +103,7 @@ func RunServer(cfg *ServerConfig) {
 		httpDirIndexPath: cfg.HttpDirIndexPath,
 		httpConsoleOn:    cfg.HttpConsole,
 		customProto:      cfg.CustomProto,
+		promiscuous:      cfg.Promiscuous,
 	}
 
 	// Set template path for HTML pages
