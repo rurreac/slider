@@ -6,6 +6,8 @@ import (
 	"maps"
 	"slices"
 	"slider/pkg/conf"
+	"slider/pkg/instance"
+	"slider/server/remote"
 	"text/tabwriter"
 	"time"
 
@@ -83,11 +85,16 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 	}
 
-	var session *Session
+	// Resolve Unified Sessions
+	unifiedMap := server.ResolveUnifiedSessions()
+	var uSess UnifiedSession
+	var isRemote bool
+
 	if *pSession > 0 {
-		var sErr error
-		session, sErr = server.getSession(*pSession)
-		if sErr != nil {
+		if val, ok := unifiedMap[int64(*pSession)]; ok {
+			uSess = val
+			isRemote = uSess.OwnerID != 0
+		} else {
 			return fmt.Errorf("unknown session ID %d", *pSession)
 		}
 	}
@@ -98,193 +105,256 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 
 		totalGlobalTcpIp := 0
+
+		// 1. Local Sessions Listing
 		sessionList := slices.Collect(maps.Values(server.sessionTrack.Sessions))
-
 		for _, sItem := range sessionList {
-			reverseMappings := sItem.SSHInstance.GetRemoteMappings()
-			totalSessionTcpIpFwd := len(reverseMappings)
-			totalGlobalTcpIp += totalSessionTcpIpFwd
+			totalGlobalTcpIp += listSessionForwarding(tw, sItem.sessionID, sItem.SSHInstance)
+		}
 
-			if totalSessionTcpIpFwd != 0 {
-				_, _ = fmt.Fprintln(tw)
-				_, _ = fmt.Fprintf(tw, "\tSession ID\tForward Address\tForward Port\tRemote Address\tRemote Port\n")
-				_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
-				for _, mapping := range reverseMappings {
-					var address string
-					var port string
-					if mapping.IsSshConn {
-						address = "(ssh client)"
-						port = "(ssh client)"
-					} else {
-						address = mapping.DstHost
-						port = fmt.Sprintf("%d", int(mapping.DstPort))
-					}
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\n",
-						sItem.sessionID,
-						address, port,
-						mapping.SrcHost, int(mapping.SrcPort),
-					)
-				}
-				_, _ = fmt.Fprintln(tw)
-				_ = tw.Flush()
-			}
+		// 2. Remote Sessions Listing
+		server.remoteSessionsMutex.Lock()
+		// We need the key to get the fake ID, or store UnifiedID in State?
+		// RemoteSessionState doesn't store UnifiedID.
+		// We can get keys.
+		keys := slices.Collect(maps.Keys(server.remoteSessions))
+		server.remoteSessionsMutex.Unlock()
 
-			localMappings := sItem.SSHInstance.GetLocalMappings()
-			totalSessionDirectTcpIp := len(localMappings)
-			totalGlobalTcpIp += totalSessionDirectTcpIp
+		for _, key := range keys {
+			// Key format "ssh:OwnerID:Path"
+			// Extract info? Or just list it?
+			// Maybe best to store UnifiedID in config loggers/fields if possible.
+			// Or just assume user knows.
+			// Reconstructing UnifiedID from key requires iteration of unifiedMap.
+			// For visualization, we can show "Remote(Path)".
 
-			if totalSessionDirectTcpIp != 0 {
-				_, _ = fmt.Fprintln(tw)
-				_, _ = fmt.Fprintf(tw, "\tSession ID\tLocal Address\tLocal Port\tForward Address\tForward Port\n")
-				_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
-				for _, mapping := range localMappings {
-					var address string
-					var port string
-					if mapping.IsSshConn {
-						address = "(ssh client)"
-						port = "(ssh client)"
-					} else {
-						address = mapping.DstHost
-						port = fmt.Sprintf("%d", int(mapping.DstPort))
-					}
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%d\t%s\t%s\n",
-						sItem.sessionID,
-						mapping.SrcHost, int(mapping.SrcPort),
-						address, port,
-					)
-				}
-				_, _ = fmt.Fprintln(tw)
-				_ = tw.Flush()
+			server.remoteSessionsMutex.Lock()
+			state := server.remoteSessions[key]
+			server.remoteSessionsMutex.Unlock()
+
+			if state.SSHInstance != nil {
+				// We don't have easy UnifiedID here without reverse lookup.
+				// But instance.Config has SessionID field!
+				// We set SessionID = UnifiedID in other commands.
+				totalGlobalTcpIp += listSessionForwarding(tw, state.SSHInstance.SessionID, state.SSHInstance)
 			}
 		}
+
 		ui.PrintInfo("Active Port Forwards: %d\n", totalGlobalTcpIp)
 		return nil
 	}
 
-	if *pLocal {
-		if session == nil {
-			return fmt.Errorf("session ID not specified")
-		}
-		if *pRemove {
-			port, pErr := parsePort(portFwdFlags.Args()[0])
-			if pErr != nil {
-				return fmt.Errorf("error parsing port: %w", pErr)
-			}
-			mapping, mErr := session.SSHInstance.GetLocalPortMapping(port)
-			if mErr != nil {
-				return fmt.Errorf("error getting local port mapping: %w", mErr)
-			}
-			mapping.DoneChan <- true
-			ui.PrintSuccess("Local Port forwarding (port %d) removed successfully", port)
-			return nil
-
-		}
-		fwdItem := portFwdFlags.Args()[0]
-		msg, pErr := parseForwarding(fwdItem)
-		if pErr != nil {
-			return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
-		}
-		ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
-
-		// Receive Errors from Instance
-		notifier := make(chan error, 1)
-		defer close(notifier)
-		go session.SSHInstance.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg, notifier)
-
-		port := int(msg.SrcPort)
-		ticker := time.NewTicker(conf.EndpointTickerInterval)
-		defer ticker.Stop()
-		timeout := time.After(conf.Timeout)
-
-		for {
-			// Priority check: always check notifier first
-			select {
-			case nErr := <-notifier:
-				if nErr != nil {
-					return fmt.Errorf("local port forward error: %w", nErr)
-				}
-			default:
-				// Non-blocking, fall through
-			}
-
-			// Then check ticker and timeout
-			select {
-			case <-ticker.C:
-				var sErr error
-				_, sErr = session.SSHInstance.GetLocalPortMapping(port)
-				if sErr != nil {
-					fmt.Printf(".")
-					continue
-				}
-				ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
-				return nil
-			case <-timeout:
-				return fmt.Errorf("local port forward reached timeout trying to start")
+	// Flags Processing
+	if !isRemote {
+		// Local Strategy
+		var session *Session
+		if *pSession > 0 {
+			var err error
+			session, err = server.getSession(int(uSess.ActualID))
+			if err != nil {
+				return fmt.Errorf("local session %d not found", uSess.ActualID)
 			}
 		}
-	}
 
-	if *pReverse {
-		if session == nil {
-			return fmt.Errorf("session ID not specified")
+		if *pLocal {
+			return handleLocalForward(server, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+		}
+		if *pReverse {
+			return handleReverseForward(server, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+		}
+	} else {
+		// Remote Strategy
+		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
+		server.remoteSessionsMutex.Lock()
+		if _, ok := server.remoteSessions[key]; !ok {
+			server.remoteSessions[key] = &RemoteSessionState{}
+		}
+		state := server.remoteSessions[key]
+		server.remoteSessionsMutex.Unlock()
+
+		// Ensure SSHInstance exists (generic)
+		if state.SSHInstance == nil {
+			gatewaySession, err := server.getSession(int(uSess.OwnerID))
+			if err != nil {
+				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+			}
+
+			target := append([]int64{}, uSess.Path...)
+			target = append(target, uSess.ActualID)
+
+			remoteConn := remote.NewProxy(gatewaySession, target)
+
+			config := instance.New(&instance.Config{
+				Logger:       server.Logger,
+				SessionID:    uSess.UnifiedID,
+				EndpointType: instance.SshEndpoint,
+			})
+			config.SetSSHConn(remoteConn)
+
+			server.remoteSessionsMutex.Lock()
+			state.SSHInstance = config
+			server.remoteSessionsMutex.Unlock()
 		}
 
-		if *pRemove {
-			port, pErr := parsePort(portFwdFlags.Args()[0])
-			if pErr != nil {
-				return fmt.Errorf("error parsing port: %w", pErr)
-			}
-			sErr := session.SSHInstance.CancelMsgRemoteFwd(port)
-			if sErr != nil {
-				return fmt.Errorf("failed to remove: %w", sErr)
-			}
-			ui.PrintSuccess("Remote Port forwarding (port %d) removed successfully", port)
-			return nil
+		if *pLocal {
+			return handleLocalForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
-
-		// Create Reverse Port Forwarding
-		fwdItem := portFwdFlags.Args()[0]
-		msg, pErr := parseForwarding(fwdItem)
-		if pErr != nil {
-			return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
-		}
-		ui.PrintInfo("Creating Port Forwarding %s:%d -> %s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
-
-		notifier := make(chan error, 1)
-		defer close(notifier)
-		go session.SSHInstance.TcpIpForwardFromMsg(*msg, notifier)
-
-		ticker := time.NewTicker(conf.EndpointTickerInterval)
-		defer ticker.Stop()
-		timeout := time.After(conf.Timeout)
-		port := int(msg.SrcPort)
-		for {
-			// Priority check: always check notifier first
-			select {
-			case nErr := <-notifier:
-				if nErr != nil {
-					return fmt.Errorf("remote port forward error: %w", nErr)
-				}
-			default:
-				// Non-blocking, fall through
-			}
-
-			// Then check ticker and timeout
-			select {
-			case <-ticker.C:
-				var sErr error
-				_, sErr = session.SSHInstance.GetRemotePortMapping(port)
-				if sErr != nil {
-					fmt.Printf(".")
-					continue
-				}
-				ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
-				return nil
-			case <-timeout:
-				return fmt.Errorf("remote port forward reached timeout trying to start")
-			}
+		if *pReverse {
+			// This will fail with "remote global requests not implemented yet"
+			return handleReverseForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 	}
 
 	return nil
+}
+
+// Helper to list forwardings
+func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *instance.Config) int {
+	if sshInst == nil {
+		return 0
+	}
+	count := 0
+
+	reverseMappings := sshInst.GetRemoteMappings()
+	count += len(reverseMappings)
+	if len(reverseMappings) > 0 {
+		_, _ = fmt.Fprintln(tw)
+		_, _ = fmt.Fprintf(tw, "\tSession ID\tForward Address\tForward Port\tRemote Address\tRemote Port\n")
+		_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
+		for _, mapping := range reverseMappings {
+			address := mapping.DstHost
+			port := fmt.Sprintf("%d", int(mapping.DstPort))
+			if mapping.IsSshConn {
+				address = "(ssh client)"
+				port = "(ssh client)"
+			}
+			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\n", sessionID, address, port, mapping.SrcHost, int(mapping.SrcPort))
+		}
+		_, _ = fmt.Fprintln(tw)
+		_ = tw.Flush()
+	}
+
+	localMappings := sshInst.GetLocalMappings()
+	count += len(localMappings)
+	if len(localMappings) > 0 {
+		_, _ = fmt.Fprintln(tw)
+		_, _ = fmt.Fprintf(tw, "\tSession ID\tLocal Address\tLocal Port\tForward Address\tForward Port\n")
+		_, _ = fmt.Fprintf(tw, "\t----------\t---------------\t----------\t--------------\t-----------\n")
+		for _, mapping := range localMappings {
+			address := mapping.DstHost
+			port := fmt.Sprintf("%d", int(mapping.DstPort))
+			if mapping.IsSshConn {
+				address = "(ssh client)"
+				port = "(ssh client)"
+			}
+			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%d\t%s\t%s\n", sessionID, mapping.SrcHost, int(mapping.SrcPort), address, port)
+		}
+		_, _ = fmt.Fprintln(tw)
+		_ = tw.Flush()
+	}
+	return count
+}
+
+func handleLocalForward(server *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+	if remove {
+		port, pErr := parsePort(arg)
+		if pErr != nil {
+			return fmt.Errorf("error parsing port: %w", pErr)
+		}
+		mapping, mErr := sshInst.GetLocalPortMapping(port)
+		if mErr != nil {
+			return fmt.Errorf("error getting local port mapping: %w", mErr)
+		}
+		mapping.DoneChan <- true
+		ui.PrintSuccess("Local Port forwarding (port %d) removed successfully", port)
+		return nil
+	}
+	fwdItem := arg
+	msg, pErr := parseForwarding(fwdItem)
+	if pErr != nil {
+		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
+	}
+	ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+
+	notifier := make(chan error, 1)
+	defer close(notifier)
+	go sshInst.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg, notifier)
+
+	port := int(msg.SrcPort)
+	ticker := time.NewTicker(conf.EndpointTickerInterval)
+	defer ticker.Stop()
+	timeout := time.After(conf.Timeout)
+
+	for {
+		select {
+		case nErr := <-notifier:
+			if nErr != nil {
+				return fmt.Errorf("local port forward error: %w", nErr)
+			}
+		default:
+		}
+		select {
+		case <-ticker.C:
+			_, sErr := sshInst.GetLocalPortMapping(port)
+			if sErr != nil {
+				fmt.Printf(".")
+				continue
+			}
+			ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
+			return nil
+		case <-timeout:
+			return fmt.Errorf("local port forward reached timeout trying to start")
+		}
+	}
+}
+
+func handleReverseForward(server *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+	if remove {
+		port, pErr := parsePort(arg)
+		if pErr != nil {
+			return fmt.Errorf("error parsing port: %w", pErr)
+		}
+		sErr := sshInst.CancelMsgRemoteFwd(port)
+		if sErr != nil {
+			return fmt.Errorf("failed to remove: %w", sErr)
+		}
+		ui.PrintSuccess("Remote Port forwarding (port %d) removed successfully", port)
+		return nil
+	}
+	fwdItem := arg
+	msg, pErr := parseForwarding(fwdItem)
+	if pErr != nil {
+		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
+	}
+	ui.PrintInfo("Creating Port Forwarding %s:%d -> %s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+
+	notifier := make(chan error, 1)
+	defer close(notifier)
+	go sshInst.TcpIpForwardFromMsg(*msg, notifier)
+
+	ticker := time.NewTicker(conf.EndpointTickerInterval)
+	defer ticker.Stop()
+	timeout := time.After(conf.Timeout)
+	port := int(msg.SrcPort)
+	for {
+		select {
+		case nErr := <-notifier:
+			if nErr != nil {
+				return fmt.Errorf("remote port forward error: %w", nErr)
+			}
+		default:
+		}
+		select {
+		case <-ticker.C:
+			_, sErr := sshInst.GetRemotePortMapping(port)
+			if sErr != nil {
+				fmt.Printf(".")
+				continue
+			}
+			ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
+			return nil
+		case <-timeout:
+			return fmt.Errorf("remote port forward reached timeout trying to start")
+		}
+	}
 }

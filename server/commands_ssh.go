@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"slider/pkg/conf"
+	"slider/pkg/instance"
+	"slider/server/remote"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -64,68 +66,171 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("flags --kill and --expose cannot be used together")
 	}
 
-	var session *Session
-	var sErr error
 	sessionID := *sSession + *sKill
-	session, sErr = server.getSession(sessionID)
-	if sErr != nil {
+
+	var uSess UnifiedSession
+	var isRemote bool
+
+	// Resolve Unified Sessions
+	unifiedMap := server.ResolveUnifiedSessions()
+	if val, ok := unifiedMap[int64(sessionID)]; ok {
+		uSess = val
+		isRemote = uSess.OwnerID != 0
+	} else {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
 
-	if *sKill > 0 {
-		if session.SSHInstance.IsEnabled() {
-			if err := session.SSHInstance.Stop(); err != nil {
+	if !isRemote {
+		// Local Strategy
+		session, sErr := server.getSession(int(uSess.ActualID))
+		if sErr != nil {
+			return fmt.Errorf("local session %d not found", uSess.ActualID)
+		}
+
+		if *sKill > 0 {
+			if session.SSHInstance.IsEnabled() {
+				if err := session.SSHInstance.Stop(); err != nil {
+					return fmt.Errorf("error stopping SSH server: %w", err)
+				}
+				ui.PrintSuccess("SSH Endpoint gracefully stopped")
+				return nil
+			}
+			ui.PrintInfo("No SSH Server on Session ID %d", *sKill)
+			return nil
+		}
+
+		if *sSession > 0 {
+			if session.SSHInstance.IsEnabled() {
+				if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
+					return fmt.Errorf("ssh endpoint already running on port: %d", port)
+				}
+				return nil
+			}
+			ui.PrintInfo("Enabling SSH Endpoint in the background")
+
+			notifier := make(chan error, 1)
+			defer close(notifier)
+			sshTicker := time.NewTicker(conf.EndpointTickerInterval)
+			defer sshTicker.Stop()
+			timeout := time.After(conf.Timeout)
+
+			go session.sshEnable(*sPort, *sExpose, notifier)
+
+			for {
+				select {
+				case nErr := <-notifier:
+					if nErr != nil {
+						return fmt.Errorf("endpoint error: %w", nErr)
+					}
+				case <-sshTicker.C:
+					port, sErr := session.SSHInstance.GetEndpointPort()
+					if port == 0 || sErr != nil {
+						continue
+					}
+					ui.PrintSuccess("SSH Endpoint running on port: %d", port)
+					return nil
+				case <-timeout:
+					return fmt.Errorf("ssh endpoint reached timeout trying to start")
+				}
+			}
+		}
+	} else {
+		// Remote Strategy
+		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
+		server.remoteSessionsMutex.Lock()
+		if _, ok := server.remoteSessions[key]; !ok {
+			server.remoteSessions[key] = &RemoteSessionState{}
+		}
+		state := server.remoteSessions[key]
+		server.remoteSessionsMutex.Unlock()
+
+		if *sKill > 0 {
+			if state.SSHInstance == nil || !state.SSHInstance.IsEnabled() {
+				ui.PrintWarn("No SSH Server running on remote session %d", sessionID)
+				return nil
+			}
+			if err := state.SSHInstance.Stop(); err != nil {
 				return fmt.Errorf("error stopping SSH server: %w", err)
 			}
-			ui.PrintSuccess("SSH Endpoint gracefully stopped")
+			// Cleanup
+			server.remoteSessionsMutex.Lock()
+			state.SSHInstance = nil
+			server.remoteSessionsMutex.Unlock()
+			ui.PrintSuccess("SSH Endpoint gracefully stopped on remote session %d", sessionID)
 			return nil
 		}
-		ui.PrintInfo("No SSH Server on Session ID %d", *sKill)
-		return nil
-	}
 
-	if *sSession > 0 {
-		if session.SSHInstance.IsEnabled() {
-			if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
-				return fmt.Errorf("ssh endpoint already running on port: %d", port)
-			}
-			return nil
-		}
-		ui.PrintInfo("Enabling SSH Endpoint in the background")
-
-		// Receive Errors from Endpoint
-		notifier := make(chan error, 1)
-		defer close(notifier)
-		// Give some time to check
-		sshTicker := time.NewTicker(conf.EndpointTickerInterval)
-		defer sshTicker.Stop()
-		timeout := time.After(conf.Timeout)
-
-		go session.sshEnable(*sPort, *sExpose, notifier)
-
-		for {
-			// Priority check: always check notifier first
-			select {
-			case nErr := <-notifier:
-				if nErr != nil {
-					return fmt.Errorf("endpoint error: %w", nErr)
+		if *sSession > 0 {
+			if state.SSHInstance != nil && state.SSHInstance.IsEnabled() {
+				if port, pErr := state.SSHInstance.GetEndpointPort(); pErr == nil {
+					return fmt.Errorf("ssh endpoint already running on port: %d", port)
 				}
-			default:
-				// Non-blocking, fall through
-			}
-
-			// Then check ticker and timeout
-			select {
-			case <-sshTicker.C:
-				port, sErr := session.SSHInstance.GetEndpointPort()
-				if port == 0 || sErr != nil {
-					fmt.Printf(".")
-					continue
-				}
-				ui.PrintSuccess("SSH Endpoint running on port: %d", port)
 				return nil
-			case <-timeout:
-				return fmt.Errorf("ssh endpoint reached timeout trying to start")
+			}
+
+			// Setup Remote Connection
+			gatewaySession, err := server.getSession(int(uSess.OwnerID))
+			if err != nil {
+				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+			}
+
+			// Construct Target Path
+			target := append([]int64{}, uSess.Path...)
+			target = append(target, uSess.ActualID)
+
+			remoteConn := remote.NewProxy(gatewaySession, target)
+
+			// Configure Instance
+			config := instance.New(&instance.Config{
+				Logger:       server.Logger,
+				SessionID:    uSess.UnifiedID,
+				EndpointType: instance.SshEndpoint,
+				ServerKey:    server.serverKey, // Needed for SSH handshake
+				// AuthOn? Server.authOn?
+				AuthOn: server.authOn,
+			})
+			config.SetSSHConn(remoteConn)
+			config.SetExpose(*sExpose)
+
+			ui.PrintInfo("Enabling Remote SSH Endpoint in the background")
+
+			// Start SSH Endpoint
+			notifier := make(chan error, 1)
+			defer close(notifier)
+			go func() {
+				if err := config.StartEndpoint(*sPort); err != nil {
+					notifier <- err
+				}
+			}()
+
+			server.remoteSessionsMutex.Lock()
+			state.SSHInstance = config
+			server.remoteSessionsMutex.Unlock()
+
+			// Wait for startup
+			sshTicker := time.NewTicker(conf.EndpointTickerInterval)
+			defer sshTicker.Stop()
+			timeout := time.After(conf.Timeout)
+
+			for {
+				select {
+				case nErr := <-notifier:
+					if nErr != nil {
+						server.remoteSessionsMutex.Lock()
+						state.SSHInstance = nil
+						server.remoteSessionsMutex.Unlock()
+						return fmt.Errorf("failed to start remote ssh endpoint: %w", nErr)
+					}
+				case <-sshTicker.C:
+					port, sErr := config.GetEndpointPort()
+					if port == 0 || sErr != nil {
+						continue
+					}
+					ui.PrintSuccess("Remote SSH Endpoint running on port: %d", port)
+					return nil
+				case <-timeout:
+					return fmt.Errorf("remote ssh endpoint reached timeout trying to start")
+				}
 			}
 		}
 	}

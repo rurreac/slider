@@ -1,5 +1,3 @@
-//go:build !windows
-
 package client
 
 import (
@@ -8,10 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"slider/pkg/instance"
-	"slider/pkg/sio"
+	"slider/pkg/interpreter"
 	"slider/pkg/slog"
+	"sync"
 
-	"github.com/creack/pty"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -37,8 +35,6 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 	// This channel will be a blocker and closed by the server request
 	envChange := make(chan []byte, 10)
 
-	cmd := exec.Command(s.interpreter.Shell) //nolint:gosec
-
 	go s.handleSSHRequests(requests, winChange, envChange)
 
 	// Handle environment variable events
@@ -58,23 +54,33 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				slog.F("value", kv.Value))
 		}
 	}
+
+	cmd := exec.Command(s.interpreter.Shell)
 	cmd.Env = append(os.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
 		s.Logger.Debugf("Running SHELL on PTY")
-		ptyF, _ := pty.StartWithSize(
-			cmd,
-			&pty.Winsize{
-				Rows: uint16(s.initTermSize.Height),
-				Cols: uint16(s.initTermSize.Width)},
-		)
-		defer func() { _ = ptyF.Close() }()
+		cols := s.initTermSize.Width
+		rows := s.initTermSize.Height
+		if cols == 0 {
+			cols = 80
+		}
+		if rows == 0 {
+			rows = 24
+		}
+
+		ptyF, sErr := interpreter.StartPty(cmd, cols, rows)
+		if sErr != nil {
+			s.Logger.ErrorWith("Failed to start PTY", slog.F("err", sErr))
+			_ = sshChan.Close()
+			return
+		}
 
 		// Handle window changes
 		go func() {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
-				if sErr := pty.Setsize(ptyF, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); sErr != nil {
+				if sErr := ptyF.Resize(cols, rows); sErr != nil {
 					s.Logger.ErrorWith("Failed to set window size",
 						slog.F("session_id", s.sessionID),
 						slog.F("err", sErr))
@@ -82,8 +88,55 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			}
 		}()
 
-		_, _ = sio.PipeWithCancel(ptyF, sshChan)
+		// Use a channel to signal when PTY process exits
+		ptyDone := make(chan struct{})
 
+		// Wait for process in background and close PTY to break the data pipe
+		go func() {
+			waitErr := ptyF.Wait()
+			if waitErr != nil {
+				s.Logger.DebugWith("Shell process exited with error",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", waitErr))
+			} else {
+				s.Logger.DebugWith("Shell process exited normally", slog.F("session_id", s.sessionID))
+			}
+			_ = ptyF.Close()
+			close(ptyDone)
+		}()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Copy from PTY to SSH channel
+		go func() {
+			defer wg.Done()
+			_, copyErr := io.Copy(sshChan, ptyF)
+			if copyErr != nil && copyErr != io.EOF {
+				s.Logger.DebugWith("Error copying from PTY to SSH",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", copyErr))
+			}
+			// When PTY output is done, send EOF to SSH channel
+			_ = sshChan.CloseWrite()
+		}()
+
+		// Copy from SSH channel to PTY
+		go func() {
+			defer wg.Done()
+			_, copyErr := io.Copy(ptyF, sshChan)
+			if copyErr != nil && copyErr != io.EOF {
+				s.Logger.DebugWith("Error copying from SSH to PTY",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", copyErr))
+			}
+			// When PTY output is done, send EOF to SSH channel
+			_ = sshChan.CloseWrite()
+		}()
+
+		wg.Wait()
+		<-ptyDone // Ensure PTY cleanup is complete
+		s.Logger.DebugWith("Shell I/O piping completed", slog.F("session_id", s.sessionID))
 	} else {
 		s.Logger.Debugf("Running SHELL on NON PTY")
 
@@ -92,6 +145,13 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			for range winChange {
 			}
 		}()
+
+		// On Windows, non-PTY shell often needs specific flags or behavior
+		// Original code for Windows had Args: []string{"/qa"} for some reason.
+		// Let's keep it if we are on Windows.
+		if s.interpreter.System == "windows" {
+			cmd.Args = append(cmd.Args, "/qa")
+		}
 
 		outRC, oErr := cmd.StdoutPipe()
 		if oErr != nil {
@@ -108,6 +168,8 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 			return
 		}
 
+		cmd.Stdin = sshChan
+
 		if runErr := cmd.Start(); runErr != nil {
 			s.Logger.ErrorWith("Failed to execute command",
 				slog.F("session_id", s.sessionID),
@@ -123,7 +185,6 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 				slog.F("session_id", s.sessionID),
 				slog.F("err", wErr))
 		}
-
 	}
 }
 
@@ -151,7 +212,7 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 		slog.F("extra_data", channel.ExtraData()))
 
 	rcvCmd := string(channel.ExtraData()[4:])
-	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...) //nolint:gosec
+	cmd := exec.Command(s.interpreter.Shell, append(s.interpreter.CmdArgs, rcvCmd)...)
 
 	go s.handleSSHRequests(requests, winChange, envChange)
 
@@ -172,31 +233,32 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 				slog.F("value", kv.Value))
 		}
 	}
-	cmd.Env = append(cmd.Environ(), envVars...)
+	cmd.Env = append(os.Environ(), envVars...)
 
 	if s.interpreter.PtyOn {
 		s.Logger.Debugf("Running EXEC on PTY")
-		ptyF, fErr := pty.Start(cmd)
+		cols := s.initTermSize.Width
+		rows := s.initTermSize.Height
+		if cols == 0 {
+			cols = 80
+		}
+		if rows == 0 {
+			rows = 24
+		}
+
+		ptyF, fErr := interpreter.StartPty(cmd, cols, rows)
 		if fErr != nil {
 			s.Logger.ErrorWith("Failed to start command",
 				slog.F("session_id", s.sessionID),
 				slog.F("err", fErr))
 			return
 		}
-		defer func() { _ = ptyF.Close() }()
-		if sErr := pty.Setsize(ptyF, &pty.Winsize{
-			Rows: uint16(s.initTermSize.Height),
-			Cols: uint16(s.initTermSize.Width)}); sErr != nil {
-			s.Logger.ErrorWith("Failed to set window size",
-				slog.F("session_id", s.sessionID),
-				slog.F("err", sErr))
-		}
 
 		// Handle window-change events
 		go func() {
 			for sizeBytes := range winChange {
 				cols, rows := instance.ParseSizePayload(sizeBytes)
-				if sErr := pty.Setsize(ptyF, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)}); sErr != nil {
+				if sErr := ptyF.Resize(cols, rows); sErr != nil {
 					s.Logger.ErrorWith("Failed to update window size",
 						slog.F("session_id", s.sessionID),
 						slog.F("err", sErr))
@@ -204,8 +266,53 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 			}
 		}()
 
-		_, _ = sio.PipeWithCancel(ptyF, sshChan)
+		// Use a channel to signal when PTY process exits
+		ptyDone := make(chan struct{})
 
+		// Wait for process in background and close PTY to break the data pipe
+		go func() {
+			waitErr := ptyF.Wait()
+			if waitErr != nil {
+				s.Logger.DebugWith("Exec process exited with error",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", waitErr))
+			} else {
+				s.Logger.DebugWith("Exec process exited normally", slog.F("session_id", s.sessionID))
+			}
+			_ = ptyF.Close()
+			close(ptyDone)
+		}()
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		// Copy from PTY to SSH channel
+		go func() {
+			defer wg.Done()
+			_, copyErr := io.Copy(sshChan, ptyF)
+			if copyErr != nil && copyErr != io.EOF {
+				s.Logger.DebugWith("Error copying from PTY to SSH",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", copyErr))
+			}
+			// When PTY output is done, send EOF to SSH channel
+			_ = sshChan.CloseWrite()
+		}()
+
+		// Copy from SSH channel to PTY
+		go func() {
+			defer wg.Done()
+			_, copyErr := io.Copy(ptyF, sshChan)
+			if copyErr != nil && copyErr != io.EOF {
+				s.Logger.DebugWith("Error copying from SSH to PTY",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", copyErr))
+			}
+		}()
+
+		wg.Wait()
+		<-ptyDone // Ensure PTY cleanup is complete
+		s.Logger.DebugWith("Exec I/O piping completed", slog.F("session_id", s.sessionID))
 	} else {
 		s.Logger.Debugf("Running EXEC on NON PTY")
 		// Handle window-change events
@@ -245,5 +352,4 @@ func (s *Session) handleExecChannel(channel ssh.NewChannel) {
 				slog.F("err", wErr))
 		}
 	}
-
 }

@@ -5,10 +5,13 @@ package interpreter
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"runtime"
 	"slices"
 	"strings"
+
+	"github.com/creack/pty"
 )
 
 type Interpreter struct {
@@ -22,7 +25,30 @@ type Interpreter struct {
 	ShellArgs []string `json:"ShellArgs"`
 	CmdArgs   []string `json:"CmdArgs"`
 	PtyOn     bool     `json:"PtyOn"`
-	Pty       *os.File
+	Pty       Pty
+}
+
+type unixPty struct {
+	file *os.File
+	cmd  *exec.Cmd
+}
+
+func (p *unixPty) Read(b []byte) (n int, err error)  { return p.file.Read(b) }
+func (p *unixPty) Write(b []byte) (n int, err error) { return p.file.Write(b) }
+func (p *unixPty) Close() error                      { return p.file.Close() }
+func (p *unixPty) Resize(cols, rows uint32) error {
+	return pty.Setsize(p.file, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+}
+func (p *unixPty) Wait() error {
+	return p.cmd.Wait()
+}
+
+func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	if err != nil {
+		return nil, err
+	}
+	return &unixPty{file: f, cmd: cmd}, nil
 }
 
 var (

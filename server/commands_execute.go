@@ -3,6 +3,9 @@ package server
 import (
 	"errors"
 	"fmt"
+	"slider/pkg/instance"
+	"slider/pkg/slog"
+	"slider/server/remote"
 	"strings"
 
 	"github.com/spf13/pflag"
@@ -63,35 +66,93 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	command := strings.Join(executeFlags.Args(), " ")
 
-	var sessions []*Session
+	var sessions []UnifiedSession
+
+	// Resolve Unified Sessions
+	unifiedMap := server.ResolveUnifiedSessions()
+
 	if *eSession > 0 {
-		session, sErr := server.getSession(*eSession)
-		if sErr != nil {
+		if uSess, ok := unifiedMap[int64(*eSession)]; ok {
+			sessions = []UnifiedSession{uSess}
+		} else {
 			return fmt.Errorf("unknown session ID %d", *eSession)
 		}
-		sessions = []*Session{session}
-	}
-
-	if *eAll {
-		for _, session := range server.sessionTrack.Sessions {
-			sessions = append(sessions, session)
+	} else if *eAll {
+		for _, uSess := range unifiedMap {
+			sessions = append(sessions, uSess)
 		}
 	}
 
-	for _, session := range sessions {
+	for _, uSess := range sessions {
 		if *eAll {
-			ui.PrintInfo("Executing Command on SessionID %d", session.sessionID)
+			ui.PrintInfo("Executing Command on SessionID %d", uSess.UnifiedID)
 		}
 
-		var envVarList []struct{ Key, Value string }
-		i := session.newExecInstance(envVarList)
-		if err := i.ExecuteCommand(command, server.console.InitState); err != nil {
-			if !*eAll {
-				return fmt.Errorf("execution error: %w", err)
+		if uSess.OwnerID == 0 {
+			// Local
+			session, err := server.getSession(int(uSess.ActualID))
+			if err != nil {
+				if !*eAll {
+					return fmt.Errorf("session %d not found", uSess.UnifiedID)
+				}
+				continue
 			}
-			ui.PrintError("%v", err)
+
+			var envVarList []struct{ Key, Value string }
+			i := session.newExecInstance(envVarList)
+			if err := i.ExecuteCommand(command, server.console.InitState); err != nil {
+				if !*eAll {
+					return fmt.Errorf("execution error: %w", err)
+				}
+				ui.PrintError("%v", err)
+			}
+		} else {
+			// Remote
+			if err := c.handleRemoteExecute(server, uSess, command, ui); err != nil {
+				if !*eAll {
+					return fmt.Errorf("remote execution error: %w", err)
+				}
+				ui.PrintError("Remote Execution Failed on %d: %v", uSess.UnifiedID, err)
+			}
 		}
 		server.console.Println("")
 	}
+	return nil
+}
+
+func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, command string, ui UserInterface) error {
+	// 1. Get Gateway Session
+	gatewaySession, sessErr := s.getSession(int(uSess.OwnerID))
+	if sessErr != nil {
+		return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+	}
+
+	// 2. Construct Path
+	target := append([]int64{}, uSess.Path...)
+	target = append(target, uSess.ActualID)
+
+	s.InfoWith("Executing Remote Command",
+		slog.F("target_unified_id", uSess.UnifiedID),
+		slog.F("target_path", target))
+
+	// 3. Create Remote Connection
+	remoteConn := remote.NewProxy(gatewaySession, target)
+
+	// 4. Create Instance Config
+	config := instance.New(&instance.Config{
+		Logger:       s.Logger,
+		SessionID:    uSess.UnifiedID,
+		EndpointType: instance.ExecEndpoint,
+	})
+	config.SetSSHConn(remoteConn)
+	// We don't know remote interpreter settings, so default to false?
+	config.SetPtyOn(false)
+	// config.SetEnvVarList? None for now.
+
+	// 5. Execute
+	if err := config.ExecuteCommand(command, s.console.InitState); err != nil {
+		return err
+	}
+	s.console.Println("")
 	return nil
 }

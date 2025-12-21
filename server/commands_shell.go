@@ -2,15 +2,19 @@ package server
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"slider/pkg/conf"
+	"slider/pkg/slog"
+	"slider/server/remote"
 	"time"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
@@ -92,12 +96,28 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	var session *Session
-	var sessErr error
 	sessionID := *sSession + *sKill
-	session, sessErr = server.getSession(sessionID)
-	if sessErr != nil {
+	// Resolve session ID for Unified Remote support
+	unifiedMap := server.ResolveUnifiedSessions()
+	uSess, ok := unifiedMap[int64(sessionID)]
+	if !ok {
+		return fmt.Errorf("session %d not found", sessionID)
+	}
+
+	// REMOTE PROXY STRATEGY
+	if uSess.OwnerID != 0 {
+		return c.handleRemoteShell(server, uSess, ui)
+	}
+
+	// LOCAL STRATEGY
+	// Map UnifiedID back to ActualID for local lookup
+	sessionID = int(uSess.ActualID)
+	session, err := server.getSession(sessionID)
+	if err != nil {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
+
+	// Safety check again for Promiseous/Local mismatch if Logic failed
 
 	if *sKill > 0 {
 		if session.ShellInstance.IsEnabled() {
@@ -223,7 +243,7 @@ func (ic *InteractiveConsole) Run() error {
 	}
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
-	// If session doesn't support PTY revert Raw Terminal
+	// If the session doesn't support PTY, revert Raw Terminal
 	if !ic.IsPtyOn() {
 		ic.ui.PrintWarn("Client does not support PTY")
 		ic.ui.PrintWarn("Pressing CTR^C will interrupt the shell")
@@ -242,7 +262,9 @@ func (ic *InteractiveConsole) Run() error {
 	}
 
 	// Clear screen (Windows Command Prompt already does that)
-	if string(ic.clientInterpreter.System) != "windows" || !ic.clientInterpreter.PtyOn {
+	isWindows := ic.clientInterpreter != nil && string(ic.clientInterpreter.System) == "windows"
+
+	if !isWindows || !ic.IsPtyOn() {
 		ic.clearScreen()
 	}
 
@@ -253,4 +275,117 @@ func (ic *InteractiveConsole) Run() error {
 	}()
 	_, _ = io.Copy(conn, ic.ReadWriter)
 	return nil
+}
+
+// handleRemoteShell establishes a direct pipe to a remote shell via the Gateway
+func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui UserInterface) error {
+	// 1. Get Gateway Session
+	gatewaySession, sessErr := s.getSession(int(uSess.OwnerID))
+	if sessErr != nil {
+		return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
+	}
+
+	// 2. Construct Target Path for slider-connect
+	target := append([]int64{}, uSess.Path...)
+	target = append(target, uSess.ActualID)
+
+	s.InfoWith("Connecting to Remote Shell",
+		slog.F("target_unified_id", uSess.UnifiedID),
+		slog.F("target_path", target))
+
+	// 3. Dial Remote Channel directly (no local listener needed)
+	req := remote.ConnectRequest{
+		Target:      target,
+		ChannelType: "shell",
+	}
+	payload, _ := json.Marshal(req)
+
+	sshChan, reqs, err := gatewaySession.sshClient.OpenChannel("slider-connect", payload)
+	if err != nil {
+		return fmt.Errorf("failed to open remote shell channel: %v", err)
+	}
+	defer func() { _ = sshChan.Close() }()
+
+	// We need to handle requests from the remote side (e.g., exit-status)?
+	// Usually a shell channel sends exit-status or just closes.
+	go ssh.DiscardRequests(reqs)
+
+	// 4. Setup Terminal
+	console, ok := ui.(*Console)
+	if !ok {
+		return fmt.Errorf("UI is not a Console")
+	}
+
+	// Clear screen
+	console.PrintInfo("Connected to Remote Shell. Press ENTER.")
+	// (Simple clear if supported)
+
+	// Set Raw Mode
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		state, err := term.MakeRaw(fd)
+		if err != nil {
+			return fmt.Errorf("failed to enable raw mode: %v", err)
+		}
+		defer func() { _ = term.Restore(fd, state) }()
+
+		// 5. Handle Resizing
+		// Send initial size
+		w, h, _ := term.GetSize(fd)
+		sendWindowChange(sshChan, w, h)
+		// Unblock the client shell by sending SLIDER_ENV=true
+		sendEnv(sshChan, "SLIDER_ENV", "true")
+
+		// Loop for resizing (using a signal or polling? ssh/terminal libs usually use signal)
+		// We can't easily capture signals in a library function without disrupting global handlers,
+		// but Slider seems to have a global signal handler?
+		// check InteractiveConsole implementation for CaptureInterrupts references.
+		// For now, send initial size is good. Dynamic resize might require a signal listener.
+	}
+
+	// 6. Pipe IO (Don't wait for Stdin to close, as it blocks)
+
+	// Remote -> Local
+	go func() {
+		_, _ = io.Copy(console.ReadWriter, sshChan)
+		console.PrintWarn("Press ENTER until get back to console")
+		// Need to force closing the channel to get control back
+		_ = sshChan.Close()
+	}()
+
+	// Local -> Remote
+	_, _ = io.Copy(sshChan, console.ReadWriter)
+	// Usually blocks on Stdin read until the user exits
+	return nil
+}
+
+func sendWindowChange(ch ssh.Channel, w, h int) {
+	// 4 bytes width, 4 bytes height, 4 bytes width px, 4 bytes height px
+	payload := make([]byte, 16)
+	// Manually putting bytes (Big Endian)
+	// Width
+	payload[0] = byte(w >> 24)
+	payload[1] = byte(w >> 16)
+	payload[2] = byte(w >> 8)
+	payload[3] = byte(w)
+	// Height
+	payload[4] = byte(h >> 24)
+	payload[5] = byte(h >> 16)
+	payload[6] = byte(h >> 8)
+	payload[7] = byte(h)
+	// Pixels ignored (0)
+
+	_, _ = ch.SendRequest("window-change", false, payload)
+}
+
+func sendEnv(ch ssh.Channel, key, value string) {
+	payload := struct {
+		Key   string
+		Value string
+	}{
+		Key:   key,
+		Value: value,
+	}
+	pBytes := ssh.Marshal(payload)
+	_, _ = ch.SendRequest("env", false, pBytes)
 }

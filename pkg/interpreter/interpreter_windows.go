@@ -3,8 +3,10 @@
 package interpreter
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"runtime"
 	"strings"
@@ -29,36 +31,51 @@ type Interpreter struct {
 	ShellArgs   []string `json:"ShellArgs"`
 	CmdArgs     []string `json:"CmdArgs"`
 	PtyOn       bool     `json:"PtyOn"`
-	Pty         *conpty.ConPty
+	Pty         Pty
 	inputModes  uint32
 	outputModes uint32
 }
 
+type winPty struct {
+	con *conpty.ConPty
+}
+
+func (p *winPty) Read(b []byte) (n int, err error)  { return p.con.Read(b) }
+func (p *winPty) Write(b []byte) (n int, err error) { return p.con.Write(b) }
+func (p *winPty) Close() error                      { return p.con.Close() }
+func (p *winPty) Resize(cols, rows uint32) error {
+	return p.con.Resize(int(cols), int(rows))
+}
+
+func (p *winPty) Wait() error {
+	_, err := p.con.Wait(context.Background())
+	return err
+}
+
+func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
+	// Build the command line for Windows.
+	// On Windows, conpty.Start (CreateProcess) expects a single command line string.
+	// cmd.String() correctly joins and quotes the arguments since Go 1.17.
+	commandLine := cmd.String()
+
+	c, err := conpty.Start(commandLine, conpty.ConPtyDimensions(int(cols), int(rows)), conpty.ConPtyEnv(cmd.Env))
+	if err != nil {
+		return nil, err
+	}
+	return &winPty{con: c}, nil
+}
+
 func IsPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
-	// We do this now so we can have logs with colors, and this is needed even before having an interpreter
 	if available {
-		// Even when ConPTY is available, if Slider is not running on a Windows Terminal, control
-		// character sequences are not available until an OS command is invoked within Slider.
-		// This is somehow normal Windows behavior but breaks the character output until it happens.
-		// The reason is that ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
-		// enabled by default.
-		// The following will enable those values if they are not, regardless of the terminal, or return false
 		outHandle := windows.Handle(os.Stdout.Fd())
-		var lpMode uint32
-		// https://learn.microsoft.com/en-us/windows/console/getconsolemode
-		if err := windows.GetConsoleMode(outHandle, &lpMode); err != nil {
-			return false
+		var mode uint32
+		if err := windows.GetConsoleMode(outHandle, &mode); err == nil {
+			_ = windows.SetConsoleMode(outHandle, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT)
 		}
-		// https://learn.microsoft.com/en-us/windows/console/setconsolemode
-		if lpMode != windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT {
-			if err := windows.SetConsoleMode(outHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
-				return false
-			}
-			errHandle := windows.Handle(os.Stderr.Fd())
-			if err := windows.SetConsoleMode(errHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
-				return false
-			}
+		errHandle := windows.Handle(os.Stderr.Fd())
+		if err := windows.GetConsoleMode(errHandle, &mode); err == nil {
+			_ = windows.SetConsoleMode(errHandle, mode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT)
 		}
 	}
 	return available
@@ -74,33 +91,26 @@ func (i *Interpreter) EnableProcessedInputOutput() error {
 	}
 	i.inputModes = inMode
 	// Enable virtual terminal input processing for backspace handling
-	if inMode != windows.ENABLE_PROCESSED_INPUT|windows.ENABLE_VIRTUAL_TERMINAL_INPUT {
-		if err := windows.SetConsoleMode(inHandle, windows.ENABLE_PROCESSED_INPUT|windows.ENABLE_VIRTUAL_TERMINAL_INPUT); err != nil {
-			return err
-		}
+	newInMode := inMode | windows.ENABLE_PROCESSED_INPUT | windows.ENABLE_VIRTUAL_TERMINAL_INPUT
+	if err := windows.SetConsoleMode(inHandle, newInMode); err != nil {
+		// Non-fatal, older windows might not support VT Input
 	}
-	// Even when ConPTY is available, if Slider is not running on a Windows Terminal, control
-	// character sequences are not available until an OS command is invoked within Slider.
-	// This is somehow normal Windows behavior but breaks the character output until it happens.
-	// The reason is that ENABLE_VIRTUAL_TERMINAL_PROCESSING and ENABLE_PROCESSED_OUTPUT are not
-	// enabled by default.
+
 	outHandle := windows.Handle(os.Stdout.Fd())
-	var lpMode uint32
-	// https://learn.microsoft.com/en-us/windows/console/getconsolemode
-	if err := windows.GetConsoleMode(outHandle, &lpMode); err != nil {
-		return err
+	var outMode uint32
+	if err := windows.GetConsoleMode(outHandle, &outMode); err == nil {
+		i.outputModes = outMode
+		newOutMode := outMode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.ENABLE_PROCESSED_OUTPUT
+		_ = windows.SetConsoleMode(outHandle, newOutMode)
 	}
-	i.outputModes = lpMode
-	// https://learn.microsoft.com/en-us/windows/console/setconsolemode
-	if lpMode != windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT {
-		if err := windows.SetConsoleMode(outHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
-			return err
-		}
-		errHandle := windows.Handle(os.Stderr.Fd())
-		if err := windows.SetConsoleMode(errHandle, windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.ENABLE_PROCESSED_OUTPUT); err != nil {
-			return err
-		}
+
+	errHandle := windows.Handle(os.Stderr.Fd())
+	var errMode uint32
+	if err := windows.GetConsoleMode(errHandle, &errMode); err == nil {
+		newErrMode := errMode | windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING | windows.ENABLE_PROCESSED_OUTPUT
+		_ = windows.SetConsoleMode(errHandle, newErrMode)
 	}
+
 	return nil
 }
 
@@ -153,6 +163,7 @@ func NewInterpreter() (*Interpreter, error) {
 	// also some security controls do not apply to it
 	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
 	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.ShellArgs = []string{}
 	i.CmdArgs = []string{"/c"}
 
 	return i, nil

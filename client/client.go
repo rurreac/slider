@@ -143,6 +143,7 @@ func (c *client) newSSHClient(session *Session) {
 
 	go session.handleGlobalChannels(newChan)
 	session.handleGlobalRequests(reqChan)
+	session.disconnect <- true
 }
 
 func (c *client) enableKeyAuth(key string) error {
@@ -204,10 +205,11 @@ func (s *Session) sendClientInfo(ci *conf.ClientInfo) {
 	if len(ciAnswerBytes) != 0 {
 		ciAnswer := &interpreter.Interpreter{}
 		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
-			s.Logger.DebugWith("Server requested shell",
+			s.Logger.DebugWith("Server identification received",
 				slog.F("session_id", s.sessionID),
-				slog.F("shell", ciAnswer.AltShell))
-			s.interpreter.Shell = ciAnswer.AltShell
+				slog.F("server_system", ciAnswer.System))
+			// Do not override client's shell with server's shell
+			// The client should use its own native shell
 		}
 	}
 }
@@ -340,8 +342,13 @@ func (s *Session) keepAlive(keepalive time.Duration) {
 			_, p, sendErr := s.sendConnRequest("keep-alive", true, []byte("ping"))
 			if sendErr != nil || !bytes.Equal(p, []byte("pong")) {
 				s.Logger.ErrorWith("KeepAlive Check Lost connection to Server",
-					slog.F("session_id", s.sessionID))
+					slog.F("session_id", s.sessionID),
+					slog.F("send_err", sendErr),
+					slog.F("reply_payload", p),
+					slog.F("reply_string", string(p)))
 				s.disconnect <- true
+			} else {
+				s.Logger.DebugWith("KeepAlive Check OK", slog.F("session_id", s.sessionID))
 			}
 		}
 	}
