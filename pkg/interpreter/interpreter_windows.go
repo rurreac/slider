@@ -139,7 +139,7 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 	i.User = "--"
-	i.HomeDir = "C:\\"
+	i.HomeDir = os.Getenv("USERPROFILE")
 	if u, uErr := user.Current(); uErr == nil {
 		i.User = u.Username
 		i.HomeDir = u.HomeDir
