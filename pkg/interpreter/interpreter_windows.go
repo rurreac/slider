@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/UserExistsError/conpty"
 	"golang.org/x/sys/windows"
 )
 
