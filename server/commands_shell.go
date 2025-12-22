@@ -9,8 +9,10 @@ import (
 	"net"
 	"os"
 	"slider/pkg/conf"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/server/remote"
+	"sync"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -269,12 +271,27 @@ func (ic *InteractiveConsole) Run() error {
 		ic.clearScreen()
 	}
 
-	// Use the Console's ReadWriter for I/O
+	// Signal channel to stop stdin reader when connection closes
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Remote -> Local: copy from connection to stdout
 	go func() {
+		defer wg.Done()
 		_, _ = io.Copy(ic.ReadWriter, conn)
-		ic.ui.PrintWarn("Press ENTER until get back to console")
+		// Signal stdin reader to stop
+		close(done)
 	}()
-	_, _ = io.Copy(conn, ic.ReadWriter)
+
+	// Local -> Remote: cancellable stdin copy using select(2)
+	go func() {
+		defer wg.Done()
+		sio.CopyStdinCancellable(conn, done)
+	}()
+
+	wg.Wait()
 	return nil
 }
 
@@ -316,9 +333,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		return fmt.Errorf("UI is not a Console")
 	}
 
-	// Clear screen
-	console.PrintInfo("Connected to Remote Shell. Press ENTER.")
-	// (Simple clear if supported)
+	console.PrintInfo("Connected to Remote Shell")
 
 	// Set Raw Mode
 	fd := int(os.Stdin.Fd())
@@ -335,19 +350,28 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		sendEnv(sshChan, "SLIDER_ENV", "true")
 	}
 
-	// 6. Pipe IO (Don't wait for Stdin to close, as it blocks)
+	// 6. Pipe IO using cancellable stdin reader
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Remote -> Local
 	go func() {
+		defer wg.Done()
 		_, _ = io.Copy(console.ReadWriter, sshChan)
-		console.PrintWarn("Press ENTER until get back to console")
-		// Need to force closing the channel to get control back
+		// Signal stdin reader to stop
+		close(done)
 		_ = sshChan.Close()
 	}()
 
-	// Local -> Remote
-	_, _ = io.Copy(sshChan, console.ReadWriter)
-	// Usually blocks on Stdin read until the user exits
+	// Local -> Remote (cancellable via select)
+	go func() {
+		defer wg.Done()
+		sio.CopyStdinCancellable(sshChan, done)
+	}()
+
+	wg.Wait()
 	return nil
 }
 

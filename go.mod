@@ -20,5 +20,7 @@ require (
 require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-tty v0.0.7 // indirect
 	golang.org/x/net v0.47.0 // indirect
 )
