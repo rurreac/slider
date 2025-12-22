@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/UserExistsError/conpty"
 	"golang.org/x/sys/windows"
 )
 
@@ -162,7 +161,7 @@ func NewInterpreter() (*Interpreter, error) {
 	// We default to always using Command Prompt as it is safer when launching from Term, and
 	// also some security controls do not apply to it
 	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
-	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
 	i.ShellArgs = []string{}
 	i.CmdArgs = []string{"/c"}
 
