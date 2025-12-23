@@ -142,6 +142,14 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		if *sInteractive {
+			// To avoid uncontrollable or unpaired behavior across OS, interactive shell won't be allowed
+			// if the client does not support PTY.
+			// Reasons:
+			// - On *nix systems we can control Interrupts using signals
+			// - Old Windows don't support syscall interrupts
+			if !session.clientInterpreter.PtyOn {
+				return fmt.Errorf("target does not support shell in interactive mode")
+			}
 			ui.PrintInfo("Enabling Interactive Shell Endpoint in the background")
 			*sTls = true
 		} else {
@@ -246,24 +254,6 @@ func (ic *InteractiveConsole) Run() error {
 	defer func() { _ = conn.Close() }()
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
-	// If the session doesn't support PTY, revert Raw Terminal
-	if !ic.IsPtyOn() {
-		ic.ui.PrintWarn("Client does not support PTY")
-		ic.ui.PrintWarn("Pressing CTR^C will interrupt the shell")
-
-		// Only revert raw mode if we are on the local console (Stdin is a terminal)
-		if term.IsTerminal(int(os.Stdin.Fd())) {
-			conState, _ := term.GetState(int(os.Stdin.Fd()))
-			if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
-				return fmt.Errorf("failed to revert console state, aborting to avoid inconsistent shell")
-			}
-			defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
-		}
-
-		// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
-		go ic.CaptureInterrupts(conn)
-	}
-
 	// Clear screen (Windows Command Prompt already does that)
 	isWindows := ic.clientInterpreter != nil && string(ic.clientInterpreter.System) == "windows"
 
@@ -350,7 +340,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		sendEnv(sshChan, "SLIDER_ENV", "true")
 	}
 
-	// 6. Pipe IO using cancellable stdin reader
+	// 6. Pipe IO using a cancellable stdin reader
 	done := make(chan struct{})
 
 	var wg sync.WaitGroup
