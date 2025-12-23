@@ -345,7 +345,7 @@ func routeToLocal(nc ssh.NewChannel, sess Session, srv Server, req *ConnectReque
 		}
 		go ssh.DiscardRequests(reqs)
 		go func() {
-			opts := []sftp.ServerOption{}
+			var opts []sftp.ServerOption
 			interp := srv.GetInterpreter()
 			if interp != nil && interp.HomeDir != "" {
 				opts = append(opts, sftp.WithServerWorkingDirectory(interp.HomeDir))

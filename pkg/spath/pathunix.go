@@ -122,7 +122,7 @@ func unixClean(path string) string {
 	rooted := len(path) > 0 && unixIsPathSeparator(path[0])
 
 	// Split path into components
-	components := []string{}
+	var components []string
 
 	// Skip empty components and handle dots
 	start := 0
