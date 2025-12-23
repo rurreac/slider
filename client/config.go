@@ -18,8 +18,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ClientConfig holds all configuration for a client instance
-type ClientConfig struct {
+// Config holds all configuration for a client instance
+type Config struct {
 	Verbose       string
 	Keepalive     time.Duration
 	Colorless     bool
@@ -48,7 +48,7 @@ type ClientConfig struct {
 }
 
 // RunClient starts a client with the given configuration
-func RunClient(cfg *ClientConfig) {
+func RunClient(cfg *Config) {
 	defer close(shutdown)
 
 	log := slog.NewLogger("Client")

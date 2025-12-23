@@ -70,7 +70,7 @@ to the defined Slider Server.`,
 			}
 
 			// Build configuration from flags
-			cfg := &ClientConfig{
+			cfg := &Config{
 				Verbose:       verbose,
 				Keepalive:     keepalive,
 				Colorless:     colorless,

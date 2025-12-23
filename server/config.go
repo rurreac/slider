@@ -20,8 +20,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ServerConfig holds all configuration for a server instance
-type ServerConfig struct {
+// Config holds all configuration for a server instance
+type Config struct {
 	Verbose          string
 	Address          string
 	Port             int
@@ -51,7 +51,7 @@ type ServerConfig struct {
 }
 
 // RunServer starts a server with the given configuration
-func RunServer(cfg *ServerConfig) {
+func RunServer(cfg *Config) {
 	sshConf := &ssh.ServerConfig{
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
