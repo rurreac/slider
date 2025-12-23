@@ -255,13 +255,11 @@ func (ic *InteractiveConsole) Run() error {
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
 	// Clear screen (Windows Command Prompt already does that)
-	isWindows := ic.clientInterpreter != nil && string(ic.clientInterpreter.System) == "windows"
-
-	if !isWindows || !ic.IsPtyOn() {
+	if ic.clientInterpreter.System != "windows" {
 		ic.clearScreen()
 	}
 
-	// Signal channel to stop stdin reader when connection closes
+	// Signal channel to stop stdin reader when the connection errors/closes
 	done := make(chan struct{})
 
 	var wg sync.WaitGroup
