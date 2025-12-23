@@ -462,6 +462,7 @@ func (s *Session) handleSFTPChannel(channel ssh.NewChannel) {
 			slog.F("err", err))
 		return
 	}
+	defer func() { _ = server.Close() }()
 
 	s.Logger.DebugWith("SFTP server started successfully",
 		slog.F("session_id", s.sessionID))
