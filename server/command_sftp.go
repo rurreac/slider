@@ -234,7 +234,7 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 }
 
 // copyFileWithProgress copies a file from src to dst with progress reporting
-func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer, srcPath, dstPath string, totalSize int64, operation string, ui UserInterface) (int64, error) {
+func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer, totalSize int64, operation string, ui UserInterface) (int64, error) {
 	const bufferSize = 32 * 1024 // 32KB buffer
 	buffer := make([]byte, bufferSize)
 	var written int64

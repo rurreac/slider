@@ -154,7 +154,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer func() { _ = lFile.Close() }()
 
 			// Copy file with progress
-			bytesWritten, cErr := sftpCtx.copyFileWithProgress(rFile, lFile, rPath, localFullPath, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
+			bytesWritten, cErr := sftpCtx.copyFileWithProgress(rFile, lFile, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
 			if cErr != nil {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
@@ -201,7 +201,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer func() { _ = lFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, remotePath, localFilePath, rpFi.Size(), "Download", ui)
+		_, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, rpFi.Size(), "Download", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to download file: %w", cpErr)
 		}
