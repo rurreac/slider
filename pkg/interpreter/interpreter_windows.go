@@ -31,6 +31,7 @@ type Interpreter struct {
 	ShellArgs   []string `json:"ShellArgs"`
 	CmdArgs     []string `json:"CmdArgs"`
 	PtyOn       bool     `json:"PtyOn"`
+	ColorOn     bool     `json:"ColorOn"`
 	Pty         Pty
 	inputModes  uint32
 	outputModes uint32
@@ -153,6 +154,9 @@ func NewInterpreter() (*Interpreter, error) {
 	}
 
 	i.PtyOn = isPtyOn()
+	// It is safe to assume that if PTY is On then colors are supported.
+	// We are mainly filtering old Windows versions.
+	i.ColorOn = i.PtyOn
 
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {

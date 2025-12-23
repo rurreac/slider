@@ -61,8 +61,7 @@ func RunClient(cfg *Config) {
 	if cfg.JsonLog {
 		log.WithJSON(true)
 	} else {
-		// It is safe to assume that if PTY is On then colors are supported.
-		if i.PtyOn && !cfg.Colorless {
+		if i.ColorOn && !cfg.Colorless {
 			log.WithColors(true)
 		}
 	}

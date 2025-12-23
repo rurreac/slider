@@ -67,9 +67,7 @@ func RunServer(cfg *Config) {
 	if cfg.JsonLog {
 		log.WithJSON(true)
 	} else {
-		// It is safe to assume that if PTY is On then colors are supported.
-		// We are mainly filtering old Windows versions.
-		if i.PtyOn && !cfg.Colorless {
+		if i.ColorOn && !cfg.Colorless {
 			log.WithColors(true)
 		} else {
 			log.WithColors(false)
