@@ -53,6 +53,7 @@ type client struct {
 	isListener        bool
 	firstRun          bool
 	customProto       string
+	interpreter       *interpreter.Interpreter
 	*listenerConf
 }
 

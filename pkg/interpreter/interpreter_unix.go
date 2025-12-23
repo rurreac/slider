@@ -94,7 +94,7 @@ func findSafeShell() string {
 	return ""
 }
 
-func IsPtyOn() bool {
+func isPtyOn() bool {
 	return slices.Contains(nixPty, runtime.GOOS)
 }
 
@@ -123,7 +123,7 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 
-	i.PtyOn = IsPtyOn()
+	i.PtyOn = isPtyOn()
 
 	// ZSH on non-PTY breaks I/O assignment; use safe shell to avoid stdin issues
 	i.Shell = os.Getenv("SHELL")

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slider/pkg/conf"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -62,11 +63,12 @@ func (s *Session) handleShellChannel(channel ssh.NewChannel) {
 		s.Logger.Debugf("Running SHELL on PTY")
 		cols := s.initTermSize.Width
 		rows := s.initTermSize.Height
+		// cols or rows should never be 0, if this happens, ConPTY will crash.
 		if cols == 0 {
-			cols = 80
+			cols = conf.DefaultTerminalWidth
 		}
 		if rows == 0 {
-			rows = 24
+			rows = conf.DefaultTerminalHeight
 		}
 
 		ptyF, sErr := interpreter.StartPty(cmd, cols, rows)

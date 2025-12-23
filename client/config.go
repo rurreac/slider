@@ -44,7 +44,7 @@ type Config struct {
 	ClientTlsKey  string
 	JsonLog       bool
 	CallerLog     bool
-	ServerURL     string // Only used when not in listener mode
+	ServerURL     string
 }
 
 // RunClient starts a client with the given configuration
@@ -52,11 +52,17 @@ func RunClient(cfg *Config) {
 	defer close(shutdown)
 
 	log := slog.NewLogger("Client")
+
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		log.Fatalf("%v", iErr)
+	}
+
 	if cfg.JsonLog {
 		log.WithJSON(true)
 	} else {
 		// It is safe to assume that if PTY is On then colors are supported.
-		if interpreter.IsPtyOn() && !cfg.Colorless {
+		if i.PtyOn && !cfg.Colorless {
 			log.WithColors(true)
 		}
 	}
@@ -77,6 +83,7 @@ func RunClient(cfg *Config) {
 		},
 		firstRun:    true,
 		customProto: cfg.CustomProto,
+		interpreter: i,
 		listenerConf: &listenerConf{
 			urlRedirect: &url.URL{},
 			httpVersion: cfg.HttpVersion,

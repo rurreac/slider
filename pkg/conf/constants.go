@@ -22,4 +22,9 @@ const (
 
 	// DefaultHistorySize is the default maximum size for command history
 	DefaultHistorySize = 100
+
+	// Terminal size
+
+	DefaultTerminalWidth  = 80
+	DefaultTerminalHeight = 24
 )

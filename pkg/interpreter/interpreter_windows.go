@@ -65,7 +65,7 @@ func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
 	return &winPty{con: c}, nil
 }
 
-func IsPtyOn() bool {
+func isPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
 	if available {
 		outHandle := windows.Handle(os.Stdout.Fd())
@@ -152,7 +152,7 @@ func NewInterpreter() (*Interpreter, error) {
 		}
 	}
 
-	i.PtyOn = conpty.IsConPtyAvailable()
+	i.PtyOn = isPtyOn()
 
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {
