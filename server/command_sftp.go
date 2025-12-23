@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -235,8 +236,7 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 
 // copyFileWithProgress copies a file from src to dst with progress reporting
 func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer, totalSize int64, operation string, ui UserInterface) (int64, error) {
-	const bufferSize = 32 * 1024 // 32KB buffer
-	buffer := make([]byte, bufferSize)
+	buffer := make([]byte, conf.SFTPBufferSize)
 	var written int64
 	var lastReportedMB int64 = -1
 
@@ -269,7 +269,7 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			if currentMB != lastReportedMB || written == totalSize {
 				lastReportedMB = currentMB
 				progress := float64(written) / float64(totalSize) * 100
-				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", eraseLine, operation, progress, float64(written)/(1024*1024), float64(totalSize)/(1024*1024))
+				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", eraseLine, operation, progress, float64(written)/conf.BytesPerMB, float64(totalSize)/conf.BytesPerMB)
 			}
 		}
 		if er != nil {
@@ -317,5 +317,22 @@ func (ctx *SftpCommandContext) walkLocalDir(localPath, relPath string, callback 
 		}
 	}
 
+	return nil
+}
+
+// ensureLocalDir ensures a local directory exists for download operations
+func ensureLocalDir(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return os.MkdirAll(path, 0755)
+	}
+	return nil
+}
+
+// ensureRemoteDir ensures a remote directory exists via SFTP for upload operations
+func ensureRemoteDir(sftpClient *sftp.Client, path string) error {
+	if _, err := sftpClient.Stat(path); err != nil {
+		// Try to create the directory
+		return sftpClient.MkdirAll(path)
+	}
 	return nil
 }
