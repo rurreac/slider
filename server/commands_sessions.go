@@ -299,107 +299,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		return nil
 	}
 
-	if *sInteract != "" {
-		// Parse Unified ID
-		uID, err := strconv.ParseInt(*sInteract, 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid session ID: %s (must be integer)", *sInteract)
-		}
-
-		unifiedMap := server.ResolveUnifiedSessions()
-		uSess, ok := unifiedMap[uID]
-		if !ok {
-			return fmt.Errorf("session %d not found", uID)
-		}
-
-		// ROUTE BASED ON LOCAL vs REMOTE
-		if uSess.OwnerID == 0 {
-			// LOCAL SESSION
-			session, sessErr := server.getSession(int(uSess.ActualID))
-			if sessErr != nil {
-				return fmt.Errorf("unknown local session ID %d", uSess.ActualID)
-			}
-
-			sftpCli, sErr := session.newSftpClient()
-			if sErr != nil {
-				return fmt.Errorf("failed to create SFTP client: %w", sErr)
-			}
-			defer func() { _ = sftpCli.Close() }()
-
-			console, ok := ui.(*Console)
-			if !ok {
-				return fmt.Errorf("UI is not a Console")
-			}
-			server.newSftpConsole(console, session, sftpCli)
-			console.setConsoleAutoComplete(server.commandRegistry)
-			return nil
-		} else {
-			// REMOTE SESSION
-			// 1. Get Gateway Session
-			gatewaySession, sessErr := server.getSession(int(uSess.OwnerID))
-			if sessErr != nil {
-				return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
-			}
-
-			if gatewaySession.sshClient == nil {
-				return fmt.Errorf("gateway session %d is not promiscuous", uSess.OwnerID)
-			}
-
-			// 2. Construct Target Path for slider-connect
-			// Format: [ID, ID, ID...]
-			// If path is empty (direct child), target is just [ActualID]
-			target := append([]int64{}, uSess.Path...)
-			target = append(target, uSess.ActualID)
-
-			// 3. Connect via slider-connect channel
-			connReq := remote.ConnectRequest{
-				Target:      target,
-				ChannelType: "sftp",
-			}
-			payload, _ := json.Marshal(connReq)
-
-			sftpChan, reqs, err := gatewaySession.sshClient.OpenChannel("slider-connect", payload)
-			if err != nil {
-				return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
-			}
-			go func() {
-				for req := range reqs {
-					switch req.Type {
-					case "keep-alive":
-						_ = gatewaySession.replyConnRequest(req, true, []byte("pong"))
-					case "client-info":
-						ci := &conf.ClientInfo{}
-						if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
-							gatewaySession.setInterpreter(ci.Interpreter)
-						}
-						_ = gatewaySession.replyConnRequest(req, true, nil)
-					default:
-						if req.WantReply {
-							_ = req.Reply(false, nil)
-						}
-					}
-				}
-			}()
-
-			// Wrap in the SFTP client
-			sftpCli, err := sftp.NewClientPipe(sftpChan, sftpChan)
-			if err != nil {
-				_ = sftpChan.Close()
-				return fmt.Errorf("failed to create SFTP client: %v", err)
-			}
-			defer func() { _ = sftpCli.Close() }()
-
-			console, ok := ui.(*Console)
-			if !ok {
-				return fmt.Errorf("UI is not a Console")
-			}
-
-			server.newSftpConsole(console, gatewaySession, sftpCli)
-			console.setConsoleAutoComplete(server.commandRegistry)
-			return nil
-		}
-	}
-
 	if *sDisconnect != "" {
 		if id, err := strconv.Atoi(*sDisconnect); err == nil {
 			session, sessErr := server.getSession(id)
@@ -435,5 +334,106 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 		return fmt.Errorf("remote session kill not implemented yet")
 	}
+
+	if *sInteract != "" {
+		// Parse Unified ID
+		uID, err := strconv.ParseInt(*sInteract, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid session ID: %s (must be integer)", *sInteract)
+		}
+
+		unifiedMap := server.ResolveUnifiedSessions()
+		uSess, ok := unifiedMap[uID]
+		if !ok {
+			return fmt.Errorf("session %d not found", uID)
+		}
+
+		// ROUTE BASED ON LOCAL vs REMOTE
+		if uSess.OwnerID == 0 {
+			// LOCAL SESSION
+			session, sessErr := server.getSession(int(uSess.ActualID))
+			if sessErr != nil {
+				return fmt.Errorf("unknown local session ID %d", uSess.ActualID)
+			}
+
+			sftpCli, sErr := session.newSftpClient()
+			if sErr != nil {
+				return fmt.Errorf("failed to create SFTP client: %w", sErr)
+			}
+			defer func() { _ = sftpCli.Close() }()
+
+			console, ok := ui.(*Console)
+			if !ok {
+				return fmt.Errorf("UI is not a Console")
+			}
+			server.newSftpConsole(console, session, sftpCli)
+			console.setConsoleAutoComplete(server.commandRegistry)
+			return nil
+		}
+
+		// REMOTE SESSION
+		// 1. Get Gateway Session
+		gatewaySession, sessErr := server.getSession(int(uSess.OwnerID))
+		if sessErr != nil {
+			return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
+		}
+
+		if gatewaySession.sshClient == nil {
+			return fmt.Errorf("gateway session %d is not promiscuous", uSess.OwnerID)
+		}
+
+		// 2. Construct Target Path for slider-connect
+		// Format: [ID, ID, ID...]
+		// If path is empty (direct child), target is just [ActualID]
+		target := append([]int64{}, uSess.Path...)
+		target = append(target, uSess.ActualID)
+
+		// 3. Connect via slider-connect channel
+		connReq := remote.ConnectRequest{
+			Target:      target,
+			ChannelType: "sftp",
+		}
+		payload, _ := json.Marshal(connReq)
+
+		sftpChan, reqs, err := gatewaySession.sshClient.OpenChannel("slider-connect", payload)
+		if err != nil {
+			return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
+		}
+		go func() {
+			for req := range reqs {
+				switch req.Type {
+				case "keep-alive":
+					_ = gatewaySession.replyConnRequest(req, true, []byte("pong"))
+				case "client-info":
+					ci := &conf.ClientInfo{}
+					if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
+						gatewaySession.setInterpreter(ci.Interpreter)
+					}
+					_ = gatewaySession.replyConnRequest(req, true, nil)
+				default:
+					if req.WantReply {
+						_ = req.Reply(false, nil)
+					}
+				}
+			}
+		}()
+
+		// Wrap in the SFTP client
+		sftpCli, err := sftp.NewClientPipe(sftpChan, sftpChan)
+		if err != nil {
+			_ = sftpChan.Close()
+			return fmt.Errorf("failed to create SFTP client: %v", err)
+		}
+		defer func() { _ = sftpCli.Close() }()
+
+		console, ok := ui.(*Console)
+		if !ok {
+			return fmt.Errorf("UI is not a Console")
+		}
+
+		server.newSftpConsole(console, gatewaySession, sftpCli)
+		console.setConsoleAutoComplete(server.commandRegistry)
+	}
+
 	return nil
 }

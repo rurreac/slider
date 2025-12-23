@@ -156,34 +156,34 @@ func winJoin(elem []string) string {
 
 		// Clean the joined path
 		return winClean(strings.Join(parts, string(WindowsSeparator)))
-	} else {
-		// Check if first element is a UNC path
-		isUNC := len(first) > 0 && winIsPathSeparator(first[0]) &&
-			(len(first) > 1 && winIsPathSeparator(first[1]))
-
-		// Join all non-empty elements
-		var parts []string
-		for _, e := range elem[firstIdx:] {
-			if e != "" {
-				parts = append(parts, e)
-			}
-		}
-
-		joined := winClean(strings.Join(parts, string(WindowsSeparator)))
-
-		// Preserve UNC path status
-		if isUNC && !strings.HasPrefix(joined, string(WindowsSeparator)+string(WindowsSeparator)) {
-			if strings.HasPrefix(joined, string(WindowsSeparator)) {
-				// Add one more separator at the beginning
-				return string(WindowsSeparator) + joined
-			} else {
-				// Add two separators at the beginning
-				return string(WindowsSeparator) + string(WindowsSeparator) + joined
-			}
-		}
-
-		return joined
 	}
+
+	// Check if first element is a UNC path
+	isUNC := len(first) > 0 && winIsPathSeparator(first[0]) &&
+		(len(first) > 1 && winIsPathSeparator(first[1]))
+
+	// Join all non-empty elements
+	var parts []string
+	for _, e := range elem[firstIdx:] {
+		if e != "" {
+			parts = append(parts, e)
+		}
+	}
+
+	joined := winClean(strings.Join(parts, string(WindowsSeparator)))
+
+	// Preserve UNC path status
+	if isUNC && !strings.HasPrefix(joined, string(WindowsSeparator)+string(WindowsSeparator)) {
+		if strings.HasPrefix(joined, string(WindowsSeparator)) {
+			// Add one more separator at the beginning
+			return string(WindowsSeparator) + joined
+		}
+		// Add two separators at the beginning
+		return string(WindowsSeparator) + string(WindowsSeparator) + joined
+
+	}
+
+	return joined
 }
 
 // winDir returns the directory portion of a Windows path

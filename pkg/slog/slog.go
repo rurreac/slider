@@ -260,9 +260,9 @@ func (l *Logger) Fatalf(t string, args ...any) {
 		}
 		jsonMsg := l.formatAsJSON(msg, "fatal", nil, callerInfo)
 		l.logger.Fatalln(jsonMsg)
-	} else {
-		l.logger.Fatalf(" "+FATA+" %s"+t, append([]any{caller}, args...)...)
 	}
+	l.logger.Fatalf(" "+FATA+" %s"+t, append([]any{caller}, args...)...)
+
 }
 
 func (l *Logger) Errorf(t string, args ...any) {
@@ -364,10 +364,9 @@ func (l *Logger) FatalWith(msg string, fields ...Field) {
 		}
 		jsonMsg := l.formatAsJSON(msg, "fatal", fields, callerInfo)
 		l.logger.Fatalln(jsonMsg)
-	} else {
-		fmtFields := l.formatWithFields(msg, fields)
-		l.logger.Fatalf(" "+FATA+" %s%s", caller, fmtFields)
 	}
+	fmtFields := l.formatWithFields(msg, fields)
+	l.logger.Fatalf(" "+FATA+" %s%s", caller, fmtFields)
 }
 
 // DWarnWith logs a warning message with structured fields (debug level only)
