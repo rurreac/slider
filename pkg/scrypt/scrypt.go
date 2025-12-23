@@ -10,9 +10,10 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"os"
 	"path"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type ServerKeyPair struct {
