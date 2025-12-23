@@ -360,7 +360,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 			sftpChan, reqs, err := gatewaySession.sshClient.OpenChannel("slider-connect", payload)
 			if err != nil {
-				return fmt.Errorf("failed to open remote channel to %s: %v", target, err)
+				return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
 			}
 			go func() {
 				for req := range reqs {
