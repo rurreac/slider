@@ -145,7 +145,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 			// To avoid uncontrollable or unpaired behavior across OS, interactive shell won't be allowed
 			// if the client does not support PTY.
 			// Reasons:
-			// - On *nix systems we can control Interrupts using signals
+			// - On *nix systems we can control Interrupts using signals to safely return to Console
 			// - Old Windows don't support syscall interrupts
 			if !session.clientInterpreter.PtyOn {
 				return fmt.Errorf("target does not support shell in interactive mode")
