@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 )
@@ -32,10 +33,10 @@ func Middleware(secret []byte) func(http.Handler) http.Handler {
 			// Decode and validate token
 			claims, err := Decode(token, secret)
 			if err != nil {
-				switch err {
-				case ErrExpiredToken:
+				switch {
+				case errors.Is(err, ErrExpiredToken):
 					http.Error(w, "Token has expired", http.StatusUnauthorized)
-				case ErrInvalidSignature, ErrInvalidToken, ErrInvalidClaims:
+				case errors.Is(err, ErrInvalidSignature), errors.Is(err, ErrInvalidToken), errors.Is(err, ErrInvalidClaims):
 					http.Error(w, "Invalid token", http.StatusUnauthorized)
 				default:
 					http.Error(w, "Authentication failed", http.StatusUnauthorized)
