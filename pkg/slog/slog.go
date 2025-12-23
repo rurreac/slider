@@ -441,11 +441,6 @@ func F(key string, value any) Field {
 	return Field{Key: key, Value: value}
 }
 
-// P is a helper function to create a Field for structured logging as message prefix
-func P(scope string) string {
-	return fmt.Sprintf("%s - ", scope)
-}
-
 // formatWithFields formats a message with structured fields
 func (l *Logger) formatWithFields(msg string, fields []Field) string {
 	if l.jsonOn {
