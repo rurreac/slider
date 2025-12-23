@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -179,7 +180,7 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 			localPath,
 			remotePath,
 			fileCount,
-			float64(uploadedSize)/(1024*1024))
+			float64(uploadedSize)/conf.BytesPerMB)
 	} else {
 		// Single file upload
 		ui.Printf("Uploading file %s to %s (%.2f KB)\n", localPath, remotePath, float64(localFileInfo.Size())/1024.0)
@@ -199,10 +200,13 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer func() { _ = rFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := sftpCtx.copyFileWithProgress(lFile, rFile, localFileInfo.Size(), "Upload", ui)
+		bytesWritten, cpErr := sftpCtx.copyFileWithProgress(lFile, rFile, localFileInfo.Size(), "Upload", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to upload file: %w", cpErr)
 		}
+
+		clearStatus := escseq.CursorUp() + escseq.CursorClear()
+		ui.Printf("%sUploaded file: %s (%.2f MB)\n", clearStatus, localPath, float64(bytesWritten)/conf.BytesPerMB)
 	}
 
 	return nil

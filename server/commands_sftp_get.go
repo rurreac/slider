@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -201,10 +202,13 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer func() { _ = lFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, rpFi.Size(), "Download", ui)
+		bytesWritten, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, rpFi.Size(), "Download", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to download file: %w", cpErr)
 		}
+
+		clearStatus := escseq.CursorUp() + escseq.CursorClear()
+		ui.Printf("%sDownloaded file: %s (%.2f MB)\n", clearStatus, remotePath, float64(bytesWritten)/conf.BytesPerMB)
 	}
 
 	return nil
