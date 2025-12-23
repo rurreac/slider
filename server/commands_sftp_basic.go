@@ -15,7 +15,7 @@ func (c *SftpHelpCommand) Description() string { return helpDesc }
 func (c *SftpHelpCommand) Usage() string       { return helpCmd }
 func (c *SftpHelpCommand) IsRemote() bool      { return false }
 
-func (c *SftpHelpCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *SftpHelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	session, err := ctx.RequireSession()
 	if err != nil {
 		return err
@@ -61,6 +61,6 @@ func (c *SftpExitCommand) Description() string { return exitDesc }
 func (c *SftpExitCommand) Usage() string       { return exitCmd }
 func (c *SftpExitCommand) IsRemote() bool      { return false }
 
-func (c *SftpExitCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *SftpExitCommand) Run(_ *ExecutionContext, _ []string) error {
 	return ErrExitConsole
 }
