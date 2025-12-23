@@ -259,9 +259,9 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			}
 
 			// Clear previous progress line
-			clear := ""
+			var eraseLine string
 			if lastReportedMB != -1 {
-				clear = escseq.CursorEraseLine()
+				eraseLine = escseq.CursorEraseLine()
 			}
 
 			// Report progress every 1MB or at completion
@@ -269,7 +269,7 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			if currentMB != lastReportedMB || written == totalSize {
 				lastReportedMB = currentMB
 				progress := float64(written) / float64(totalSize) * 100
-				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", clear, operation, progress, float64(written)/(1024*1024), float64(totalSize)/(1024*1024))
+				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", eraseLine, operation, progress, float64(written)/(1024*1024), float64(totalSize)/(1024*1024))
 			}
 		}
 		if er != nil {
