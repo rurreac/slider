@@ -14,38 +14,29 @@ import (
 
 // SftpCommandContext provides SFTP-specific context for commands
 type SftpCommandContext struct {
-	sftpCli    *sftp.Client
-	session    *Session
-	remoteCwd  *string
-	localCwd   *string
-	cliSystem  string
-	svrSystem  string
-	cliHomeDir string
-	srvHomeDir string
+	sftpCli       *sftp.Client
+	session       *Session
+	localSystem   string
+	localHomeDir  string
+	localCwd      *string
+	remoteSystem  string
+	remoteHomeDir string
+	remoteCwd     *string
 }
 
 // initSftpRegistry initializes the SFTP command registry
 func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string) {
 	session.sftpCommandRegistry = NewCommandRegistry()
 
-	// Initialize SFTP context
-	// Defaults
-	cliSystem := "linux"
-	cliHomeDir := ""
-	if session.clientInterpreter != nil {
-		cliSystem = session.clientInterpreter.System
-		cliHomeDir = session.clientInterpreter.HomeDir
-	}
-
 	session.sftpContext = &SftpCommandContext{
-		sftpCli:    sftpClient,
-		session:    session,
-		remoteCwd:  remoteCwd,
-		localCwd:   localCwd,
-		cliSystem:  cliSystem,
-		svrSystem:  s.serverInterpreter.System,
-		cliHomeDir: cliHomeDir,
-		srvHomeDir: s.serverInterpreter.HomeDir,
+		sftpCli:       sftpClient,
+		session:       session,
+		localSystem:   s.serverInterpreter.System,
+		localHomeDir:  s.serverInterpreter.HomeDir,
+		localCwd:      localCwd,
+		remoteSystem:  session.clientInterpreter.System,
+		remoteHomeDir: session.clientInterpreter.HomeDir,
+		remoteCwd:     remoteCwd,
 	}
 
 	// Register basic commands
@@ -90,8 +81,7 @@ func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, rem
 	session.sftpCommandRegistry.RegisterAlias("move", mvCmd)
 
 	// Register chmod command (remote only, non-Windows)
-	canChmod := session.clientInterpreter == nil || session.clientInterpreter.System != "windows"
-	if canChmod {
+	if session.clientInterpreter.System != "windows" {
 		session.sftpCommandRegistry.Register(&SftpChmodCommand{})
 	}
 
@@ -176,10 +166,10 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
-		return ctx.cliSystem
+		return ctx.remoteSystem
 	}
 	// Use default permissions
-	return ctx.svrSystem
+	return ctx.localSystem
 }
 
 // getFileIdInfo returns the UID and GID of a file or 0 0 if not available
@@ -212,10 +202,10 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 	}
 
 	for _, entry := range entries {
-		entryPath := spath.Join(ctx.cliSystem, []string{remotePath, entry.Name()})
+		entryPath := spath.Join(ctx.remoteSystem, []string{remotePath, entry.Name()})
 		entryRelPath := entry.Name()
 		if relPath != "" {
-			entryRelPath = spath.Join(ctx.cliSystem, []string{relPath, entry.Name()})
+			entryRelPath = spath.Join(ctx.remoteSystem, []string{relPath, entry.Name()})
 		}
 
 		if entry.IsDir() {

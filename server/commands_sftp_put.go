@@ -61,8 +61,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	localPath := putFlags.Args()[0]
 
-	if !spath.IsAbs(sftpCtx.svrSystem, localPath) {
-		localPath = spath.Join(sftpCtx.svrSystem, []string{*sftpCtx.localCwd, localPath})
+	if !spath.IsAbs(sftpCtx.localSystem, localPath) {
+		localPath = spath.Join(sftpCtx.localSystem, []string{*sftpCtx.localCwd, localPath})
 	}
 
 	// Get local file info to check if it exists
@@ -72,11 +72,11 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Get basename of the local path for remote destination
-	baseName := spath.Base(sftpCtx.svrSystem, localPath)
+	baseName := spath.Base(sftpCtx.localSystem, localPath)
 	// Ensure paths correspond to the target system
-	baseName = spath.FromToSlash(sftpCtx.cliSystem, baseName)
+	baseName = spath.FromToSlash(sftpCtx.remoteSystem, baseName)
 	// Construct the remote path using the basename and current remote directory
-	remotePath := spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, baseName})
+	remotePath := spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, baseName})
 
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
@@ -125,8 +125,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 				remoteFullPath = remotePath
 			} else {
 				// Use appropriate path for the remote OS
-				remoteRelPath = spath.FromToSlash(sftpCtx.cliSystem, remoteRelPath)
-				remoteFullPath = spath.Join(sftpCtx.cliSystem, []string{remotePath, remoteRelPath})
+				remoteRelPath = spath.FromToSlash(sftpCtx.remoteSystem, remoteRelPath)
+				remoteFullPath = spath.Join(sftpCtx.remoteSystem, []string{remotePath, remoteRelPath})
 			}
 
 			if isDir {

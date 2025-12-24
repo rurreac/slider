@@ -58,8 +58,8 @@ func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	path := statFlags.Args()[0]
-	if !spath.IsAbs(sftpCtx.cliSystem, path) {
-		path = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
+		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
 	}
 
 	// Get file info
@@ -110,7 +110,7 @@ func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 	_, _ = fmt.Fprintf(tw, "\tModified:\t%s\n", fi.ModTime().Format("Jan 02, 2006 15:04:05 MST"))
 
 	// Try to get extended information
-	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && sftpCtx.cliSystem != "windows" {
+	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && sftpCtx.remoteSystem != "windows" {
 		_, _ = fmt.Fprintf(tw, "\tOwner UID:\t%d\n", sftpStat.UID)
 		_, _ = fmt.Fprintf(tw, "\tGroup GID:\t%d\n", sftpStat.GID)
 	}
