@@ -110,7 +110,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
+func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
 	wsURL, wErr := listener.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
@@ -186,8 +186,6 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		}
 		sshConf.AddHostKey(signerKey)
 	}
-	session.setSSHConf(&sshConf)
-
 	session.setSSHConf(&sshConf)
 
 	if promiscuous {
