@@ -57,11 +57,11 @@ func (c *SftpMvCommand) Run(ctx *ExecutionContext, args []string) error {
 	dstPath := mvFlags.Args()[1]
 
 	// Handle relative paths
-	if !spath.IsAbs(sftpCtx.cliSystem, srcPath) {
-		srcPath = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, srcPath})
+	if !spath.IsAbs(sftpCtx.remoteSystem, srcPath) {
+		srcPath = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, srcPath})
 	}
-	if !spath.IsAbs(sftpCtx.cliSystem, dstPath) {
-		dstPath = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, dstPath})
+	if !spath.IsAbs(sftpCtx.remoteSystem, dstPath) {
+		dstPath = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, dstPath})
 	}
 
 	// Check if source exists

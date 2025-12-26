@@ -26,6 +26,10 @@ func (c *Console) clearScreen() {
 	_, _ = fmt.Fprint(c.Term, escseq.ClearScreen())
 }
 
+func (c *Console) CursorHome() {
+	_, _ = fmt.Fprint(c.Term, escseq.CursorHome())
+}
+
 func (c *Console) PrintWarnSelect(selected string, args ...string) {
 	msg := fmt.Sprintf(escseq.YellowBrightText("%s"), selected)
 	_, _ = fmt.Fprintf(c.Term, "\r%s%s\r\n", msg, strings.Join(args, " "))

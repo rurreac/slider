@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -60,8 +61,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	localPath := putFlags.Args()[0]
 
-	if !spath.IsAbs(sftpCtx.svrSystem, localPath) {
-		localPath = spath.Join(sftpCtx.svrSystem, []string{*sftpCtx.localCwd, localPath})
+	if !spath.IsAbs(sftpCtx.localSystem, localPath) {
+		localPath = spath.Join(sftpCtx.localSystem, []string{*sftpCtx.localCwd, localPath})
 	}
 
 	// Get local file info to check if it exists
@@ -71,11 +72,11 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Get basename of the local path for remote destination
-	baseName := spath.Base(sftpCtx.svrSystem, localPath)
+	baseName := spath.Base(sftpCtx.localSystem, localPath)
 	// Ensure paths correspond to the target system
-	baseName = spath.FromToSlash(sftpCtx.cliSystem, baseName)
+	baseName = spath.FromToSlash(sftpCtx.remoteSystem, baseName)
 	// Construct the remote path using the basename and current remote directory
-	remotePath := spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, baseName})
+	remotePath := spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, baseName})
 
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
@@ -124,8 +125,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 				remoteFullPath = remotePath
 			} else {
 				// Use appropriate path for the remote OS
-				remoteRelPath = spath.FromToSlash(sftpCtx.cliSystem, remoteRelPath)
-				remoteFullPath = spath.Join(sftpCtx.cliSystem, []string{remotePath, remoteRelPath})
+				remoteRelPath = spath.FromToSlash(sftpCtx.remoteSystem, remoteRelPath)
+				remoteFullPath = spath.Join(sftpCtx.remoteSystem, []string{remotePath, remoteRelPath})
 			}
 
 			if isDir {
@@ -159,7 +160,7 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer func() { _ = rFile.Close() }()
 
 			// Copy file with progress
-			bytesWritten, cErr := sftpCtx.copyFileWithProgress(lFile, rFile, lPath, remoteFullPath, fileSize, fmt.Sprintf("Upload (%d/%d)", currentFile, fileCount), ui)
+			bytesWritten, cErr := sftpCtx.copyFileWithProgress(lFile, rFile, fileSize, fmt.Sprintf("Upload (%d/%d)", currentFile, fileCount), ui)
 			if cErr != nil {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
@@ -179,7 +180,7 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 			localPath,
 			remotePath,
 			fileCount,
-			float64(uploadedSize)/(1024*1024))
+			float64(uploadedSize)/conf.BytesPerMB)
 	} else {
 		// Single file upload
 		ui.Printf("Uploading file %s to %s (%.2f KB)\n", localPath, remotePath, float64(localFileInfo.Size())/1024.0)
@@ -199,10 +200,13 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer func() { _ = rFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := sftpCtx.copyFileWithProgress(lFile, rFile, localPath, remotePath, localFileInfo.Size(), "Upload", ui)
+		bytesWritten, cpErr := sftpCtx.copyFileWithProgress(lFile, rFile, localFileInfo.Size(), "Upload", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to upload file: %w", cpErr)
 		}
+
+		clearStatus := escseq.CursorUp() + escseq.CursorClear()
+		ui.Printf("%sUploaded file: %s (%.2f MB)\n", clearStatus, localPath, float64(bytesWritten)/conf.BytesPerMB)
 	}
 
 	return nil

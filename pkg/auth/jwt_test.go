@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -59,7 +60,7 @@ func TestJWTInvalidSignature(t *testing.T) {
 
 	// Try to decode with secret2
 	_, err = Decode(token, secret2)
-	if err != ErrInvalidSignature {
+	if !errors.Is(err, ErrInvalidSignature) {
 		t.Errorf("Expected ErrInvalidSignature, got %v", err)
 	}
 }
@@ -83,7 +84,7 @@ func TestJWTExpiredToken(t *testing.T) {
 
 	// Try to decode expired token
 	_, err = Decode(token, secret)
-	if err != ErrExpiredToken {
+	if !errors.Is(err, ErrExpiredToken) {
 		t.Errorf("Expected ErrExpiredToken, got %v", err)
 	}
 }

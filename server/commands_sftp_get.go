@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -62,8 +63,8 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 	remotePath := getFlags.Args()[0]
 	localPath := *sftpCtx.localCwd
 
-	if !spath.IsAbs(sftpCtx.cliSystem, remotePath) {
-		remotePath = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, remotePath})
+	if !spath.IsAbs(sftpCtx.remoteSystem, remotePath) {
+		remotePath = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, remotePath})
 	}
 
 	// Get file info to check if it exists
@@ -109,7 +110,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		downloadedSize := int64(0)
 
 		// Create the target directory for the download
-		targetDir := spath.Join(sftpCtx.svrSystem, []string{localPath, spath.Base(sftpCtx.cliSystem, remotePath)})
+		targetDir := spath.Join(sftpCtx.localSystem, []string{localPath, spath.Base(sftpCtx.remoteSystem, remotePath)})
 		if err := ensureLocalDir(targetDir); err != nil {
 			return fmt.Errorf("failed to create target directory: %w", err)
 		}
@@ -119,7 +120,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			if localRelPath == "" {
 				localFullPath = targetDir
 			} else {
-				localRelPath = spath.FromToSlash(sftpCtx.svrSystem, localRelPath)
+				localRelPath = spath.FromToSlash(sftpCtx.localSystem, localRelPath)
 				localFullPath = filepath.Join(targetDir, localRelPath)
 			}
 
@@ -154,7 +155,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer func() { _ = lFile.Close() }()
 
 			// Copy file with progress
-			bytesWritten, cErr := sftpCtx.copyFileWithProgress(rFile, lFile, rPath, localFullPath, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
+			bytesWritten, cErr := sftpCtx.copyFileWithProgress(rFile, lFile, fileSize, fmt.Sprintf("Download (%d/%d)", currentFile, fileCount), ui)
 			if cErr != nil {
 				return fmt.Errorf("failed to copy file: %w", cErr)
 			}
@@ -180,9 +181,9 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			localPath,
 			// Format path to local format
 			spath.FromToSlash(
-				sftpCtx.svrSystem,
+				sftpCtx.localSystem,
 				// Basedir from remote format
-				spath.Base(sftpCtx.cliSystem, remotePath)))
+				spath.Base(sftpCtx.remoteSystem, remotePath)))
 
 		ui.Printf("Downloading file %s to %s (%.2f KB)\n", remotePath, localFilePath, float64(rpFi.Size())/1024.0)
 
@@ -201,10 +202,13 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		defer func() { _ = lFile.Close() }()
 
 		// Copy file with progress
-		_, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, remotePath, localFilePath, rpFi.Size(), "Download", ui)
+		bytesWritten, cpErr := sftpCtx.copyFileWithProgress(rFile, lFile, rpFi.Size(), "Download", ui)
 		if cpErr != nil {
 			return fmt.Errorf("failed to download file: %w", cpErr)
 		}
+
+		clearStatus := escseq.CursorUp() + escseq.CursorClear()
+		ui.Printf("%sDownloaded file: %s (%.2f MB)\n", clearStatus, remotePath, float64(bytesWritten)/conf.BytesPerMB)
 	}
 
 	return nil

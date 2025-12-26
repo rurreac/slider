@@ -9,8 +9,10 @@ import (
 	"net"
 	"os"
 	"slider/pkg/conf"
+	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/server/remote"
+	"sync"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -140,6 +142,14 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		if *sInteractive {
+			// To avoid uncontrollable or unpaired behavior across OS, interactive shell won't be allowed
+			// if the client does not support PTY.
+			// Reasons:
+			// - On *nix systems we can control Interrupts using signals to safely return to Console
+			// - Old Windows don't support syscall interrupts
+			if !session.clientInterpreter.PtyOn {
+				return fmt.Errorf("target does not support shell in interactive mode")
+			}
 			ui.PrintInfo("Enabling Interactive Shell Endpoint in the background")
 			*sTls = true
 		} else {
@@ -244,37 +254,32 @@ func (ic *InteractiveConsole) Run() error {
 	defer func() { _ = conn.Close() }()
 	ic.ui.PrintInfo("Authenticated with mTLS")
 
-	// If the session doesn't support PTY, revert Raw Terminal
-	if !ic.IsPtyOn() {
-		ic.ui.PrintWarn("Client does not support PTY")
-		ic.ui.PrintWarn("Pressing CTR^C will interrupt the shell")
-
-		// Only revert raw mode if we are on the local console (Stdin is a terminal)
-		if term.IsTerminal(int(os.Stdin.Fd())) {
-			conState, _ := term.GetState(int(os.Stdin.Fd()))
-			if rErr := term.Restore(int(os.Stdin.Fd()), ic.InitState); rErr != nil {
-				return fmt.Errorf("failed to revert console state, aborting to avoid inconsistent shell")
-			}
-			defer func() { _ = term.Restore(int(os.Stdin.Fd()), conState) }()
-		}
-
-		// Capture interrupt signals and close the connection cause this terminal doesn't know how to handle them
-		go ic.CaptureInterrupts(conn)
-	}
-
 	// Clear screen (Windows Command Prompt already does that)
-	isWindows := ic.clientInterpreter != nil && string(ic.clientInterpreter.System) == "windows"
-
-	if !isWindows || !ic.IsPtyOn() {
+	if ic.clientInterpreter.System != "windows" {
 		ic.clearScreen()
 	}
 
-	// Use the Console's ReadWriter for I/O
+	// Signal channel to stop stdin reader when the connection errors/closes
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Remote -> Local: copy from connection to stdout
 	go func() {
+		defer wg.Done()
 		_, _ = io.Copy(ic.ReadWriter, conn)
-		ic.ui.PrintWarn("Press ENTER until get back to console")
+		// Signal stdin reader to stop
+		close(done)
 	}()
-	_, _ = io.Copy(conn, ic.ReadWriter)
+
+	// Local -> Remote: cancellable stdin copy using select(2)
+	go func() {
+		defer wg.Done()
+		sio.CopyStdinCancellable(conn, done)
+	}()
+
+	wg.Wait()
 	return nil
 }
 
@@ -316,9 +321,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		return fmt.Errorf("UI is not a Console")
 	}
 
-	// Clear screen
-	console.PrintInfo("Connected to Remote Shell. Press ENTER.")
-	// (Simple clear if supported)
+	console.PrintInfo("Connected to Remote Shell")
 
 	// Set Raw Mode
 	fd := int(os.Stdin.Fd())
@@ -335,19 +338,28 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		sendEnv(sshChan, "SLIDER_ENV", "true")
 	}
 
-	// 6. Pipe IO (Don't wait for Stdin to close, as it blocks)
+	// 6. Pipe IO using a cancellable stdin reader
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	// Remote -> Local
 	go func() {
+		defer wg.Done()
 		_, _ = io.Copy(console.ReadWriter, sshChan)
-		console.PrintWarn("Press ENTER until get back to console")
-		// Need to force closing the channel to get control back
+		// Signal stdin reader to stop
+		close(done)
 		_ = sshChan.Close()
 	}()
 
-	// Local -> Remote
-	_, _ = io.Copy(sshChan, console.ReadWriter)
-	// Usually blocks on Stdin read until the user exits
+	// Local -> Remote (cancellable via select)
+	go func() {
+		defer wg.Done()
+		sio.CopyStdinCancellable(sshChan, done)
+	}()
+
+	wg.Wait()
 	return nil
 }
 

@@ -120,7 +120,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 	return nil
 }
 
-func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, command string, ui UserInterface) error {
+func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, command string, _ UserInterface) error {
 	// 1. Get Gateway Session
 	gatewaySession, sessErr := s.getSession(int(uSess.OwnerID))
 	if sessErr != nil {

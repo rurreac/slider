@@ -18,8 +18,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ClientConfig holds all configuration for a client instance
-type ClientConfig struct {
+// Config holds all configuration for a client instance
+type Config struct {
 	Verbose       string
 	Keepalive     time.Duration
 	Colorless     bool
@@ -44,19 +44,24 @@ type ClientConfig struct {
 	ClientTlsKey  string
 	JsonLog       bool
 	CallerLog     bool
-	ServerURL     string // Only used when not in listener mode
+	ServerURL     string
 }
 
 // RunClient starts a client with the given configuration
-func RunClient(cfg *ClientConfig) {
+func RunClient(cfg *Config) {
 	defer close(shutdown)
 
 	log := slog.NewLogger("Client")
+
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		log.Fatalf("%v", iErr)
+	}
+
 	if cfg.JsonLog {
 		log.WithJSON(true)
 	} else {
-		// It is safe to assume that if PTY is On then colors are supported.
-		if interpreter.IsPtyOn() && !cfg.Colorless {
+		if i.ColorOn && !cfg.Colorless {
 			log.WithColors(true)
 		}
 	}
@@ -77,6 +82,7 @@ func RunClient(cfg *ClientConfig) {
 		},
 		firstRun:    true,
 		customProto: cfg.CustomProto,
+		interpreter: i,
 		listenerConf: &listenerConf{
 			urlRedirect: &url.URL{},
 			httpVersion: cfg.HttpVersion,

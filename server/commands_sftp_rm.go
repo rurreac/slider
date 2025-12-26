@@ -57,8 +57,8 @@ func (c *SftpRmCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	path := rmFlags.Args()[0]
-	if !spath.IsAbs(sftpCtx.cliSystem, path) {
-		path = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
+		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
 	}
 
 	// Check if path exists

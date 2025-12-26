@@ -1,6 +1,7 @@
 package client
 
 import (
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -54,17 +55,14 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *Session {
 		Logger:        c.Logger,
 		revPortFwdMap: make(map[uint32]*RevPortControl),
 		keepAliveOn:   false,
-	}
-
-	i, iErr := interpreter.NewInterpreter()
-	if iErr != nil {
-		c.Logger.FatalWith("Interpreter not supported",
-			slog.F("err", iErr))
-	}
-	session.interpreter = i
-	session.initTermSize = &types.TermDimensions{
-		Width:  uint32(0),
-		Height: uint32(0),
+		interpreter:   c.interpreter,
+		// Initializing Terminal Size with default/standard values
+		initTermSize: &types.TermDimensions{
+			Width:  uint32(conf.DefaultTerminalWidth),
+			Height: uint32(conf.DefaultTerminalHeight),
+			X:      uint32(conf.DefaultTerminalWidth),
+			Y:      uint32(conf.DefaultTerminalHeight),
+		},
 	}
 	c.sessionTrack.Sessions[sc] = session
 

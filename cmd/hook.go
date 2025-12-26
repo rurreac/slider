@@ -55,7 +55,7 @@ func init() {
 	}
 }
 
-func runHook(cmd *cobra.Command, args []string) error {
+func runHook(_ *cobra.Command, args []string) error {
 	serverURL := args[0]
 
 	// Parse and validate server URL

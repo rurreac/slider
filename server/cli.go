@@ -52,7 +52,7 @@ its integrated Console by pressing CTR^C at any time.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Build configuration from flags
-			cfg := &ServerConfig{
+			cfg := &Config{
 				Verbose:          verbose,
 				Address:          address,
 				Port:             port,

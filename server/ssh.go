@@ -162,27 +162,26 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 		}
 		return nil
 
-	} else {
-		// LEAF (or end of path)
-		// Send request to target client via ServerConn
-
-		// If nextHopSession.sshConn is nil?
-		if nextHopSession.sshConn == nil {
-			if req.WantReply {
-				_ = req.Reply(false, nil)
-			}
-			return fmt.Errorf("next hop session %d has no SSH connection", nextID)
-		}
-
-		ok, reply, sErr := nextHopSession.sshConn.SendRequest(payload.ReqType, req.WantReply, payload.Payload)
-		if sErr != nil {
-			return sErr
-		}
-		if req.WantReply {
-			_ = req.Reply(ok, reply)
-		}
-		return nil
 	}
+	// LEAF (or end of path)
+	// Send request to target client via ServerConn
+
+	// If nextHopSession.sshConn is nil?
+	if nextHopSession.sshConn == nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return fmt.Errorf("next hop session %d has no SSH connection", nextID)
+	}
+
+	ok, reply, sErr := nextHopSession.sshConn.SendRequest(payload.ReqType, req.WantReply, payload.Payload)
+	if sErr != nil {
+		return sErr
+	}
+	if req.WantReply {
+		_ = req.Reply(ok, reply)
+	}
+	return nil
 }
 
 func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Request) {

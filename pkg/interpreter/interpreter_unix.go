@@ -25,6 +25,7 @@ type Interpreter struct {
 	ShellArgs []string `json:"ShellArgs"`
 	CmdArgs   []string `json:"CmdArgs"`
 	PtyOn     bool     `json:"PtyOn"`
+	ColorOn   bool     `json:"ColorOn"`
 	Pty       Pty
 }
 
@@ -73,6 +74,7 @@ var (
 		"/bin/csh",
 		"/bin/ksh",
 		"/bin/tsh",
+		"/bin/fish",
 	}
 )
 
@@ -94,7 +96,7 @@ func findSafeShell() string {
 	return ""
 }
 
-func IsPtyOn() bool {
+func isPtyOn() bool {
 	return slices.Contains(nixPty, runtime.GOOS)
 }
 
@@ -123,7 +125,8 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 
-	i.PtyOn = IsPtyOn()
+	i.PtyOn = isPtyOn()
+	i.ColorOn = isColorOn()
 
 	// ZSH on non-PTY breaks I/O assignment; use safe shell to avoid stdin issues
 	i.Shell = os.Getenv("SHELL")
@@ -141,4 +144,32 @@ func NewInterpreter() (*Interpreter, error) {
 	}
 
 	return i, nil
+}
+
+// isColorOn checks if colors are enabled on the system by checking known environment variables
+func isColorOn() bool {
+	// System requests not to enable colors (by convention: https://no-color.org/)
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+
+	// Terminal supports colors
+	if strings.Contains(os.Getenv("TERM"), "colors") {
+		return true
+	}
+
+	// A color range is supported
+	colorTerm := os.Getenv("COLORTERM")
+	if strings.Contains(colorTerm, "truecolor") || strings.Contains(colorTerm, "24bit") {
+		return true
+	}
+
+	// System enables colors (macOS/BSD)
+	cliColor := os.Getenv("CLICOLOR")
+	cliColorForce := os.Getenv("CLICOLOR_FORCE")
+	if cliColor == "1" || cliColorForce == "1" {
+		return true
+	}
+
+	return false
 }
