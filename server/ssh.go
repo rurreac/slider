@@ -45,6 +45,20 @@ func (s *server) NewSSHServer(session *Session) {
 	}
 	session.addSessionSSHConnection(sshServerConn)
 
+	// Reject server-type connections if promiscuous mode is not enabled
+	if sshServerConn.User() == "slider-server" && !s.promiscuous {
+		s.WarnWith(
+			"Rejected server connection: promiscuous mode is not enabled",
+			slog.F("session_id", session.sessionID),
+			slog.F("remote_addr", netConn.RemoteAddr().String()),
+		)
+		_ = sshServerConn.Close()
+		if session.notifier != nil {
+			session.notifier <- fmt.Errorf("promiscuous mode is not enabled")
+		}
+		return
+	}
+
 	// If authentication was enabled and not connecting to a listener save the client certificate info
 	if s.authOn && !session.isListener {
 		if certID, cErr := strconv.Atoi(sshServerConn.Permissions.Extensions["cert_id"]); cErr == nil {
