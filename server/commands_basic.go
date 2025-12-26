@@ -22,7 +22,7 @@ type BgCommand struct{}
 func (c *BgCommand) Name() string        { return bgCmd }
 func (c *BgCommand) Description() string { return bgDesc }
 func (c *BgCommand) Usage() string       { return bgCmd }
-func (c *BgCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *BgCommand) Run(ctx *ExecutionContext, _ []string) error {
 	ctx.UI().PrintlnGreyOut("Logging...")
 	return ErrBackgroundConsole
 }
@@ -33,7 +33,7 @@ type ExitCommand struct{}
 func (c *ExitCommand) Name() string        { return exitCmd }
 func (c *ExitCommand) Description() string { return exitDesc }
 func (c *ExitCommand) Usage() string       { return exitCmd }
-func (c *ExitCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *ExitCommand) Run(_ *ExecutionContext, _ []string) error {
 	return ErrExitConsole
 }
 
@@ -43,7 +43,7 @@ type HelpCommand struct{}
 func (c *HelpCommand) Name() string        { return helpCmd }
 func (c *HelpCommand) Description() string { return helpDesc }
 func (c *HelpCommand) Usage() string       { return helpCmd }
-func (c *HelpCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *HelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()
 

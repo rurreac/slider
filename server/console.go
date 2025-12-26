@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"slider/pkg/conf"
 	"slider/pkg/escseq"
-	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
@@ -78,7 +77,7 @@ func (s *server) NewConsole() string {
 		s.ErrorWith("Failed to enable Processed Input/Output", slog.F("error", piErr))
 		// Sets Console Colors based on if PTY is enabled on the server.
 		// If it's not on PTY and fails to set Processed IO, disables colors
-		escseq.SetColors(interpreter.IsPtyOn())
+		escseq.SetColors(s.serverInterpreter.ColorOn)
 	}
 	defer func() {
 		if ioErr := s.serverInterpreter.ResetInputOutputModes(); ioErr != nil {

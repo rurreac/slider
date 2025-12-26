@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/spath"
 
@@ -13,38 +14,29 @@ import (
 
 // SftpCommandContext provides SFTP-specific context for commands
 type SftpCommandContext struct {
-	sftpCli    *sftp.Client
-	session    *Session
-	remoteCwd  *string
-	localCwd   *string
-	cliSystem  string
-	svrSystem  string
-	cliHomeDir string
-	srvHomeDir string
+	sftpCli       *sftp.Client
+	session       *Session
+	localSystem   string
+	localHomeDir  string
+	localCwd      *string
+	remoteSystem  string
+	remoteHomeDir string
+	remoteCwd     *string
 }
 
 // initSftpRegistry initializes the SFTP command registry
 func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string) {
 	session.sftpCommandRegistry = NewCommandRegistry()
 
-	// Initialize SFTP context
-	// Defaults
-	cliSystem := "linux"
-	cliHomeDir := ""
-	if session.clientInterpreter != nil {
-		cliSystem = session.clientInterpreter.System
-		cliHomeDir = session.clientInterpreter.HomeDir
-	}
-
 	session.sftpContext = &SftpCommandContext{
-		sftpCli:    sftpClient,
-		session:    session,
-		remoteCwd:  remoteCwd,
-		localCwd:   localCwd,
-		cliSystem:  cliSystem,
-		svrSystem:  s.serverInterpreter.System,
-		cliHomeDir: cliHomeDir,
-		srvHomeDir: s.serverInterpreter.HomeDir,
+		sftpCli:       sftpClient,
+		session:       session,
+		localSystem:   s.serverInterpreter.System,
+		localHomeDir:  s.serverInterpreter.HomeDir,
+		localCwd:      localCwd,
+		remoteSystem:  session.clientInterpreter.System,
+		remoteHomeDir: session.clientInterpreter.HomeDir,
+		remoteCwd:     remoteCwd,
 	}
 
 	// Register basic commands
@@ -89,8 +81,7 @@ func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, rem
 	session.sftpCommandRegistry.RegisterAlias("move", mvCmd)
 
 	// Register chmod command (remote only, non-Windows)
-	canChmod := session.clientInterpreter == nil || session.clientInterpreter.System != "windows"
-	if canChmod {
+	if session.clientInterpreter.System != "windows" {
 		session.sftpCommandRegistry.Register(&SftpChmodCommand{})
 	}
 
@@ -175,10 +166,10 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
-		return ctx.cliSystem
+		return ctx.remoteSystem
 	}
 	// Use default permissions
-	return ctx.svrSystem
+	return ctx.localSystem
 }
 
 // getFileIdInfo returns the UID and GID of a file or 0 0 if not available
@@ -211,10 +202,10 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 	}
 
 	for _, entry := range entries {
-		entryPath := spath.Join(ctx.cliSystem, []string{remotePath, entry.Name()})
+		entryPath := spath.Join(ctx.remoteSystem, []string{remotePath, entry.Name()})
 		entryRelPath := entry.Name()
 		if relPath != "" {
-			entryRelPath = spath.Join(ctx.cliSystem, []string{relPath, entry.Name()})
+			entryRelPath = spath.Join(ctx.remoteSystem, []string{relPath, entry.Name()})
 		}
 
 		if entry.IsDir() {
@@ -234,9 +225,8 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 }
 
 // copyFileWithProgress copies a file from src to dst with progress reporting
-func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer, srcPath, dstPath string, totalSize int64, operation string, ui UserInterface) (int64, error) {
-	const bufferSize = 32 * 1024 // 32KB buffer
-	buffer := make([]byte, bufferSize)
+func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer, totalSize int64, operation string, ui UserInterface) (int64, error) {
+	buffer := make([]byte, conf.SFTPBufferSize)
 	var written int64
 	var lastReportedMB int64 = -1
 
@@ -259,9 +249,9 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			}
 
 			// Clear previous progress line
-			clear := ""
+			var eraseLine string
 			if lastReportedMB != -1 {
-				clear = escseq.CursorEraseLine()
+				eraseLine = escseq.CursorEraseLine()
 			}
 
 			// Report progress every 1MB or at completion
@@ -269,7 +259,7 @@ func (ctx *SftpCommandContext) copyFileWithProgress(src io.Reader, dst io.Writer
 			if currentMB != lastReportedMB || written == totalSize {
 				lastReportedMB = currentMB
 				progress := float64(written) / float64(totalSize) * 100
-				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", clear, operation, progress, float64(written)/(1024*1024), float64(totalSize)/(1024*1024))
+				ui.Printf("%s%s: %.1f%% (%.2f MB / %.2f MB)", eraseLine, operation, progress, float64(written)/conf.BytesPerMB, float64(totalSize)/conf.BytesPerMB)
 			}
 		}
 		if er != nil {
@@ -317,5 +307,22 @@ func (ctx *SftpCommandContext) walkLocalDir(localPath, relPath string, callback 
 		}
 	}
 
+	return nil
+}
+
+// ensureLocalDir ensures a local directory exists for download operations
+func ensureLocalDir(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return os.MkdirAll(path, 0755)
+	}
+	return nil
+}
+
+// ensureRemoteDir ensures a remote directory exists via SFTP for upload operations
+func ensureRemoteDir(sftpClient *sftp.Client, path string) error {
+	if _, err := sftpClient.Stat(path); err != nil {
+		// Try to create the directory
+		return sftpClient.MkdirAll(path)
+	}
 	return nil
 }

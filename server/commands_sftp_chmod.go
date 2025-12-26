@@ -61,8 +61,8 @@ func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
 	path := chmodFlags.Args()[1]
 
 	// Handle relative path
-	if !spath.IsAbs(sftpCtx.cliSystem, path) {
-		path = spath.Join(sftpCtx.cliSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
+		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
 	}
 
 	// Parse mode

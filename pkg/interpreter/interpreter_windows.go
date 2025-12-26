@@ -31,6 +31,7 @@ type Interpreter struct {
 	ShellArgs   []string `json:"ShellArgs"`
 	CmdArgs     []string `json:"CmdArgs"`
 	PtyOn       bool     `json:"PtyOn"`
+	ColorOn     bool     `json:"ColorOn"`
 	Pty         Pty
 	inputModes  uint32
 	outputModes uint32
@@ -65,7 +66,7 @@ func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
 	return &winPty{con: c}, nil
 }
 
-func IsPtyOn() bool {
+func isPtyOn() bool {
 	available := conpty.IsConPtyAvailable()
 	if available {
 		outHandle := windows.Handle(os.Stdout.Fd())
@@ -140,7 +141,7 @@ func NewInterpreter() (*Interpreter, error) {
 		i.Hostname = "--"
 	}
 	i.User = "--"
-	i.HomeDir = "C:\\"
+	i.HomeDir = os.Getenv("USERPROFILE")
 	if u, uErr := user.Current(); uErr == nil {
 		i.User = u.Username
 		i.HomeDir = u.HomeDir
@@ -152,7 +153,10 @@ func NewInterpreter() (*Interpreter, error) {
 		}
 	}
 
-	i.PtyOn = conpty.IsConPtyAvailable()
+	i.PtyOn = isPtyOn()
+	// It is safe to assume that if PTY is On then colors are supported.
+	// We are mainly filtering old Windows versions.
+	i.ColorOn = i.PtyOn
 
 	systemDrive := os.Getenv("SYSTEMDRIVE")
 	if systemDrive == "" {
@@ -162,7 +166,7 @@ func NewInterpreter() (*Interpreter, error) {
 	// We default to always using Command Prompt as it is safer when launching from Term, and
 	// also some security controls do not apply to it
 	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
-	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
 	i.ShellArgs = []string{}
 	i.CmdArgs = []string{"/c"}
 

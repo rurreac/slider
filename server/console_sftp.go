@@ -27,47 +27,42 @@ func (s *server) newSftpConsole(ui *Console, session *Session, sftpClient *sftp.
 		ui.PrintError("Unable to determine remote directory: %v", crErr)
 	}
 
-	// Set client and server info
-	// Set client and server info
-	cliHomeDir := ""
-	cliSystem := "linux"
-	cliUser := "remote"
-	cliHostname := "remote"
-
-	if session.clientInterpreter != nil {
-		cliHomeDir = session.clientInterpreter.HomeDir
-		cliSystem = strings.ToLower(session.clientInterpreter.System)
-		cliUser = strings.ToLower(session.clientInterpreter.User)
-		cliHostname = strings.ToLower(session.clientInterpreter.Hostname)
+	// Since we always ensure an Interpreter at initialization, this should never, ever happen.
+	if session.clientInterpreter == nil {
+		ui.PrintError("Session interpreter not initialized, won't enter interactive")
+		return
 	}
-
-	svrSystem := strings.ToLower(s.serverInterpreter.System)
+	remoteHomeDir := session.clientInterpreter.HomeDir
+	remoteSystem := strings.ToLower(session.clientInterpreter.System)
+	remoteUser := strings.ToLower(session.clientInterpreter.User)
+	renameHostname := strings.ToLower(session.clientInterpreter.Hostname)
+	localSystem := strings.ToLower(s.serverInterpreter.System)
 
 	// Fixing some path inconsistencies between SFTP client and server
-	if cliSystem == "windows" && svrSystem != "windows" /*&& !session.clientInterpreter.PtyOn*/ {
-		cliHomeDir = strings.ReplaceAll(cliHomeDir, "/", "\\")
+	if remoteSystem == "windows" && localSystem != "windows" /*&& !session.clientInterpreter.PtyOn*/ {
+		remoteHomeDir = strings.ReplaceAll(remoteHomeDir, "/", "\\")
 		remoteCwd = strings.ReplaceAll(strings.TrimPrefix(remoteCwd, "/"), "/", "\\")
 	}
-	if cliSystem == "windows" && svrSystem == "windows" {
-		cliHomeDir = strings.ReplaceAll(cliHomeDir, "\\", "/")
+	if remoteSystem == "windows" && localSystem == "windows" {
+		remoteHomeDir = strings.ReplaceAll(remoteHomeDir, "\\", "/")
 		remoteCwd = strings.TrimPrefix(remoteCwd, "/")
 	}
-	if cliSystem != "windows" && svrSystem == "windows" {
+	if remoteSystem != "windows" && localSystem == "windows" {
 		remoteCwd = strings.ReplaceAll(remoteCwd, "\\", "/")
 	}
 
 	// Define SFTP prompt
 	sftpPrompt := func() string {
 		rCwd := remoteCwd
-		if strings.HasPrefix(remoteCwd, cliHomeDir) {
-			rCwd = strings.Replace(remoteCwd, cliHomeDir, "~", 1)
+		if strings.HasPrefix(remoteCwd, remoteHomeDir) {
+			rCwd = strings.Replace(remoteCwd, remoteHomeDir, "~", 1)
 		}
 
 		return fmt.Sprintf(
 			"\r(%s) %s@%s:%s%s ",
 			escseq.CyanBoldText(fmt.Sprintf("S%d", session.sessionID)),
-			cliUser,
-			cliHostname,
+			remoteUser,
+			renameHostname,
 			rCwd,
 			escseq.CyanBoldText("$"),
 		)

@@ -35,17 +35,17 @@ func (cc *ChannelConn) RemoteAddr() net.Addr {
 	return cc.remoteAddr
 }
 
-func (cc *ChannelConn) SetDeadline(t time.Time) error {
+func (cc *ChannelConn) SetDeadline(_ time.Time) error {
 	// SSH channels don't support deadlines, so we just ignore this
 	return nil
 }
 
-func (cc *ChannelConn) SetReadDeadline(t time.Time) error {
+func (cc *ChannelConn) SetReadDeadline(_ time.Time) error {
 	// SSH channels don't support deadlines, so we just ignore this
 	return nil
 }
 
-func (cc *ChannelConn) SetWriteDeadline(t time.Time) error {
+func (cc *ChannelConn) SetWriteDeadline(_ time.Time) error {
 	// SSH channels don't support deadlines, so we just ignore this
 	return nil
 }

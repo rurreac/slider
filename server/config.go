@@ -20,8 +20,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ServerConfig holds all configuration for a server instance
-type ServerConfig struct {
+// Config holds all configuration for a server instance
+type Config struct {
 	Verbose          string
 	Address          string
 	Port             int
@@ -51,18 +51,23 @@ type ServerConfig struct {
 }
 
 // RunServer starts a server with the given configuration
-func RunServer(cfg *ServerConfig) {
+func RunServer(cfg *Config) {
 	sshConf := &ssh.ServerConfig{
 		NoClientAuth:  true,
 		ServerVersion: "SSH-slider-server",
 	}
 
 	log := slog.NewLogger("Server")
+
+	i, iErr := interpreter.NewInterpreter()
+	if iErr != nil {
+		log.Fatalf("%v", iErr)
+	}
+
 	if cfg.JsonLog {
 		log.WithJSON(true)
 	} else {
-		// It is safe to assume that if PTY is On then colors are supported.
-		if interpreter.IsPtyOn() && !cfg.Colorless {
+		if i.ColorOn && !cfg.Colorless {
 			log.WithColors(true)
 		} else {
 			log.WithColors(false)
@@ -91,19 +96,26 @@ func RunServer(cfg *ServerConfig) {
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),
 		},
-		certJarFile:      cfg.CertJarFile,
-		authOn:           cfg.Auth,
-		port:             cfg.Port,
-		caStoreOn:        cfg.CaStore,
-		urlRedirect:      &url.URL{},
-		serverHeader:     cfg.ServerHeader,
-		httpVersion:      cfg.HttpVersion,
-		httpHealth:       cfg.HttpHealth,
-		httpDirIndex:     cfg.HttpDirIndex,
-		httpDirIndexPath: cfg.HttpDirIndexPath,
-		httpConsoleOn:    cfg.HttpConsole,
-		customProto:      cfg.CustomProto,
-		promiscuous:      cfg.Promiscuous,
+		certJarFile:       cfg.CertJarFile,
+		authOn:            cfg.Auth,
+		port:              cfg.Port,
+		caStoreOn:         cfg.CaStore,
+		urlRedirect:       &url.URL{},
+		serverHeader:      cfg.ServerHeader,
+		httpVersion:       cfg.HttpVersion,
+		httpHealth:        cfg.HttpHealth,
+		httpDirIndex:      cfg.HttpDirIndex,
+		httpDirIndexPath:  cfg.HttpDirIndexPath,
+		httpConsoleOn:     cfg.HttpConsole,
+		customProto:       cfg.CustomProto,
+		promiscuous:       cfg.Promiscuous,
+		serverInterpreter: i,
+	}
+
+	// Prevent Interactive Console without finalizing if this is not supported
+	if !s.serverInterpreter.PtyOn && !cfg.Headless {
+		s.Warnf("This System does not support PTY, headless mode is enforced")
+		cfg.Headless = true
 	}
 
 	// Set template path for HTML pages
@@ -130,12 +142,6 @@ func RunServer(cfg *ServerConfig) {
 		cfg.Keepalive = conf.MinKeepAlive
 	}
 	s.keepalive = cfg.Keepalive
-
-	i, iErr := interpreter.NewInterpreter()
-	if iErr != nil {
-		s.Fatalf("%v", iErr)
-	}
-	s.serverInterpreter = i
 
 	var prErr error
 	var kErr error
