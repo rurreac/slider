@@ -69,9 +69,16 @@ func (s *server) buildRouter() http.Handler {
 		})
 	}
 
+	// Determine accepted WebSocket operations
+	// A promiscuous server accepts all operation types
+	acceptedOps := []string{listener.OperationClient}
+	if s.promiscuous {
+		acceptedOps = append(acceptedOps, listener.OperationServer, listener.OperationPromiscuous)
+	}
+
 	// Wrap with WebSocket upgrade check for client connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if listener.IsSliderWebSocket(r, s.customProto, "client") {
+		if listener.IsSliderWebSocketMultiOp(r, s.customProto, acceptedOps) {
 			s.handleWebSocket(w, r)
 			return
 		}
@@ -137,9 +144,10 @@ func (s *server) newClientConnector(clientUrl *url.URL, notifier chan error, cer
 		}
 
 	}
-	operation := "server"
-	if promiscuous {
-		operation = "client"
+	// Operation reflects the initiator's mode, not the target
+	operation := listener.OperationServer
+	if s.promiscuous {
+		operation = listener.OperationPromiscuous
 	}
 
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
