@@ -70,10 +70,11 @@ func (s *server) buildRouter() http.Handler {
 	}
 
 	// Determine accepted WebSocket operations
-	// A promiscuous server accepts all operation types
+	// Regular server: Only accepts clients
+	// Promiscuous server: Accepts clients and other promiscuous servers
 	acceptedOps := []string{listener.OperationClient}
 	if s.promiscuous {
-		acceptedOps = append(acceptedOps, listener.OperationServer, listener.OperationPromiscuous)
+		acceptedOps = append(acceptedOps, listener.OperationPromiscuous)
 	}
 
 	// Wrap with WebSocket upgrade check for client connections
@@ -111,6 +112,34 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
+	// Check for self-connection attempts (any server type)
+	// This applies to any connection mode, but particularly important for promiscuous connections
+	targetHost := clientUrl.Hostname()
+	targetPort := clientUrl.Port()
+
+	// Resolve custom DNS first if specified (for accurate self-connection detection)
+	resolvedHost := targetHost
+	if customDNS != "" {
+		ip, dErr := conf.CustomResolver(customDNS, targetHost)
+		if dErr != nil {
+			s.ErrorWith("Failed to resolve host:", slog.F("host", targetHost), slog.F("err", dErr))
+			notifier <- dErr
+			return
+		}
+		resolvedHost = ip
+	}
+
+	// Check if we're trying to connect to ourselves
+	if s.isSelfConnection(resolvedHost, targetPort) {
+		err := fmt.Errorf("cannot connect to self (target=%s:%s, server=%s:%d)", targetHost, targetPort, s.host, s.port)
+		s.WarnWith("Self-connection attempt blocked",
+			slog.F("target", clientUrl.String()),
+			slog.F("server_host", s.host),
+			slog.F("server_port", s.port))
+		notifier <- err
+		return
+	}
+
 	wsURL, wErr := listener.FormatToWS(clientUrl)
 	if wErr != nil {
 		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
@@ -144,9 +173,9 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		}
 
 	}
-	// Operation reflects the initiator's mode, not the target
+	// Operation reflects the connection mode (whether using --promiscuous flag)
 	operation := listener.OperationServer
-	if s.promiscuous {
+	if promiscuous {
 		operation = listener.OperationPromiscuous
 	}
 

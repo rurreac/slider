@@ -257,6 +257,21 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 					slog.F("err", err),
 				)
 			}
+		case "shutdown":
+			// Handle graceful shutdown request
+			session.Logger.InfoWith("Received shutdown request, closing connection",
+				slog.F("session_id", session.sessionID))
+
+			// Reply to acknowledge the shutdown
+			if r.WantReply {
+				_ = r.Reply(true, nil)
+			}
+
+			// Close the WebSocket connection to trigger cleanup
+			_ = session.wsConn.Close()
+
+			// Exit the request handling loop
+			return
 		default:
 			session.Logger.DebugWith("Rejected unknown request type",
 				slog.F("request_type", r.Type))
