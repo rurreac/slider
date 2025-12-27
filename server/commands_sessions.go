@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"slider/pkg/conf"
+	"slider/pkg/interpreter"
 	"slider/server/remote"
 	"sort"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/pkg/sftp"
@@ -33,6 +35,7 @@ type UnifiedSession struct {
 	User           string
 	Host           string
 	System         string
+	HomeDir        string
 	Extra          string // For port info etc
 	IsListener     bool
 	ConnectionAddr string
@@ -73,15 +76,18 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 			uSess.User = "server"
 			uSess.Host = sess.wsConn.RemoteAddr().String()
 			uSess.System = "unknown/unknown (P)"
+			uSess.HomeDir = "/"
 			if sess.clientInterpreter != nil {
 				uSess.User = sess.clientInterpreter.User
 				uSess.Host = sess.clientInterpreter.Hostname
 				uSess.System = fmt.Sprintf("%s/%s (P)", sess.clientInterpreter.Arch, sess.clientInterpreter.System)
+				uSess.HomeDir = sess.clientInterpreter.HomeDir
 			}
 		} else if sess.clientInterpreter != nil {
 			uSess.User = sess.clientInterpreter.User
 			uSess.Host = sess.clientInterpreter.Hostname
 			uSess.System = fmt.Sprintf("%s/%s", sess.clientInterpreter.Arch, sess.clientInterpreter.System)
+			uSess.HomeDir = sess.clientInterpreter.HomeDir
 			uSess.Type = "LOCAL"
 		}
 
@@ -112,6 +118,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						User:           rs.User,
 						Host:           rs.Host,
 						System:         system,
+						HomeDir:        rs.HomeDir,
 						IsListener:     rs.IsListener,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
@@ -399,6 +406,49 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
 		}
+
+		// Parse the target system info from UnifiedSession and create a separate interpreter
+		// This interpreter is NOT shared and won't interfere with other remote sessions
+
+		// Parse "arch/system" or "arch/system (P)" format
+		systemParts := strings.Split(uSess.System, "/")
+		remoteSystem := "unknown"
+		remoteArch := "unknown"
+		if len(systemParts) >= 2 {
+			remoteArch = systemParts[0]
+			// Remove "(P)" suffix if present
+			systemStr := systemParts[1]
+			if idx := strings.Index(systemStr, " "); idx >= 0 {
+				systemStr = systemStr[:idx]
+			}
+			remoteSystem = strings.ToLower(systemStr)
+		}
+
+		// Get HomeDir from UnifiedSession - convert to SFTP format if needed
+		homeDir := uSess.HomeDir
+		if homeDir == "" {
+			homeDir = "/" // Fallback to root if not provided
+		}
+
+		// Convert HomeDir to SFTP format if it's a Windows path
+		if remoteSystem == "windows" {
+			if strings.Contains(homeDir, "\\") {
+				homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
+			} else if !strings.HasPrefix(homeDir, "/") && homeDir != "/" {
+				homeDir = "/" + homeDir
+			}
+		}
+
+		remoteInterpreter := &interpreter.Interpreter{
+			User:     uSess.User,
+			Hostname: uSess.Host,
+			HomeDir:  homeDir,
+			System:   remoteSystem,
+			Arch:     remoteArch,
+		}
+
+		// Handle channel requests in background
+		// When client-info arrives, update our separate interpreter
 		go func() {
 			for req := range reqs {
 				switch req.Type {
@@ -407,7 +457,24 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				case "client-info":
 					ci := &conf.ClientInfo{}
 					if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
-						gatewaySession.setInterpreter(ci.Interpreter)
+						// Update the remote interpreter (NOT the gateway session's interpreter)
+						// Convert HomeDir to SFTP format for Windows systems if needed
+						homeDir := ci.Interpreter.HomeDir
+						if strings.ToLower(ci.Interpreter.System) == "windows" {
+							// Only convert if it's in native Windows format (contains backslashes)
+							if strings.Contains(homeDir, "\\") {
+								homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
+							} else if !strings.HasPrefix(homeDir, "/") && homeDir != "/" {
+								// Handle case where Windows path uses forward slashes but isn't in SFTP format
+								homeDir = "/" + homeDir
+							}
+						}
+						// Copy the updated values to our remote interpreter
+						remoteInterpreter.User = ci.Interpreter.User
+						remoteInterpreter.Hostname = ci.Interpreter.Hostname
+						remoteInterpreter.HomeDir = homeDir
+						remoteInterpreter.System = strings.ToLower(ci.Interpreter.System)
+						remoteInterpreter.Arch = ci.Interpreter.Arch
 					}
 					_ = gatewaySession.replyConnRequest(req, true, nil)
 				default:
@@ -424,14 +491,18 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			_ = sftpChan.Close()
 			return fmt.Errorf("failed to create SFTP client: %v", err)
 		}
-		defer func() { _ = sftpCli.Close() }()
+		defer func() {
+			_ = sftpCli.Close()
+		}()
 
 		console, ok := ui.(*Console)
 		if !ok {
 			return fmt.Errorf("UI is not a Console")
 		}
 
-		server.newSftpConsole(console, gatewaySession, sftpCli)
+		// Use the unified session ID for display and pass the separate interpreter
+		// This prevents session confusion when connecting to multiple remote targets
+		server.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
 		console.setConsoleAutoComplete(server.commandRegistry)
 	}
 

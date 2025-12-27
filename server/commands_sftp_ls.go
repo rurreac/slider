@@ -92,14 +92,25 @@ func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	system := sftpCtx.getContextSystem(c.isRemote)
 	cwd := sftpCtx.getCwd(c.isRemote)
-	if !spath.IsAbs(system, path) && path != "." {
-		path = spath.Join(system, []string{cwd, path})
+
+	// Handle path resolution based on whether this is remote or local
+	if c.isRemote {
+		// Remote operations: Use SFTP format (Unix paths)
+		if path != "." && path != cwd {
+			// Convert user input to SFTP format
+			path = spath.UserInputToSFTPPath(path, cwd, system)
+		}
+	} else {
+		// Local operations: Use native OS path logic
+		if !spath.IsAbs(system, path) && path != "." {
+			path = spath.Join(system, []string{cwd, path})
+		}
 	}
 
 	// Read directory
 	entries, rErr := sftpCtx.readDir(path, c.isRemote)
 	if rErr != nil {
-		return fmt.Errorf("failed to list directory: %w", err)
+		return fmt.Errorf("failed to list directory: %w", rErr)
 	}
 
 	if len(entries) == 0 {
@@ -161,10 +172,18 @@ func (c *SftpLsCommand) formatFileName(ctx *SftpCommandContext, entry fs.FileInf
 		nameField = escseq.BlueBrightBoldText(entry.Name())
 	} else if entry.Mode()&os.ModeSymlink != 0 {
 		nameField = escseq.CyanBoldText(entry.Name())
-		target, lErr := ctx.readLink(
-			spath.Join(ctx.getContextSystem(c.isRemote), []string{path, entry.Name()}),
-			c.isRemote,
-		)
+
+		// Build the full path to the symlink
+		var symlinkPath string
+		if c.isRemote {
+			// Remote: Use Unix path joining for SFTP
+			symlinkPath = spath.UnixJoin(path, entry.Name())
+		} else {
+			// Local: Use native OS path joining
+			symlinkPath = spath.Join(ctx.getContextSystem(c.isRemote), []string{path, entry.Name()})
+		}
+
+		target, lErr := ctx.readLink(symlinkPath, c.isRemote)
 
 		// If we can't read the symlink, just show the name without error
 		if lErr != nil {
