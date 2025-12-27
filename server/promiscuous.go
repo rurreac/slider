@@ -267,6 +267,26 @@ func (s *server) handlePromiscuousRequests(session *Session, reqs <-chan *ssh.Re
 				session.setInterpreter(ci.Interpreter)
 			}
 			_ = session.replyConnRequest(req, true, nil)
+		case "shutdown":
+			// Handle graceful shutdown request from upstream
+			s.InfoWith("Received shutdown request, closing connection",
+				slog.F("session_id", session.sessionID))
+
+			// Reply to acknowledge the shutdown
+			if req.WantReply {
+				_ = req.Reply(true, nil)
+			}
+
+			// Close the SSH client connection
+			if session.sshClient != nil {
+				_ = session.sshClient.Close()
+			}
+
+			// Close the WebSocket connection
+			_ = session.wsConn.Close()
+
+			// Exit the request handling loop
+			return
 		default:
 			if req.WantReply {
 				_ = req.Reply(false, nil)

@@ -98,6 +98,7 @@ func RunServer(cfg *Config) {
 		},
 		certJarFile:       cfg.CertJarFile,
 		authOn:            cfg.Auth,
+		host:              cfg.Address,
 		port:              cfg.Port,
 		caStoreOn:         cfg.CaStore,
 		urlRedirect:       &url.URL{},

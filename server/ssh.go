@@ -72,12 +72,14 @@ func (s *server) NewSSHServer(session *Session) {
 
 	// Create and configure router
 	router := remote.NewRouter(s.Logger)
-	router.RegisterHandler("session", remote.HandleSession)
-	router.RegisterHandler("forwarded-tcpip", remote.HandleForwardedTcpIp)
-	router.RegisterHandler("slider-connect", remote.HandleSliderConnect)
-	router.RegisterHandler("sftp", remote.HandleSftp)
-	router.RegisterHandler("init-size", remote.HandleInitSize)
-	router.RegisterHandler("shell", remote.HandleShell)
+	if s.promiscuous {
+		router.RegisterHandler("session", remote.HandleSession)
+		router.RegisterHandler("forwarded-tcpip", remote.HandleForwardedTcpIp)
+		router.RegisterHandler("slider-connect", remote.HandleSliderConnect)
+		router.RegisterHandler("sftp", remote.HandleSftp)
+		router.RegisterHandler("init-size", remote.HandleInitSize)
+		router.RegisterHandler("shell", remote.HandleShell)
+	}
 	session.Router = router
 
 	// Handle incoming requests
@@ -90,6 +92,7 @@ func (s *server) NewSSHServer(session *Session) {
 			}(nc)
 		}
 	}()
+
 	go s.handleConnRequests(session, reqChan)
 
 	// Block until connection closes
@@ -254,6 +257,21 @@ func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Reques
 					slog.F("err", err),
 				)
 			}
+		case "shutdown":
+			// Handle graceful shutdown request
+			session.Logger.InfoWith("Received shutdown request, closing connection",
+				slog.F("session_id", session.sessionID))
+
+			// Reply to acknowledge the shutdown
+			if r.WantReply {
+				_ = r.Reply(true, nil)
+			}
+
+			// Close the WebSocket connection to trigger cleanup
+			_ = session.wsConn.Close()
+
+			// Exit the request handling loop
+			return
 		default:
 			session.Logger.DebugWith("Rejected unknown request type",
 				slog.F("request_type", r.Type))

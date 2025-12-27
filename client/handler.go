@@ -18,9 +18,12 @@ func (c *client) buildRouter() http.Handler {
 		UrlRedirect:  c.urlRedirect,
 	})
 
+	// Accepted operations for reverse connections from servers
+	acceptedOps := []string{listener.OperationServer, listener.OperationPromiscuous}
+
 	// Wrap with WebSocket upgrade check for server connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if listener.IsSliderWebSocket(r, c.customProto, "server") {
+		if listener.IsSliderWebSocketMultiOp(r, c.customProto, acceptedOps) {
 			c.handleWebSocket(w, r)
 			return
 		}
