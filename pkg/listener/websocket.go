@@ -66,8 +66,21 @@ func ResolveURL(rawURL string) (*url.URL, error) {
 	return u, nil
 }
 
+// WebSocket operation constants
+const (
+	OperationClient      = "client"
+	OperationServer      = "server"
+	OperationPromiscuous = "promiscuous"
+)
+
 // IsSliderWebSocket checks if the request is a slider WebSocket upgrade
 func IsSliderWebSocket(r *http.Request, customProto, operation string) bool {
+	return IsSliderWebSocketMultiOp(r, customProto, []string{operation})
+}
+
+// IsSliderWebSocketMultiOp checks if the request is a slider WebSocket upgrade
+// accepting any of the provided operations
+func IsSliderWebSocketMultiOp(r *http.Request, customProto string, operations []string) bool {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) != "websocket" {
 		return false
@@ -81,5 +94,19 @@ func IsSliderWebSocket(r *http.Request, customProto, operation string) bool {
 	secProto := r.Header.Get("Sec-WebSocket-Protocol")
 	secOperation := r.Header.Get("Sec-WebSocket-Operation")
 
-	return secProto == proto && secOperation == operation
+	if secProto != proto {
+		return false
+	}
+
+	for _, op := range operations {
+		if secOperation == op {
+			return true
+		}
+	}
+	return false
+}
+
+// GetWebSocketOperation returns the operation from the request header
+func GetWebSocketOperation(r *http.Request) string {
+	return r.Header.Get("Sec-WebSocket-Operation")
 }

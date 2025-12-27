@@ -69,7 +69,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
 
-	go server.newClientConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cPromiscuous)
+	go server.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cPromiscuous)
 
 	for {
 		// Priority check: always check notifier first
