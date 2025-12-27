@@ -7,36 +7,51 @@ import (
 	"path/filepath"
 	"slider/pkg/conf"
 	"slider/pkg/escseq"
+	"slider/pkg/interpreter"
 	"slider/pkg/spath"
+	"strings"
 
 	"github.com/pkg/sftp"
 )
 
 // SftpCommandContext provides SFTP-specific context for commands
 type SftpCommandContext struct {
-	sftpCli       *sftp.Client
-	session       *Session
-	localSystem   string
-	localHomeDir  string
-	localCwd      *string
-	remoteSystem  string
-	remoteHomeDir string
-	remoteCwd     *string
+	sftpCli           *sftp.Client
+	session           *Session
+	localSystem       string
+	localHomeDir      string
+	localCwd          *string
+	remoteSystem      string
+	remoteHomeDir     string
+	remoteCwd         *string
+	remoteInterpreter *interpreter.Interpreter // Reference to remote interpreter for dynamic updates
 }
 
-// initSftpRegistry initializes the SFTP command registry
+// initSftpRegistry initializes the SFTP command registry (backwards compatible)
 func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string) {
+	s.initSftpRegistryWithInterpreter(session, sftpClient, remoteCwd, localCwd, nil)
+}
+
+// initSftpRegistryWithInterpreter initializes the SFTP command registry with optional remote interpreter
+func (s *server) initSftpRegistryWithInterpreter(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
 	session.sftpCommandRegistry = NewCommandRegistry()
 
+	// Use provided interpreter or fall back to session's interpreter
+	targetInterpreter := remoteInterpreter
+	if targetInterpreter == nil {
+		targetInterpreter = session.clientInterpreter
+	}
+
 	session.sftpContext = &SftpCommandContext{
-		sftpCli:       sftpClient,
-		session:       session,
-		localSystem:   s.serverInterpreter.System,
-		localHomeDir:  s.serverInterpreter.HomeDir,
-		localCwd:      localCwd,
-		remoteSystem:  session.clientInterpreter.System,
-		remoteHomeDir: session.clientInterpreter.HomeDir,
-		remoteCwd:     remoteCwd,
+		sftpCli:           sftpClient,
+		session:           session,
+		localSystem:       s.serverInterpreter.System,
+		localHomeDir:      s.serverInterpreter.HomeDir,
+		localCwd:          localCwd,
+		remoteSystem:      targetInterpreter.System,
+		remoteHomeDir:     targetInterpreter.HomeDir,
+		remoteCwd:         remoteCwd,
+		remoteInterpreter: remoteInterpreter, // Store reference for dynamic updates
 	}
 
 	// Register basic commands
@@ -166,10 +181,33 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
+		// Read from remote interpreter reference if available (for promiscuous connections)
+		// Otherwise read from session interpreter for direct connections
+		if ctx.remoteInterpreter != nil {
+			return strings.ToLower(ctx.remoteInterpreter.System)
+		}
+		if ctx.session != nil && ctx.session.clientInterpreter != nil {
+			return strings.ToLower(ctx.session.clientInterpreter.System)
+		}
 		return ctx.remoteSystem
 	}
-	// Use default permissions
 	return ctx.localSystem
+}
+
+// getContextHomeDir returns the home directory for the given context (remote or local)
+func (ctx *SftpCommandContext) getContextHomeDir(isRemote bool) string {
+	if isRemote {
+		// Read from remote interpreter reference if available (for promiscuous connections)
+		// Otherwise read from session interpreter for direct connections
+		if ctx.remoteInterpreter != nil {
+			return ctx.remoteInterpreter.HomeDir
+		}
+		if ctx.session != nil && ctx.session.clientInterpreter != nil {
+			return ctx.session.clientInterpreter.HomeDir
+		}
+		return ctx.remoteHomeDir
+	}
+	return ctx.localHomeDir
 }
 
 // getFileIdInfo returns the UID and GID of a file or 0 0 if not available

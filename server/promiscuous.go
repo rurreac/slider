@@ -114,6 +114,7 @@ type RemoteSession struct {
 	Host              string  `json:"host"`
 	System            string  `json:"system"`
 	Arch              string  `json:"arch"`
+	HomeDir           string  `json:"home_dir"`
 	IsListener        bool    `json:"is_listener"`
 	ConnectionAddr    string  `json:"connection_addr"`
 	Path              []int64 `json:"path"`
@@ -200,16 +201,18 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 		}
 
 		s.DebugWith("Checking session for list", slog.F("id", sess.sessionID), slog.F("is_client", sess.clientInterpreter != nil), slog.F("is_promiscuous", sess.sshClient != nil))
-		// Identify user/host/system/arch
+		// Identify user/host/system/arch/homeDir
 		user := "slider"
 		host := sess.hostIP
 		system := "unknown"
 		arch := "unknown"
+		homeDir := "/"
 		if sess.clientInterpreter != nil {
 			user = sess.clientInterpreter.User
 			host = sess.clientInterpreter.Hostname
 			system = sess.clientInterpreter.System
 			arch = sess.clientInterpreter.Arch
+			homeDir = sess.clientInterpreter.HomeDir
 		}
 
 		sessions = append(sessions, RemoteSession{
@@ -219,6 +222,7 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 			Host:              host,
 			System:            system,
 			Arch:              arch,
+			HomeDir:           homeDir,
 			IsListener:        sess.isListener,
 			ConnectionAddr:    sess.wsConn.RemoteAddr().String(),
 		})

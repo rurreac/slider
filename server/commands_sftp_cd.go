@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"slider/pkg/spath"
+	"strings"
 )
 
 const (
@@ -51,16 +52,15 @@ func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// No args - go to home directory
-	if len(args) < 1 {
-		sftpCtx.getCwd(c.isRemote)
-		return nil
-	}
-
-	if len(args) > 1 {
+	var newPath string
+	switch len(args) {
+	case 0:
+		newPath = sftpCtx.getContextHomeDir(c.isRemote)
+	case 1:
+		newPath = args[0]
+	default:
 		return fmt.Errorf("too many arguments")
 	}
-
-	newPath := args[0]
 
 	// Handle "." (current directory) - no change needed
 	if newPath == "." {
@@ -71,17 +71,36 @@ func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
 	cwd := sftpCtx.getCwd(c.isRemote)
 	system := sftpCtx.getContextSystem(c.isRemote)
 
-	// Handle ".." (parent directory)
-	if newPath == ".." {
-		parentPath := spath.Dir(system, cwd)
-		if parentPath == cwd {
-			// Already at root
-			return nil
+	// Handle path operations based on whether this is remote or local
+	if c.isRemote {
+		// Remote operations: ALWAYS use Unix path logic for SFTP
+		// SFTP protocol uses Unix-style paths internally regardless of remote OS
+
+		if newPath == ".." {
+			// Use Unix path logic for parent directory
+			newPath = spath.UnixDir(cwd)
+			if newPath == cwd {
+				// Already at root
+				return nil
+			}
+		} else if !strings.HasPrefix(newPath, "/") {
+			// Only convert user input if it's not already an absolute SFTP path
+			// Home directory from getContextHomeDir() is already in SFTP format
+			newPath = spath.UserInputToSFTPPath(newPath, cwd, system)
 		}
-		newPath = parentPath
-	} else if !spath.IsAbs(system, newPath) {
-		// Relative path, join with current directory
-		newPath = spath.Join(system, []string{cwd, newPath})
+	} else {
+		// Local operations: Use native OS path logic
+		if newPath == ".." {
+			parentPath := spath.Dir(system, cwd)
+			if parentPath == cwd {
+				// Already at root
+				return nil
+			}
+			newPath = parentPath
+		} else if !spath.IsAbs(system, newPath) {
+			// Relative path, join with current directory
+			newPath = spath.Join(system, []string{cwd, newPath})
+		}
 	}
 
 	// Check if directory exists and is accessible
@@ -96,9 +115,15 @@ func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("not a directory: %s", newPath)
 	}
 
-	// Update the current directory
+	// Update the current directory (stored in SFTP format for remote)
 	sftpCtx.setCwd(newPath, c.isRemote)
-	ui.PrintSuccess("Current %s path: %s", c.Name(), newPath)
+
+	// Display path in native format for user
+	displayPath := newPath
+	if c.isRemote {
+		displayPath = spath.SFTPPathForDisplay(newPath, system)
+	}
+	ui.PrintSuccess("Current %s path: %s", c.Name(), displayPath)
 
 	return nil
 }
