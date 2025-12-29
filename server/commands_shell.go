@@ -38,12 +38,12 @@ type InteractiveConsole struct {
 	ui        UserInterface
 }
 
-func (c *ShellCommand) Name() string        { return shellCmd }
-func (c *ShellCommand) Description() string { return shellDesc }
-func (c *ShellCommand) Usage() string       { return shellUsage }
-
+func (c *ShellCommand) Name() string             { return shellCmd }
+func (c *ShellCommand) Description() string      { return shellDesc }
+func (c *ShellCommand) Usage() string            { return shellUsage }
+func (c *ShellCommand) IsRemoteCompletion() bool { return false }
 func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	shellFlags := pflag.NewFlagSet(shellCmd, pflag.ContinueOnError)
@@ -97,10 +97,9 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("flags --interactive and --tls cannot be used together")
 	}
 
-	var session *Session
 	sessionID := *sSession + *sKill
 	// Resolve session ID for Unified Remote support
-	unifiedMap := server.ResolveUnifiedSessions()
+	unifiedMap := svr.ResolveUnifiedSessions()
 	uSess, ok := unifiedMap[int64(sessionID)]
 	if !ok {
 		return fmt.Errorf("session %d not found", sessionID)
@@ -108,13 +107,15 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	// REMOTE PROXY STRATEGY
 	if uSess.OwnerID != 0 {
-		return c.handleRemoteShell(server, uSess, ui)
+		return c.handleRemoteShell(svr, uSess, ui)
 	}
 
 	// LOCAL STRATEGY
 	// Map UnifiedID back to ActualID for local lookup
 	sessionID = int(uSess.ActualID)
-	session, err := server.getSession(sessionID)
+	var session *Session
+	var err error
+	session, err = svr.getSession(sessionID)
 	if err != nil {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
@@ -187,7 +188,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 				}
 				ui.PrintSuccess("Shell Endpoint running on port: %d", port)
 				if *sInteractive {
-					tlsConfig, ccErr := server.NewClientTlsConfig()
+					tlsConfig, ccErr := svr.NewClientTlsConfig()
 					if ccErr != nil {
 						return fmt.Errorf("failed to create client TLS certificate: %w", ccErr)
 					}

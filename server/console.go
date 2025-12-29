@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slider/pkg/completion"
 	"slider/pkg/conf"
 	"slider/pkg/escseq"
+	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
@@ -49,7 +51,7 @@ func (s *server) newTerminal(screen screenIO, registry *CommandRegistry) error {
 	// Set Console
 	s.console.Term = term.NewTerminal(screen, getPrompt())
 	s.console.ReadWriter = screen
-	s.console.setConsoleAutoComplete(registry)
+	s.console.setConsoleAutoComplete(registry, s.serverInterpreter)
 	s.console.Term.History = s.console.History
 
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
@@ -171,17 +173,142 @@ func (s *server) NewConsole() string {
 	return out
 }
 
-func (c *Console) setConsoleAutoComplete(registry *CommandRegistry) {
-	// Simple autocompletion
+func (c *Console) setConsoleAutoComplete(registry *CommandRegistry, serverInterpreter *interpreter.Interpreter) {
+	// Enhanced autocompletion with path support
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// Only handle TAB key
+		if key != 9 {
+			return line, pos, false
+		}
+
 		line = strings.TrimSpace(line)
-		// If TAB key is pressed and text was written
-		if key == 9 && len(line) > 0 {
+		if len(line) == 0 {
+			return line, pos, false
+		}
+
+		// Parse the line into arguments
+		args := strings.Fields(line)
+		if len(args) == 0 {
+			return line, pos, false
+		}
+
+		// First word: complete command names
+		if len(args) == 1 && !strings.HasSuffix(line, " ") {
 			newLine, newPos := registry.Autocomplete(line)
 			return newLine, newPos, true
 		}
-		return line, pos, false
+
+		// For subsequent arguments, try path completion
+		// Get the current argument being completed
+		currentArg := ""
+		if !strings.HasSuffix(line, " ") {
+			// Still typing the last argument
+			currentArg = args[len(args)-1]
+		}
+
+		// Try path completion
+		cwd, err := os.Getwd()
+		if err != nil {
+			cwd = "."
+		}
+
+		completer := completion.NewLocalPathCompleter()
+		matches, commonPrefix, err := completer.Complete(currentArg, cwd, serverInterpreter.System, serverInterpreter.HomeDir)
+		if err != nil || len(matches) == 0 {
+			// No matches, return original line
+			return line, pos, false
+		}
+
+		// Build the full completed path by combining the directory part with the completion
+		completedPath := buildCompletedPath(currentArg, commonPrefix, serverInterpreter.System, serverInterpreter.HomeDir)
+
+		// Build new line with completion
+		newLine := buildCompletedLine(line, currentArg, completedPath, strings.HasSuffix(line, " "))
+
+		return newLine, len(newLine), true
 	}
+}
+
+// buildCompletedPath reconstructs the full path from the original input and completion
+// Expands ~ to the full home directory path
+func buildCompletedPath(originalInput, completion, system, homeDir string) string {
+	if completion == "" {
+		return originalInput
+	}
+
+	// If completion is the same as input, return as-is
+	if completion == originalInput {
+		return originalInput
+	}
+
+	// Expand ~ to full home directory path
+	expandedInput := originalInput
+	if len(originalInput) >= 1 && originalInput[0] == '~' {
+		if homeDir != "" {
+			if originalInput == "~" {
+				expandedInput = homeDir
+			} else if len(originalInput) >= 2 && (originalInput[1] == '/' || originalInput[1] == '\\') {
+				// Replace ~ with home directory
+				expandedInput = homeDir + originalInput[1:]
+			}
+		}
+	}
+
+	// Find the last separator in the expanded input
+	var lastSep int
+	if system == "windows" {
+		// Check both separators
+		lastBackslash := strings.LastIndex(expandedInput, "\\")
+		lastSlash := strings.LastIndex(expandedInput, "/")
+		if lastBackslash > lastSlash {
+			lastSep = lastBackslash
+		} else {
+			lastSep = lastSlash
+		}
+	} else {
+		lastSep = strings.LastIndex(expandedInput, "/")
+	}
+
+	// If no separator found, the completion is the full result
+	if lastSep == -1 {
+		return completion
+	}
+
+	// Combine directory part with completion
+	dirPart := expandedInput[:lastSep+1] // Include the separator
+	return dirPart + completion
+}
+
+// buildCompletedLine constructs a new command line with the completed argument
+func buildCompletedLine(line string, currentArg string, completion string, trailingSpace bool) string {
+	if completion == "" || completion == currentArg {
+		return line
+	}
+
+	// Check if completion needs quoting (has spaces)
+	needsQuoting := strings.Contains(completion, " ")
+
+	if trailingSpace {
+		// User pressed TAB after a space, append the completion
+		if needsQuoting {
+			return line + `"` + completion + `"`
+		}
+		return line + completion
+	}
+
+	// Replace the last argument with the completion
+	// Find the position of the last argument in the original line
+	lastArgStart := strings.LastIndex(line, currentArg)
+	if lastArgStart == -1 {
+		// Shouldn't happen, but fallback
+		return line
+	}
+
+	prefix := line[:lastArgStart]
+	if needsQuoting {
+		return prefix + `"` + completion + `"`
+	}
+	return prefix + completion
 }
 
 func autocompleteCommand(input string, cmdList []string) (string, int) {

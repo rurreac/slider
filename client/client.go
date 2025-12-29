@@ -526,7 +526,7 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 	}
 
 	fwdAddress := fmt.Sprintf("%s:%d", tcpIpForward.BindAddress, tcpIpForward.BindPort)
-	listener, err := net.Listen("tcp", fwdAddress)
+	listen, err := net.Listen("tcp", fwdAddress)
 	if err != nil {
 		s.Logger.ErrorWith("Failed to start reverse port forward listener",
 			slog.F("session_id", s.sessionID),
@@ -539,7 +539,7 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 	}
 
 	// We may have asked to bind to port 0, we want it resolved, saved and send back to the server
-	finalBindPort := listener.Addr().(*net.TCPAddr).Port
+	finalBindPort := listen.Addr().(*net.TCPAddr).Port
 	s.Logger.DebugWith("Reverse Port Forward request binding",
 		slog.F("session_id", s.sessionID),
 		slog.F("bind_address", tcpIpForward.BindAddress),
@@ -565,7 +565,7 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 	s.addTcpIpForward(tcpIpForward, stopChan)
 
 	defer func() {
-		_ = listener.Close()
+		_ = listen.Close()
 		s.dropTcpIpForward(tcpIpForward.BindPort)
 	}()
 
@@ -578,8 +578,8 @@ func (s *Session) handleTcpIpForward(req *ssh.Request) {
 		}
 
 		// Set a timeout to force checking the stop signal regularly
-		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
-		conn, lErr := listener.Accept()
+		_ = listen.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
+		conn, lErr := listen.Accept()
 		if lErr != nil {
 			// Discard timeout errors
 			var netErr net.Error
