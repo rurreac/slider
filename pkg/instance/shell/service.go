@@ -14,11 +14,11 @@ import (
 
 // Service represents a Shell service that handles shell connections
 type Service struct {
-	logger         *slog.Logger
-	sessionID      int64
-	opener         ChannelOpener
-	envVarList     []struct{ Key, Value string }
-	interactiveOn  bool
+	logger        *slog.Logger
+	sessionID     int64
+	opener        ChannelOpener
+	envVarList    []struct{ Key, Value string }
+	interactiveOn bool
 }
 
 // ChannelOpener defines the interface for opening SSH channels and sending requests
