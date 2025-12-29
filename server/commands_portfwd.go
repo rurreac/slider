@@ -29,7 +29,7 @@ func (c *PortFwdCommand) Description() string      { return portFwdDesc }
 func (c *PortFwdCommand) Usage() string            { return portFwdUsage }
 func (c *PortFwdCommand) IsRemoteCompletion() bool { return false }
 func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	portFwdFlags := pflag.NewFlagSet(portFwdCmd, pflag.ContinueOnError)
@@ -86,7 +86,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Resolve Unified Sessions
-	unifiedMap := server.ResolveUnifiedSessions()
+	unifiedMap := svr.ResolveUnifiedSessions()
 	var uSess UnifiedSession
 	var isRemote bool
 
@@ -107,20 +107,20 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		totalGlobalTcpIp := 0
 
 		// 1. Local Sessions Listing
-		sessionList := slices.Collect(maps.Values(server.sessionTrack.Sessions))
+		sessionList := slices.Collect(maps.Values(svr.sessionTrack.Sessions))
 		for _, sItem := range sessionList {
 			totalGlobalTcpIp += listSessionForwarding(tw, sItem.sessionID, sItem.SSHInstance)
 		}
 
 		// 2. Remote Sessions Listing
-		server.remoteSessionsMutex.Lock()
-		keys := slices.Collect(maps.Keys(server.remoteSessions))
-		server.remoteSessionsMutex.Unlock()
+		svr.remoteSessionsMutex.Lock()
+		keys := slices.Collect(maps.Keys(svr.remoteSessions))
+		svr.remoteSessionsMutex.Unlock()
 
 		for _, key := range keys {
-			server.remoteSessionsMutex.Lock()
-			state := server.remoteSessions[key]
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Lock()
+			state := svr.remoteSessions[key]
+			svr.remoteSessionsMutex.Unlock()
 
 			if state.SSHInstance != nil {
 				totalGlobalTcpIp += listSessionForwarding(tw, state.SSHInstance.SessionID, state.SSHInstance)
@@ -137,30 +137,30 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		if *pSession <= 0 {
 			return fmt.Errorf("invalid session ID")
 		}
-		session, err := server.getSession(int(uSess.ActualID))
+		session, err := svr.getSession(int(uSess.ActualID))
 		if err != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
 		if *pLocal {
-			return handleLocalForward(server, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleLocalForward(svr, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 		if *pReverse {
-			return handleReverseForward(server, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleReverseForward(svr, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 	} else {
 		// Remote Strategy
 		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
-		server.remoteSessionsMutex.Lock()
-		if _, ok := server.remoteSessions[key]; !ok {
-			server.remoteSessions[key] = &RemoteSessionState{}
+		svr.remoteSessionsMutex.Lock()
+		if _, ok := svr.remoteSessions[key]; !ok {
+			svr.remoteSessions[key] = &RemoteSessionState{}
 		}
-		state := server.remoteSessions[key]
-		server.remoteSessionsMutex.Unlock()
+		state := svr.remoteSessions[key]
+		svr.remoteSessionsMutex.Unlock()
 
 		// Ensure SSHInstance exists (generic)
 		if state.SSHInstance == nil {
-			gatewaySession, err := server.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}
@@ -171,22 +171,22 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 			remoteConn := remote.NewProxy(gatewaySession, target)
 
 			config := instance.New(&instance.Config{
-				Logger:       server.Logger,
+				Logger:       svr.Logger,
 				SessionID:    uSess.UnifiedID,
 				EndpointType: instance.SshEndpoint,
 			})
 			config.SetSSHConn(remoteConn)
 
-			server.remoteSessionsMutex.Lock()
+			svr.remoteSessionsMutex.Lock()
 			state.SSHInstance = config
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Unlock()
 		}
 
 		if *pLocal {
-			return handleLocalForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleLocalForward(svr, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 		if *pReverse {
-			return handleReverseForward(server, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleReverseForward(svr, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
 		}
 	}
 

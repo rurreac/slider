@@ -47,7 +47,7 @@ func (c *HelpCommand) Description() string      { return helpDesc }
 func (c *HelpCommand) Usage() string            { return helpCmd }
 func (c *HelpCommand) IsRemoteCompletion() bool { return false }
 func (c *HelpCommand) Run(ctx *ExecutionContext, _ []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	tw := new(tabwriter.Writer)
@@ -56,7 +56,7 @@ func (c *HelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 
 	// Get primary commands with their aliases
-	primaryCommands := server.commandRegistry.GetPrimaryCommands()
+	primaryCommands := svr.commandRegistry.GetPrimaryCommands()
 
 	// Create a sorted list of primary command names
 	var cmdNames []string
@@ -66,7 +66,7 @@ func (c *HelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
-		if cmd, ok := server.commandRegistry.Get(cmdName); ok {
+		if cmd, ok := svr.commandRegistry.Get(cmdName); ok {
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", cmdName, cmd.Description())
 		}
 	}

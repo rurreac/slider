@@ -26,7 +26,7 @@ func (c *SocksCommand) Description() string      { return socksDesc }
 func (c *SocksCommand) Usage() string            { return socksUsage }
 func (c *SocksCommand) IsRemoteCompletion() bool { return true }
 func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	socksFlags := pflag.NewFlagSet(socksCmd, pflag.ContinueOnError)
@@ -72,7 +72,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	var isRemote bool
 
 	// Resolve Unified Sessions
-	unifiedMap := server.ResolveUnifiedSessions()
+	unifiedMap := svr.ResolveUnifiedSessions()
 	if val, ok := unifiedMap[int64(sessionID)]; ok {
 		uSess = val
 		isRemote = uSess.OwnerID != 0
@@ -82,7 +82,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if !isRemote {
 		// Local Strategy
-		session, err := server.getSession(int(uSess.ActualID))
+		session, err := svr.getSession(int(uSess.ActualID))
 		if err != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
@@ -139,12 +139,12 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	} else {
 		// Remote Strategy
 		key := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
-		server.remoteSessionsMutex.Lock()
-		if _, ok := server.remoteSessions[key]; !ok {
-			server.remoteSessions[key] = &RemoteSessionState{}
+		svr.remoteSessionsMutex.Lock()
+		if _, ok := svr.remoteSessions[key]; !ok {
+			svr.remoteSessions[key] = &RemoteSessionState{}
 		}
-		state := server.remoteSessions[key]
-		server.remoteSessionsMutex.Unlock()
+		state := svr.remoteSessions[key]
+		svr.remoteSessionsMutex.Unlock()
 
 		if *sKill > 0 {
 			if state.SocksInstance == nil || !state.SocksInstance.IsEnabled() {
@@ -155,9 +155,9 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("error stopping SOCKS5 server: %w", err)
 			}
 			// Cleanup
-			server.remoteSessionsMutex.Lock()
+			svr.remoteSessionsMutex.Lock()
 			state.SocksInstance = nil
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Unlock()
 			ui.PrintSuccess("SOCKS5 server stopped on remote session %d", sessionID)
 			return nil
 		}
@@ -171,7 +171,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			// Setup Remote Connection
-			gatewaySession, err := server.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}
@@ -184,7 +184,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 
 			// Configure Instance
 			config := instance.New(&instance.Config{
-				Logger:       server.Logger,
+				Logger:       svr.Logger,
 				SessionID:    uSess.UnifiedID, // Use UnifiedID for logging
 				EndpointType: instance.SocksEndpoint,
 			})
@@ -202,9 +202,9 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 				}
 			}()
 
-			server.remoteSessionsMutex.Lock()
+			svr.remoteSessionsMutex.Lock()
 			state.SocksInstance = config
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Unlock()
 
 			// Wait for startup or error
 			socksTicker := time.NewTicker(conf.EndpointTickerInterval)
@@ -216,9 +216,9 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 				case nErr := <-notifier:
 					if nErr != nil {
 						// Cleanup on failure
-						server.remoteSessionsMutex.Lock()
+						svr.remoteSessionsMutex.Lock()
 						state.SocksInstance = nil
-						server.remoteSessionsMutex.Unlock()
+						svr.remoteSessionsMutex.Unlock()
 						return fmt.Errorf("failed to start remote socks: %w", nErr)
 					}
 				case <-socksTicker.C:

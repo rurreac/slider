@@ -22,7 +22,7 @@ type ExecutionContext struct {
 }
 
 // Server returns the server instance
-func (c *ExecutionContext) Server() *server {
+func (c *ExecutionContext) getServer() *server {
 	return c.server
 }
 
