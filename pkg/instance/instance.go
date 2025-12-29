@@ -567,6 +567,11 @@ func (si *Config) sendInitTermSize(payload []byte) {
 }
 
 func (si *Config) ExecuteCommand(command string, initState *term.State) error {
+	// Check if SSH connection is available
+	if si.sshSessionConn == nil {
+		return fmt.Errorf("no active SSH connection available")
+	}
+
 	// Build command payload
 	cmdLen := len(command)
 	cmdBytes := []byte(command)

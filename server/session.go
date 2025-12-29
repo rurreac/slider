@@ -365,7 +365,14 @@ func (session *Session) newExecInstance(envVarList []struct{ Key, Value string }
 		SessionID:    session.sessionID,
 		EndpointType: instance.ExecEndpoint,
 	})
-	config.SetSSHConn(session.sshConn)
+
+	// For promiscuous sessions, use sshClient; otherwise use sshConn
+	if session.sshClient != nil {
+		config.SetSSHConn(session.sshClient)
+	} else if session.sshConn != nil {
+		config.SetSSHConn(session.sshConn)
+	}
+
 	ptyOn := false
 	if session.clientInterpreter != nil {
 		ptyOn = session.clientInterpreter.PtyOn
