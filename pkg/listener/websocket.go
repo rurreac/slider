@@ -74,13 +74,8 @@ const (
 )
 
 // IsSliderWebSocket checks if the request is a slider WebSocket upgrade
-func IsSliderWebSocket(r *http.Request, customProto, operation string) bool {
-	return IsSliderWebSocketMultiOp(r, customProto, []string{operation})
-}
-
-// IsSliderWebSocketMultiOp checks if the request is a slider WebSocket upgrade
 // accepting any of the provided operations
-func IsSliderWebSocketMultiOp(r *http.Request, customProto string, operations []string) bool {
+func IsSliderWebSocket(r *http.Request, customProto string, operations []string) bool {
 	upgradeHeader := r.Header.Get("Upgrade")
 	if strings.ToLower(upgradeHeader) != "websocket" {
 		return false
@@ -104,9 +99,4 @@ func IsSliderWebSocketMultiOp(r *http.Request, customProto string, operations []
 		}
 	}
 	return false
-}
-
-// GetWebSocketOperation returns the operation from the request header
-func GetWebSocketOperation(r *http.Request) string {
-	return r.Header.Get("Sec-WebSocket-Operation")
 }
