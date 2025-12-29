@@ -105,7 +105,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, session *Session, sf
 	ui.PrintInfo("Type \"exit\" or press \"CTRL^C\" to return to Console")
 
 	// Initialize SFTP command registry with the target interpreter
-	s.initSftpRegistryWithInterpreter(session, sftpClient, &remoteCwd, &localCwd, targetInterpreter)
+	s.initSftpRegistry(session, sftpClient, &remoteCwd, &localCwd, targetInterpreter)
 
 	// Set the terminal prompt and autocomplete
 	ui.Term.SetPrompt(sftpPrompt())

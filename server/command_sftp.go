@@ -27,13 +27,8 @@ type SftpCommandContext struct {
 	remoteInterpreter *interpreter.Interpreter // Reference to remote interpreter for dynamic updates
 }
 
-// initSftpRegistry initializes the SFTP command registry (backwards compatible)
-func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string) {
-	s.initSftpRegistryWithInterpreter(session, sftpClient, remoteCwd, localCwd, nil)
-}
-
-// initSftpRegistryWithInterpreter initializes the SFTP command registry with optional remote interpreter
-func (s *server) initSftpRegistryWithInterpreter(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
+// initSftpRegistry initializes the SFTP command registry with optional remote interpreter
+func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
 	session.sftpCommandRegistry = NewCommandRegistry()
 
 	// Use provided interpreter or fall back to session's interpreter
