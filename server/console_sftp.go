@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -313,7 +312,7 @@ func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry, sftpCtx 
 			homeDir = sftpCtx.getContextHomeDir(true)
 
 			completer := completion.NewRemotePathCompleter(sftpClient)
-			matches, commonPrefix, err = completer.Complete(context.Background(), currentArg, remoteCwd, system, homeDir)
+			matches, commonPrefix, err = completer.Complete(currentArg, remoteCwd, system, homeDir)
 		} else {
 			// Local path completion
 			localCwd := sftpCtx.getCwd(false)
@@ -321,7 +320,7 @@ func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry, sftpCtx 
 			homeDir = sftpCtx.getContextHomeDir(false)
 
 			completer := completion.NewLocalPathCompleter()
-			matches, commonPrefix, err = completer.Complete(context.Background(), currentArg, localCwd, system, homeDir)
+			matches, commonPrefix, err = completer.Complete(currentArg, localCwd, system, homeDir)
 		}
 
 		if err != nil || len(matches) == 0 {
@@ -333,7 +332,7 @@ func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry, sftpCtx 
 		completedPath := buildCompletedPath(currentArg, commonPrefix, system, homeDir)
 
 		// Build new line with completion
-		newLine := buildCompletedLine(line, args, currentArg, completedPath, strings.HasSuffix(line, " "))
+		newLine := buildCompletedLine(line, currentArg, completedPath, strings.HasSuffix(line, " "))
 
 		return newLine, len(newLine), true
 	}

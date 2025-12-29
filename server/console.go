@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -214,7 +213,7 @@ func (c *Console) setConsoleAutoComplete(registry *CommandRegistry, serverInterp
 		}
 
 		completer := completion.NewLocalPathCompleter()
-		matches, commonPrefix, err := completer.Complete(context.Background(), currentArg, cwd, serverInterpreter.System, serverInterpreter.HomeDir)
+		matches, commonPrefix, err := completer.Complete(currentArg, cwd, serverInterpreter.System, serverInterpreter.HomeDir)
 		if err != nil || len(matches) == 0 {
 			// No matches, return original line
 			return line, pos, false
@@ -224,7 +223,7 @@ func (c *Console) setConsoleAutoComplete(registry *CommandRegistry, serverInterp
 		completedPath := buildCompletedPath(currentArg, commonPrefix, serverInterpreter.System, serverInterpreter.HomeDir)
 
 		// Build new line with completion
-		newLine := buildCompletedLine(line, args, currentArg, completedPath, strings.HasSuffix(line, " "))
+		newLine := buildCompletedLine(line, currentArg, completedPath, strings.HasSuffix(line, " "))
 
 		return newLine, len(newLine), true
 	}
@@ -281,7 +280,7 @@ func buildCompletedPath(originalInput, completion, system, homeDir string) strin
 }
 
 // buildCompletedLine constructs a new command line with the completed argument
-func buildCompletedLine(line string, args []string, currentArg string, completion string, trailingSpace bool) string {
+func buildCompletedLine(line string, currentArg string, completion string, trailingSpace bool) string {
 	if completion == "" || completion == currentArg {
 		return line
 	}
