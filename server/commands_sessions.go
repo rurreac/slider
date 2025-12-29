@@ -132,12 +132,12 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	return unifiedMap
 }
 
-func (c *SessionsCommand) Name() string        { return sessionsCmd }
-func (c *SessionsCommand) Description() string { return sessionsDesc }
-func (c *SessionsCommand) Usage() string       { return sessionsUsage }
-
+func (c *SessionsCommand) Name() string             { return sessionsCmd }
+func (c *SessionsCommand) Description() string      { return sessionsDesc }
+func (c *SessionsCommand) Usage() string            { return sessionsUsage }
+func (c *SessionsCommand) IsRemoteCompletion() bool { return false }
 func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	var list bool
@@ -182,7 +182,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if list {
 		// Use resolveSessions to get all sessions (local + remote) with unified IDs
-		unifiedMap := server.ResolveUnifiedSessions()
+		unifiedMap := svr.ResolveUnifiedSessions()
 
 		if len(unifiedMap) > 0 {
 			var keys []int
@@ -211,7 +211,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 				// If Local, fetch detailed info from actual session
 				if uSess.OwnerID == 0 {
-					if session, ok := server.sessionTrack.Sessions[uSess.ActualID]; ok {
+					if session, ok := svr.sessionTrack.Sessions[uSess.ActualID]; ok {
 						if session.SocksInstance.IsEnabled() {
 							if port, pErr := session.SocksInstance.GetEndpointPort(); pErr == nil {
 								socksPort = fmt.Sprintf("%d", port)
@@ -231,7 +231,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 								shellTLS = "on"
 							}
 						}
-						if server.authOn && session.certInfo.id != 0 {
+						if svr.authOn && session.certInfo.id != 0 {
 							certID = fmt.Sprintf("%d", session.certInfo.id)
 						}
 						inOut = "<-"
@@ -251,27 +251,27 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 					// Check for SOCKS
 					socksKey := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
-					server.remoteSessionsMutex.Lock()
-					if state, ok := server.remoteSessions[socksKey]; ok {
+					svr.remoteSessionsMutex.Lock()
+					if state, ok := svr.remoteSessions[socksKey]; ok {
 						if state.SocksInstance != nil && state.SocksInstance.IsEnabled() {
 							if port, pErr := state.SocksInstance.GetEndpointPort(); pErr == nil {
 								socksPort = fmt.Sprintf("%d", port)
 							}
 						}
 					}
-					server.remoteSessionsMutex.Unlock()
+					svr.remoteSessionsMutex.Unlock()
 
 					// Check for SSH
 					sshKey := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
-					server.remoteSessionsMutex.Lock()
-					if state, ok := server.remoteSessions[sshKey]; ok {
+					svr.remoteSessionsMutex.Lock()
+					if state, ok := svr.remoteSessions[sshKey]; ok {
 						if state.SSHInstance != nil && state.SSHInstance.IsEnabled() {
 							if port, pErr := state.SSHInstance.GetEndpointPort(); pErr == nil {
 								sshPort = fmt.Sprintf("%d", port)
 							}
 						}
 					}
-					server.remoteSessionsMutex.Unlock()
+					svr.remoteSessionsMutex.Unlock()
 				}
 
 				ownerStr := "LOCAL"
@@ -302,13 +302,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			_, _ = fmt.Fprintln(tw)
 			_ = tw.Flush()
 		}
-		ui.PrintInfo("Active sessions: %d\n", server.sessionTrack.SessionActive)
+		ui.PrintInfo("Active sessions: %d\n", svr.sessionTrack.SessionActive)
 		return nil
 	}
 
 	if *sDisconnect != "" {
 		if id, err := strconv.Atoi(*sDisconnect); err == nil {
-			session, sessErr := server.getSession(id)
+			session, sessErr := svr.getSession(id)
 			if sessErr != nil {
 				return fmt.Errorf("unknown session ID %d", id)
 			}
@@ -323,7 +323,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if *sKill != "" {
 		if id, err := strconv.Atoi(*sKill); err == nil {
-			session, sessErr := server.getSession(id)
+			session, sessErr := svr.getSession(id)
 			if sessErr != nil {
 				return fmt.Errorf("unknown session ID %d", id)
 			}
@@ -349,7 +349,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("invalid session ID: %s (must be integer)", *sInteract)
 		}
 
-		unifiedMap := server.ResolveUnifiedSessions()
+		unifiedMap := svr.ResolveUnifiedSessions()
 		uSess, ok := unifiedMap[uID]
 		if !ok {
 			return fmt.Errorf("session %d not found", uID)
@@ -358,7 +358,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// ROUTE BASED ON LOCAL vs REMOTE
 		if uSess.OwnerID == 0 {
 			// LOCAL SESSION
-			session, sessErr := server.getSession(int(uSess.ActualID))
+			session, sessErr := svr.getSession(int(uSess.ActualID))
 			if sessErr != nil {
 				return fmt.Errorf("unknown local session ID %d", uSess.ActualID)
 			}
@@ -373,14 +373,14 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			if !ok {
 				return fmt.Errorf("UI is not a Console")
 			}
-			server.newSftpConsole(console, session, sftpCli)
-			console.setConsoleAutoComplete(server.commandRegistry)
+			svr.newSftpConsole(console, session, sftpCli)
+			console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 			return nil
 		}
 
 		// REMOTE SESSION
 		// 1. Get Gateway Session
-		gatewaySession, sessErr := server.getSession(int(uSess.OwnerID))
+		gatewaySession, sessErr := svr.getSession(int(uSess.OwnerID))
 		if sessErr != nil {
 			return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
 		}
@@ -502,8 +502,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		// Use the unified session ID for display and pass the separate interpreter
 		// This prevents session confusion when connecting to multiple remote targets
-		server.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
-		console.setConsoleAutoComplete(server.commandRegistry)
+		svr.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
+		console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 	}
 
 	return nil

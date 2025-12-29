@@ -17,10 +17,11 @@ const (
 // SftpMvCommand implements the 'mv' command (remote only)
 type SftpMvCommand struct{}
 
-func (c *SftpMvCommand) Name() string        { return mvCmd }
-func (c *SftpMvCommand) Description() string { return mvDesc }
-func (c *SftpMvCommand) Usage() string       { return mvUsage }
-func (c *SftpMvCommand) IsRemote() bool      { return true }
+func (c *SftpMvCommand) Name() string             { return mvCmd }
+func (c *SftpMvCommand) Description() string      { return mvDesc }
+func (c *SftpMvCommand) Usage() string            { return mvUsage }
+func (c *SftpMvCommand) IsRemote() bool           { return true }
+func (c *SftpMvCommand) IsRemoteCompletion() bool { return true }
 
 func (c *SftpMvCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

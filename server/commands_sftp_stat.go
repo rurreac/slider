@@ -21,10 +21,11 @@ const (
 // SftpStatCommand implements the 'stat' command (remote only)
 type SftpStatCommand struct{}
 
-func (c *SftpStatCommand) Name() string        { return statCmd }
-func (c *SftpStatCommand) Description() string { return statDesc }
-func (c *SftpStatCommand) Usage() string       { return statUsage }
-func (c *SftpStatCommand) IsRemote() bool      { return true }
+func (c *SftpStatCommand) Name() string             { return statCmd }
+func (c *SftpStatCommand) Description() string      { return statDesc }
+func (c *SftpStatCommand) Usage() string            { return statUsage }
+func (c *SftpStatCommand) IsRemote() bool           { return true }
+func (c *SftpStatCommand) IsRemoteCompletion() bool { return true }
 
 func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

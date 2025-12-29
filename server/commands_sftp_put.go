@@ -20,10 +20,11 @@ const (
 // SftpPutCommand implements the 'put' command for uploading files
 type SftpPutCommand struct{}
 
-func (c *SftpPutCommand) Name() string        { return putCmd }
-func (c *SftpPutCommand) Description() string { return putDesc }
-func (c *SftpPutCommand) Usage() string       { return putUsage }
-func (c *SftpPutCommand) IsRemote() bool      { return true }
+func (c *SftpPutCommand) Name() string             { return putCmd }
+func (c *SftpPutCommand) Description() string      { return putDesc }
+func (c *SftpPutCommand) Usage() string            { return putUsage }
+func (c *SftpPutCommand) IsRemote() bool           { return true }
+func (c *SftpPutCommand) IsRemoteCompletion() bool { return false }
 
 func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

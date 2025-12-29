@@ -38,6 +38,8 @@ func (c *SftpPwdCommand) IsRemote() bool {
 	return c.isRemote
 }
 
+func (c *SftpPwdCommand) IsRemoteCompletion() bool { return c.isRemote }
+
 func (c *SftpPwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("too many arguments")

@@ -23,7 +23,7 @@ func (c *client) buildRouter() http.Handler {
 
 	// Wrap with WebSocket upgrade check for server connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if listener.IsSliderWebSocketMultiOp(r, c.customProto, acceptedOps) {
+		if listener.IsSliderWebSocket(r, c.customProto, acceptedOps) {
 			c.handleWebSocket(w, r)
 			return
 		}

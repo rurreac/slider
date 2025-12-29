@@ -22,7 +22,7 @@ type ExecutionContext struct {
 }
 
 // Server returns the server instance
-func (c *ExecutionContext) Server() *server {
+func (c *ExecutionContext) getServer() *server {
 	return c.server
 }
 
@@ -50,6 +50,7 @@ type Command interface {
 	Description() string
 	Usage() string
 	Run(ctx *ExecutionContext, args []string) error
+	IsRemoteCompletion() bool
 }
 
 // CommandRegistry holds the registered commands

@@ -54,6 +54,8 @@ func (c *SftpLsCommand) IsRemote() bool {
 	return c.isRemote
 }
 
+func (c *SftpLsCommand) IsRemoteCompletion() bool { return c.isRemote }
+
 func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()
 	if err != nil {

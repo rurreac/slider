@@ -20,12 +20,12 @@ const (
 // ConnectCommand implements the 'connect' command
 type ConnectCommand struct{}
 
-func (c *ConnectCommand) Name() string        { return connectCmd }
-func (c *ConnectCommand) Description() string { return connectDesc }
-func (c *ConnectCommand) Usage() string       { return connectUsage }
-
+func (c *ConnectCommand) Name() string             { return connectCmd }
+func (c *ConnectCommand) Description() string      { return connectDesc }
+func (c *ConnectCommand) Usage() string            { return connectUsage }
+func (c *ConnectCommand) IsRemoteCompletion() bool { return false }
 func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	connectFlags := pflag.NewFlagSet(connectCmd, pflag.ContinueOnError)
@@ -69,7 +69,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
 
-	go server.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cPromiscuous)
+	go svr.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cPromiscuous)
 
 	for {
 		// Priority check: always check notifier first

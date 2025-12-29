@@ -21,12 +21,12 @@ const (
 // SSHCommand implements the 'ssh' command
 type SSHCommand struct{}
 
-func (c *SSHCommand) Name() string        { return sshCmd }
-func (c *SSHCommand) Description() string { return sshDesc }
-func (c *SSHCommand) Usage() string       { return sshUsage }
-
+func (c *SSHCommand) Name() string             { return sshCmd }
+func (c *SSHCommand) Description() string      { return sshDesc }
+func (c *SSHCommand) Usage() string            { return sshUsage }
+func (c *SSHCommand) IsRemoteCompletion() bool { return false }
 func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	sshFlags := pflag.NewFlagSet(sshCmd, pflag.ContinueOnError)
@@ -72,7 +72,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	var isRemote bool
 
 	// Resolve Unified Sessions
-	unifiedMap := server.ResolveUnifiedSessions()
+	unifiedMap := svr.ResolveUnifiedSessions()
 	if val, ok := unifiedMap[int64(sessionID)]; ok {
 		uSess = val
 		isRemote = uSess.OwnerID != 0
@@ -82,7 +82,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if !isRemote {
 		// Local Strategy
-		session, sErr := server.getSession(int(uSess.ActualID))
+		session, sErr := svr.getSession(int(uSess.ActualID))
 		if sErr != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
@@ -137,12 +137,12 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	} else {
 		// Remote Strategy
 		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
-		server.remoteSessionsMutex.Lock()
-		if _, ok := server.remoteSessions[key]; !ok {
-			server.remoteSessions[key] = &RemoteSessionState{}
+		svr.remoteSessionsMutex.Lock()
+		if _, ok := svr.remoteSessions[key]; !ok {
+			svr.remoteSessions[key] = &RemoteSessionState{}
 		}
-		state := server.remoteSessions[key]
-		server.remoteSessionsMutex.Unlock()
+		state := svr.remoteSessions[key]
+		svr.remoteSessionsMutex.Unlock()
 
 		if *sKill > 0 {
 			if state.SSHInstance == nil || !state.SSHInstance.IsEnabled() {
@@ -153,9 +153,9 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("error stopping SSH server: %w", err)
 			}
 			// Cleanup
-			server.remoteSessionsMutex.Lock()
+			svr.remoteSessionsMutex.Lock()
 			state.SSHInstance = nil
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Unlock()
 			ui.PrintSuccess("SSH Endpoint gracefully stopped on remote session %d", sessionID)
 			return nil
 		}
@@ -169,7 +169,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			// Setup Remote Connection
-			gatewaySession, err := server.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}
@@ -182,12 +182,12 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 
 			// Configure Instance
 			config := instance.New(&instance.Config{
-				Logger:       server.Logger,
+				Logger:       svr.Logger,
 				SessionID:    uSess.UnifiedID,
 				EndpointType: instance.SshEndpoint,
-				ServerKey:    server.serverKey, // Needed for SSH handshake
+				ServerKey:    svr.serverKey, // Needed for SSH handshake
 				// AuthOn? Server.authOn?
-				AuthOn: server.authOn,
+				AuthOn: svr.authOn,
 			})
 			config.SetSSHConn(remoteConn)
 			config.SetExpose(*sExpose)
@@ -203,9 +203,9 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 				}
 			}()
 
-			server.remoteSessionsMutex.Lock()
+			svr.remoteSessionsMutex.Lock()
 			state.SSHInstance = config
-			server.remoteSessionsMutex.Unlock()
+			svr.remoteSessionsMutex.Unlock()
 
 			// Wait for startup
 			sshTicker := time.NewTicker(conf.EndpointTickerInterval)
@@ -216,9 +216,9 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 				select {
 				case nErr := <-notifier:
 					if nErr != nil {
-						server.remoteSessionsMutex.Lock()
+						svr.remoteSessionsMutex.Lock()
 						state.SSHInstance = nil
-						server.remoteSessionsMutex.Unlock()
+						svr.remoteSessionsMutex.Unlock()
 						return fmt.Errorf("failed to start remote ssh endpoint: %w", nErr)
 					}
 				case <-sshTicker.C:

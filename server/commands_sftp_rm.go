@@ -18,10 +18,11 @@ const (
 // SftpRmCommand implements the 'rm' command (remote only)
 type SftpRmCommand struct{}
 
-func (c *SftpRmCommand) Name() string        { return rmCmd }
-func (c *SftpRmCommand) Description() string { return rmDesc }
-func (c *SftpRmCommand) Usage() string       { return rmUsage }
-func (c *SftpRmCommand) IsRemote() bool      { return true }
+func (c *SftpRmCommand) Name() string             { return rmCmd }
+func (c *SftpRmCommand) Description() string      { return rmDesc }
+func (c *SftpRmCommand) Usage() string            { return rmUsage }
+func (c *SftpRmCommand) IsRemote() bool           { return true }
+func (c *SftpRmCommand) IsRemoteCompletion() bool { return true }
 
 func (c *SftpRmCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

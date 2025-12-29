@@ -79,7 +79,7 @@ func (s *server) buildRouter() http.Handler {
 
 	// Wrap with WebSocket upgrade check for client connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if listener.IsSliderWebSocketMultiOp(r, s.customProto, acceptedOps) {
+		if listener.IsSliderWebSocket(r, s.customProto, acceptedOps) {
 			s.handleWebSocket(w, r)
 			return
 		}
@@ -439,7 +439,7 @@ func (s *server) newWebConsole(ptyTTY *os.File, history *CustomHistory) (*Consol
 	}
 
 	// Set auto complete
-	webConsole.setConsoleAutoComplete(s.commandRegistry)
+	webConsole.setConsoleAutoComplete(s.commandRegistry, s.serverInterpreter)
 
 	return webConsole, nil
 }

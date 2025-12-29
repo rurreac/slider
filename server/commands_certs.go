@@ -20,12 +20,12 @@ const (
 // CertsCommand implements the 'certs' command
 type CertsCommand struct{}
 
-func (c *CertsCommand) Name() string        { return certsCmd }
-func (c *CertsCommand) Description() string { return certsDesc }
-func (c *CertsCommand) Usage() string       { return certsUsage }
-
+func (c *CertsCommand) Name() string             { return certsCmd }
+func (c *CertsCommand) Description() string      { return certsDesc }
+func (c *CertsCommand) Usage() string            { return certsUsage }
+func (c *CertsCommand) IsRemoteCompletion() bool { return false }
 func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	certsFlags := pflag.NewFlagSet(certsCmd, pflag.ContinueOnError)
@@ -70,12 +70,12 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if changedCount == 0 {
 		// List certificates
-		if server.certTrack != nil {
-			server.certTrackMutex.Lock()
-			defer server.certTrackMutex.Unlock()
+		if svr.certTrack != nil {
+			svr.certTrackMutex.Lock()
+			defer svr.certTrackMutex.Unlock()
 
-			if len(server.certTrack.Certs) > 0 {
-				ids := slices.Collect(maps.Keys(server.certTrack.Certs))
+			if len(svr.certTrack.Certs) > 0 {
+				ids := slices.Collect(maps.Keys(svr.certTrack.Certs))
 				slices.Sort(ids)
 				tw := new(tabwriter.Writer)
 				tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
@@ -83,14 +83,14 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
 				for _, id := range ids {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, server.certTrack.Certs[id].FingerPrint)
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, svr.certTrack.Certs[id].FingerPrint)
 				}
 				_, _ = fmt.Fprintln(tw)
 				_, _ = fmt.Fprintf(tw, "\n\tID\tPrivate Key\t")
 				_, _ = fmt.Fprintf(tw, "\n\t--\t-----------\t\n")
 
 				for _, id := range ids {
-					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, server.certTrack.Certs[id].PrivateKey)
+					_, _ = fmt.Fprintf(tw, "\t%d\t%s\t\n", id, svr.certTrack.Certs[id].PrivateKey)
 				}
 				_, _ = fmt.Fprintln(tw)
 				_ = tw.Flush()
@@ -102,16 +102,16 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	if *cCA {
-		if server.CertificateAuthority == nil {
+		if svr.CertificateAuthority == nil {
 			ui.PrintInfo("No CA certificate found")
 			return nil
 		}
-		if server.caStoreOn {
-			caCertPath, cErr := server.saveCACert()
+		if svr.caStoreOn {
+			caCertPath, cErr := svr.saveCACert()
 			if cErr != nil {
 				return fmt.Errorf("failed to save CA certificate: %w", cErr)
 			}
-			caKeyPath, kErr := server.saveCAKey()
+			caKeyPath, kErr := svr.saveCAKey()
 			if kErr != nil {
 				return fmt.Errorf("failed to save CA key: %w", kErr)
 			}
@@ -119,23 +119,23 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 			ui.PrintSuccess("CA Private Key saved to %s", caKeyPath)
 			return nil
 		}
-		ui.PrintInfo("CA Certificate:\n%s", server.CertificateAuthority.CertPEM)
-		ui.PrintInfo("CA Private Key:\n%s", server.CertificateAuthority.KeyPEM)
+		ui.PrintInfo("CA Certificate:\n%s", svr.CertificateAuthority.CertPEM)
+		ui.PrintInfo("CA Private Key:\n%s", svr.CertificateAuthority.KeyPEM)
 		return nil
 	}
 
 	if *cSSH > 0 {
 		// Dump SSH keys for a cert ID
-		keypair, err := server.getCert(int64(*cSSH))
+		keypair, err := svr.getCert(int64(*cSSH))
 		if err != nil {
 			return fmt.Errorf("failed to get certificate: %w", err)
 		}
-		if server.certSaveOn {
-			pvKeyPath, pvErr := server.savePrivateKey(int64(*cSSH))
+		if svr.certSaveOn {
+			pvKeyPath, pvErr := svr.savePrivateKey(int64(*cSSH))
 			if pvErr != nil {
 				return fmt.Errorf("failed to save private key: %w", pvErr)
 			}
-			pbKeyPath, pbErr := server.savePublicKey(int64(*cSSH))
+			pbKeyPath, pbErr := svr.savePublicKey(int64(*cSSH))
 			if pbErr != nil {
 				return fmt.Errorf("failed to save public key: %w", pbErr)
 			}
@@ -151,7 +151,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if *cNew {
 		// Generate new key pair
-		keypair, err := server.newCertItem()
+		keypair, err := svr.newCertItem()
 		if err != nil {
 			return fmt.Errorf("failed to generate certificate: %w", err)
 		}
@@ -161,7 +161,7 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	if *cRemove > 0 {
-		if err := server.dropCertItem(int64(*cRemove)); err != nil {
+		if err := svr.dropCertItem(int64(*cRemove)); err != nil {
 			return fmt.Errorf("failed to remove certificate ID %d: %w", *cRemove, err)
 		}
 		ui.PrintSuccess("Certificate ID %d successfully removed", *cRemove)

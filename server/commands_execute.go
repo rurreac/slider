@@ -21,12 +21,12 @@ const (
 // ExecuteCommand implements the 'execute' command
 type ExecuteCommand struct{}
 
-func (c *ExecuteCommand) Name() string        { return executeCmd }
-func (c *ExecuteCommand) Description() string { return executeDesc }
-func (c *ExecuteCommand) Usage() string       { return executeUsage }
-
+func (c *ExecuteCommand) Name() string             { return executeCmd }
+func (c *ExecuteCommand) Description() string      { return executeDesc }
+func (c *ExecuteCommand) Usage() string            { return executeUsage }
+func (c *ExecuteCommand) IsRemoteCompletion() bool { return false }
 func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
-	server := ctx.Server()
+	svr := ctx.getServer()
 	ui := ctx.UI()
 
 	executeFlags := pflag.NewFlagSet(executeCmd, pflag.ContinueOnError)
@@ -69,7 +69,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 	var sessions []UnifiedSession
 
 	// Resolve Unified Sessions
-	unifiedMap := server.ResolveUnifiedSessions()
+	unifiedMap := svr.ResolveUnifiedSessions()
 
 	if *eSession > 0 {
 		if uSess, ok := unifiedMap[int64(*eSession)]; ok {
@@ -90,7 +90,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		if uSess.OwnerID == 0 {
 			// Local
-			session, err := server.getSession(int(uSess.ActualID))
+			session, err := svr.getSession(int(uSess.ActualID))
 			if err != nil {
 				if !*eAll {
 					return fmt.Errorf("session %d not found", uSess.UnifiedID)
@@ -100,7 +100,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 
 			var envVarList []struct{ Key, Value string }
 			i := session.newExecInstance(envVarList)
-			if err := i.ExecuteCommand(command, server.console.InitState); err != nil {
+			if err := i.ExecuteCommand(command, svr.console.InitState); err != nil {
 				if !*eAll {
 					return fmt.Errorf("execution error: %w", err)
 				}
@@ -108,14 +108,14 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 		} else {
 			// Remote
-			if err := c.handleRemoteExecute(server, uSess, command, ui); err != nil {
+			if err := c.handleRemoteExecute(svr, uSess, command, ui); err != nil {
 				if !*eAll {
 					return fmt.Errorf("remote execution error: %w", err)
 				}
 				ui.PrintError("Remote Execution Failed on %d: %v", uSess.UnifiedID, err)
 			}
 		}
-		server.console.Println("")
+		svr.console.Println("")
 	}
 	return nil
 }
