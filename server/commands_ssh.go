@@ -21,10 +21,10 @@ const (
 // SSHCommand implements the 'ssh' command
 type SSHCommand struct{}
 
-func (c *SSHCommand) Name() string        { return sshCmd }
-func (c *SSHCommand) Description() string { return sshDesc }
-func (c *SSHCommand) Usage() string       { return sshUsage }
-
+func (c *SSHCommand) Name() string             { return sshCmd }
+func (c *SSHCommand) Description() string      { return sshDesc }
+func (c *SSHCommand) Usage() string            { return sshUsage }
+func (c *SSHCommand) IsRemoteCompletion() bool { return true }
 func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()

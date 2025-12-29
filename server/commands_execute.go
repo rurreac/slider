@@ -21,10 +21,10 @@ const (
 // ExecuteCommand implements the 'execute' command
 type ExecuteCommand struct{}
 
-func (c *ExecuteCommand) Name() string        { return executeCmd }
-func (c *ExecuteCommand) Description() string { return executeDesc }
-func (c *ExecuteCommand) Usage() string       { return executeUsage }
-
+func (c *ExecuteCommand) Name() string             { return executeCmd }
+func (c *ExecuteCommand) Description() string      { return executeDesc }
+func (c *ExecuteCommand) Usage() string            { return executeUsage }
+func (c *ExecuteCommand) IsRemoteCompletion() bool { return false }
 func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()

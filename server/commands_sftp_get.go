@@ -21,10 +21,11 @@ const (
 // SftpGetCommand implements the 'get' command for downloading files
 type SftpGetCommand struct{}
 
-func (c *SftpGetCommand) Name() string        { return getCmd }
-func (c *SftpGetCommand) Description() string { return getDesc }
-func (c *SftpGetCommand) Usage() string       { return getUsage }
-func (c *SftpGetCommand) IsRemote() bool      { return true }
+func (c *SftpGetCommand) Name() string             { return getCmd }
+func (c *SftpGetCommand) Description() string      { return getDesc }
+func (c *SftpGetCommand) Usage() string            { return getUsage }
+func (c *SftpGetCommand) IsRemote() bool           { return true }
+func (c *SftpGetCommand) IsRemoteCompletion() bool { return true }
 
 func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

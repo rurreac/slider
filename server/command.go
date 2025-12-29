@@ -50,6 +50,7 @@ type Command interface {
 	Description() string
 	Usage() string
 	Run(ctx *ExecutionContext, args []string) error
+	IsRemoteCompletion() bool
 }
 
 // CommandRegistry holds the registered commands

@@ -439,7 +439,7 @@ func (s *server) newWebConsole(ptyTTY *os.File, history *CustomHistory) (*Consol
 	}
 
 	// Set auto complete
-	webConsole.setConsoleAutoComplete(s.commandRegistry)
+	webConsole.setConsoleAutoComplete(s.commandRegistry, s.serverInterpreter)
 
 	return webConsole, nil
 }

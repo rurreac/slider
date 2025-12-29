@@ -19,9 +19,10 @@ const (
 // BgCommand implements the 'bg' command
 type BgCommand struct{}
 
-func (c *BgCommand) Name() string        { return bgCmd }
-func (c *BgCommand) Description() string { return bgDesc }
-func (c *BgCommand) Usage() string       { return bgCmd }
+func (c *BgCommand) Name() string             { return bgCmd }
+func (c *BgCommand) Description() string      { return bgDesc }
+func (c *BgCommand) Usage() string            { return bgCmd }
+func (c *BgCommand) IsRemoteCompletion() bool { return false }
 func (c *BgCommand) Run(ctx *ExecutionContext, _ []string) error {
 	ctx.UI().PrintlnGreyOut("Logging...")
 	return ErrBackgroundConsole
@@ -30,9 +31,10 @@ func (c *BgCommand) Run(ctx *ExecutionContext, _ []string) error {
 // ExitCommand implements the 'exit' command
 type ExitCommand struct{}
 
-func (c *ExitCommand) Name() string        { return exitCmd }
-func (c *ExitCommand) Description() string { return exitDesc }
-func (c *ExitCommand) Usage() string       { return exitCmd }
+func (c *ExitCommand) Name() string             { return exitCmd }
+func (c *ExitCommand) Description() string      { return exitDesc }
+func (c *ExitCommand) Usage() string            { return exitCmd }
+func (c *ExitCommand) IsRemoteCompletion() bool { return false }
 func (c *ExitCommand) Run(_ *ExecutionContext, _ []string) error {
 	return ErrExitConsole
 }
@@ -40,9 +42,10 @@ func (c *ExitCommand) Run(_ *ExecutionContext, _ []string) error {
 // HelpCommand implements the 'help' command
 type HelpCommand struct{}
 
-func (c *HelpCommand) Name() string        { return helpCmd }
-func (c *HelpCommand) Description() string { return helpDesc }
-func (c *HelpCommand) Usage() string       { return helpCmd }
+func (c *HelpCommand) Name() string             { return helpCmd }
+func (c *HelpCommand) Description() string      { return helpDesc }
+func (c *HelpCommand) Usage() string            { return helpCmd }
+func (c *HelpCommand) IsRemoteCompletion() bool { return false }
 func (c *HelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()

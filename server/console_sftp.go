@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"slices"
+	"slider/pkg/completion"
 	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
 	"slider/pkg/spath"
@@ -108,7 +110,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, session *Session, sf
 
 	// Set the terminal prompt and autocomplete
 	ui.Term.SetPrompt(sftpPrompt())
-	ui.setSftpConsoleAutoComplete(session.sftpCommandRegistry)
+	ui.setSftpConsoleAutoComplete(session.sftpCommandRegistry, session.sftpContext, sftpClient)
 
 	// Replace Console History with own History for SFTP Session
 	// Save current history first
@@ -249,7 +251,7 @@ func fieldsWithQuotes(input string) []string {
 	return newFields
 }
 
-func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry) {
+func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry, sftpCtx *SftpCommandContext, sftpClient *sftp.Client) {
 	// Get command list from registry for autocompletion
 	cmdList := registry.List()
 
@@ -258,14 +260,81 @@ func (c *Console) setSftpConsoleAutoComplete(registry *CommandRegistry) {
 
 	slices.Sort(cmdList)
 
-	// Simple autocompletion
+	// Enhanced autocompletion with path support
 	c.Term.AutoCompleteCallback = func(line string, pos int, key rune) (string, int, bool) {
+		// Only handle TAB key
+		if key != 9 {
+			return line, pos, false
+		}
+
 		line = strings.TrimSpace(line)
-		// If TAB key is pressed and text was written
-		if key == 9 && len(line) > 0 {
+		if len(line) == 0 {
+			return line, pos, false
+		}
+
+		// Parse the line into arguments
+		args := strings.Fields(line)
+		if len(args) == 0 {
+			return line, pos, false
+		}
+
+		// First word: complete command names
+		if len(args) == 1 && !strings.HasSuffix(line, " ") {
 			newLine, newPos := autocompleteCommand(line, cmdList)
 			return newLine, newPos, true
 		}
-		return line, pos, false
+
+		// For subsequent arguments, try path completion
+		commandName := args[0]
+
+		// Commands that take path arguments
+		cmd, ok := registry.Get(commandName)
+		if !ok {
+			return line, pos, false
+		}
+
+		// Get the current argument being completed
+		currentArg := ""
+		if !strings.HasSuffix(line, " ") {
+			// Still typing the last argument
+			currentArg = args[len(args)-1]
+		}
+
+		var matches []string
+		var commonPrefix string
+		var err error
+		var system string
+		var homeDir string
+
+		if cmd.IsRemoteCompletion() {
+			// Remote path completion
+			remoteCwd := sftpCtx.getCwd(true)
+			system = sftpCtx.getContextSystem(true)
+			homeDir = sftpCtx.getContextHomeDir(true)
+
+			completer := completion.NewRemotePathCompleter(sftpClient)
+			matches, commonPrefix, err = completer.Complete(context.Background(), currentArg, remoteCwd, system, homeDir)
+		} else {
+			// Local path completion
+			localCwd := sftpCtx.getCwd(false)
+			system = sftpCtx.getContextSystem(false)
+			homeDir = sftpCtx.getContextHomeDir(false)
+
+			completer := completion.NewLocalPathCompleter()
+			matches, commonPrefix, err = completer.Complete(context.Background(), currentArg, localCwd, system, homeDir)
+		}
+
+		if err != nil || len(matches) == 0 {
+			// No matches, return original line
+			return line, pos, false
+		}
+
+		// Build the full completed path by combining the directory part with the completion
+		completedPath := buildCompletedPath(currentArg, commonPrefix, system, homeDir)
+
+		// Build new line with completion
+		newLine := buildCompletedLine(line, args, currentArg, completedPath, strings.HasSuffix(line, " "))
+
+		return newLine, len(newLine), true
 	}
 }

@@ -20,10 +20,11 @@ const (
 // SftpChmodCommand implements the 'chmod' command (remote only, non-Windows)
 type SftpChmodCommand struct{}
 
-func (c *SftpChmodCommand) Name() string        { return chmodCmd }
-func (c *SftpChmodCommand) Description() string { return chmodDesc }
-func (c *SftpChmodCommand) Usage() string       { return chmodUsage }
-func (c *SftpChmodCommand) IsRemote() bool      { return true }
+func (c *SftpChmodCommand) Name() string             { return chmodCmd }
+func (c *SftpChmodCommand) Description() string      { return chmodDesc }
+func (c *SftpChmodCommand) Usage() string            { return chmodUsage }
+func (c *SftpChmodCommand) IsRemote() bool           { return true }
+func (c *SftpChmodCommand) IsRemoteCompletion() bool { return true }
 
 func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

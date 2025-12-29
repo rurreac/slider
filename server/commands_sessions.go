@@ -132,10 +132,10 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	return unifiedMap
 }
 
-func (c *SessionsCommand) Name() string        { return sessionsCmd }
-func (c *SessionsCommand) Description() string { return sessionsDesc }
-func (c *SessionsCommand) Usage() string       { return sessionsUsage }
-
+func (c *SessionsCommand) Name() string             { return sessionsCmd }
+func (c *SessionsCommand) Description() string      { return sessionsDesc }
+func (c *SessionsCommand) Usage() string            { return sessionsUsage }
+func (c *SessionsCommand) IsRemoteCompletion() bool { return true }
 func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()
@@ -374,7 +374,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("UI is not a Console")
 			}
 			server.newSftpConsole(console, session, sftpCli)
-			console.setConsoleAutoComplete(server.commandRegistry)
+			console.setConsoleAutoComplete(server.commandRegistry, server.serverInterpreter)
 			return nil
 		}
 
@@ -503,7 +503,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Use the unified session ID for display and pass the separate interpreter
 		// This prevents session confusion when connecting to multiple remote targets
 		server.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
-		console.setConsoleAutoComplete(server.commandRegistry)
+		console.setConsoleAutoComplete(server.commandRegistry, server.serverInterpreter)
 	}
 
 	return nil

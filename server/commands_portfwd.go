@@ -24,10 +24,10 @@ const (
 // PortFwdCommand implements the 'portfwd' command
 type PortFwdCommand struct{}
 
-func (c *PortFwdCommand) Name() string        { return portFwdCmd }
-func (c *PortFwdCommand) Description() string { return portFwdDesc }
-func (c *PortFwdCommand) Usage() string       { return portFwdUsage }
-
+func (c *PortFwdCommand) Name() string             { return portFwdCmd }
+func (c *PortFwdCommand) Description() string      { return portFwdDesc }
+func (c *PortFwdCommand) Usage() string            { return portFwdUsage }
+func (c *PortFwdCommand) IsRemoteCompletion() bool { return false }
 func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()

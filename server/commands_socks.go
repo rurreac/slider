@@ -21,10 +21,10 @@ const (
 // SocksCommand implements the 'socks' command
 type SocksCommand struct{}
 
-func (c *SocksCommand) Name() string        { return socksCmd }
-func (c *SocksCommand) Description() string { return socksDesc }
-func (c *SocksCommand) Usage() string       { return socksUsage }
-
+func (c *SocksCommand) Name() string             { return socksCmd }
+func (c *SocksCommand) Description() string      { return socksDesc }
+func (c *SocksCommand) Usage() string            { return socksUsage }
+func (c *SocksCommand) IsRemoteCompletion() bool { return true }
 func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	server := ctx.Server()
 	ui := ctx.UI()
