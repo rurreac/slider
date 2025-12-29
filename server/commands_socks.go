@@ -24,7 +24,7 @@ type SocksCommand struct{}
 func (c *SocksCommand) Name() string             { return socksCmd }
 func (c *SocksCommand) Description() string      { return socksDesc }
 func (c *SocksCommand) Usage() string            { return socksUsage }
-func (c *SocksCommand) IsRemoteCompletion() bool { return true }
+func (c *SocksCommand) IsRemoteCompletion() bool { return false }
 func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	svr := ctx.getServer()
 	ui := ctx.UI()

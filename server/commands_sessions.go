@@ -135,7 +135,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 func (c *SessionsCommand) Name() string             { return sessionsCmd }
 func (c *SessionsCommand) Description() string      { return sessionsDesc }
 func (c *SessionsCommand) Usage() string            { return sessionsUsage }
-func (c *SessionsCommand) IsRemoteCompletion() bool { return true }
+func (c *SessionsCommand) IsRemoteCompletion() bool { return false }
 func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	svr := ctx.getServer()
 	ui := ctx.UI()

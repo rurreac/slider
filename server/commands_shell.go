@@ -41,7 +41,7 @@ type InteractiveConsole struct {
 func (c *ShellCommand) Name() string             { return shellCmd }
 func (c *ShellCommand) Description() string      { return shellDesc }
 func (c *ShellCommand) Usage() string            { return shellUsage }
-func (c *ShellCommand) IsRemoteCompletion() bool { return true }
+func (c *ShellCommand) IsRemoteCompletion() bool { return false }
 func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	svr := ctx.getServer()
 	ui := ctx.UI()

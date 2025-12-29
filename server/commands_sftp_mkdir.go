@@ -45,12 +45,7 @@ func (c *SftpMkdirCommand) Usage() string {
 
 func (c *SftpMkdirCommand) IsRemote() bool { return c.isRemote }
 
-func (c *SftpMkdirCommand) IsRemoteCompletion() bool {
-	if !c.isRemote {
-		return c.isRemote
-	}
-	return true
-}
+func (c *SftpMkdirCommand) IsRemoteCompletion() bool { return c.isRemote }
 
 func (c *SftpMkdirCommand) Run(ctx *ExecutionContext, args []string) error {
 	session, err := ctx.RequireSession()

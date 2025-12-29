@@ -24,7 +24,7 @@ type SSHCommand struct{}
 func (c *SSHCommand) Name() string             { return sshCmd }
 func (c *SSHCommand) Description() string      { return sshDesc }
 func (c *SSHCommand) Usage() string            { return sshUsage }
-func (c *SSHCommand) IsRemoteCompletion() bool { return true }
+func (c *SSHCommand) IsRemoteCompletion() bool { return false }
 func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	svr := ctx.getServer()
 	ui := ctx.UI()
