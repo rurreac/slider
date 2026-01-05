@@ -85,11 +85,11 @@ func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan er
 // EnableShell starts the Shell endpoint instance
 func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, interactiveOn bool, notifier chan error) error {
 	if s.role == ClientRole {
-		return fmt.Errorf("Shell instance not available in client mode")
+		return fmt.Errorf("shell instance not available in client mode")
 	}
 
 	if s.shellInstance == nil {
-		return fmt.Errorf("Shell instance not initialized")
+		return fmt.Errorf("shell instance not initialized")
 	}
 
 	// Set PTY based on peer interpreter

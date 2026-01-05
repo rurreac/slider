@@ -68,12 +68,12 @@ type BidirectionalSession struct {
 
 	// Application Extensions (ServerRole, PromiscuousRole)
 	// Router handles application-specific channels (e.g., slider-connect)
-	router interface{} // *remote.Router
+	router ApplicationRouter
 	// ApplicationServer provides access to server-level operations
 	// Only injected for promiscuous servers - presence enables multi-hop features
 	applicationServer ApplicationServer
 	// RequestHandler handles application-specific SSH global requests (deprecated, kept for backward compatibility)
-	requestHandler interface{} // ApplicationRequestHandler
+	requestHandler ApplicationRequestHandler
 
 	// SFTP State (ServerRole, PromiscuousRole)
 	// Note: CustomHistory, CommandRegistry, and SftpCommandContext are defined in server package

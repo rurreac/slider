@@ -154,10 +154,8 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 	default:
 		// Delegate to application-specific handler if injected (for backward compatibility)
 		if s.requestHandler != nil {
-			if appHandler, ok := s.requestHandler.(ApplicationRequestHandler); ok {
-				if appHandler.HandleRequest(req, s) {
-					return
-				}
+			if s.requestHandler.HandleRequest(req, s) {
+				return
 			}
 		}
 

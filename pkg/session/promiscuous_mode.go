@@ -15,14 +15,14 @@ import (
 // Methods specific to PromiscuousRole
 
 // SetRouter sets the channel router (can be *Router or *remote.Router)
-func (s *BidirectionalSession) SetRouter(router interface{}) {
+func (s *BidirectionalSession) SetRouter(router ApplicationRouter) {
 	s.sessionMutex.Lock()
 	s.router = router
 	s.sessionMutex.Unlock()
 }
 
 // GetRouter returns the channel router (can be *Router or *remote.Router)
-func (s *BidirectionalSession) GetRouter() interface{} {
+func (s *BidirectionalSession) GetRouter() ApplicationRouter {
 	return s.router
 }
 
@@ -41,14 +41,14 @@ func (s *BidirectionalSession) GetApplicationServer() ApplicationServer {
 }
 
 // SetRequestHandler sets the application request handler
-func (s *BidirectionalSession) SetRequestHandler(handler interface{}) {
+func (s *BidirectionalSession) SetRequestHandler(handler ApplicationRequestHandler) {
 	s.sessionMutex.Lock()
 	s.requestHandler = handler
 	s.sessionMutex.Unlock()
 }
 
 // GetRequestHandler returns the application request handler
-func (s *BidirectionalSession) GetRequestHandler() interface{} {
+func (s *BidirectionalSession) GetRequestHandler() ApplicationRequestHandler {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
 	return s.requestHandler

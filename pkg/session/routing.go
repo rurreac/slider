@@ -88,14 +88,7 @@ func (s *BidirectionalSession) RouteLocalChannel(nc ssh.NewChannel, channelType 
 	case "slider-connect":
 		// Application-specific extension (only valid when router and server are injected)
 		if s.router != nil && s.applicationServer != nil {
-			if appRouter, ok := s.router.(ApplicationRouter); ok {
-				err = appRouter.Route(nc, s, s.applicationServer)
-			} else {
-				s.logger.ErrorWith("router does not implement ApplicationRouter",
-					slog.F("session_id", s.sessionID))
-				_ = nc.Reject(ssh.Prohibited, "invalid router configuration")
-				return nil
-			}
+			err = s.router.Route(nc, s, s.applicationServer)
 		} else {
 			s.logger.WarnWith("slider-connect not supported (no application router/server injected)",
 				slog.F("session_id", s.sessionID),

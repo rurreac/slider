@@ -252,9 +252,6 @@ func NewServerToServerSession(
 		sess.sshInstance.SetSSHConn(sshClient)
 	}
 
-	// Initialize router for channel handling
-	sess.router = NewRouter(sess)
-
 	return sess
 }
 
@@ -441,7 +438,7 @@ func (r *Router) RegisterHandler(channelType string, handler HandlerFunc) {
 func (r *Router) Route(nc ssh.NewChannel) error {
 	handler, exists := r.handlers[nc.ChannelType()]
 	if !exists {
-		nc.Reject(ssh.UnknownChannelType, "unknown channel type")
+		_ = nc.Reject(ssh.UnknownChannelType, "unknown channel type")
 		r.logger.WarnWith("Unknown channel type for router",
 			slog.F("type", nc.ChannelType()))
 		return nil
