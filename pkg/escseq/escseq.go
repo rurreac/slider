@@ -28,7 +28,6 @@ var (
 	yellow           = []byte{KeyEscape, '[', '0', ';', '3', '3', 'm'}
 	blueBrightBold   = []byte{KeyEscape, '[', '1', ';', '9', '4', 'm'}
 	cyanBold         = []byte{KeyEscape, '[', '1', ';', '3', '6', 'm'}
-	cyanBrightBold   = []byte{KeyEscape, '[', '1', ';', '9', '6', 'm'}
 )
 
 func SetColors(enabled bool) {
@@ -124,10 +123,6 @@ func GreenBoldText(m string) string {
 
 func CyanBoldText(m string) string {
 	return fmt.Sprintf("%s%s%s", string(cyanBold), m, string(resetColor))
-}
-
-func CyanBrightBoldText(m string) string {
-	return fmt.Sprintf("%s%s%s", string(cyanBrightBold), m, string(resetColor))
 }
 
 func BlueBrightBoldText(m string) string {
