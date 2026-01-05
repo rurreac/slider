@@ -552,7 +552,7 @@ func (s *BidirectionalSession) HandleSFTP(nc ssh.NewChannel) error {
 			slog.F("err", err))
 		return err
 	}
-	defer server.Close()
+	defer func() { _ = server.Close() }()
 
 	// Serve SFTP requests
 	if err := server.Serve(); err != nil && err != io.EOF {
