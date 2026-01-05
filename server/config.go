@@ -15,6 +15,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/listener"
 	"slider/pkg/scrypt"
+	"slider/pkg/session"
 	"slider/pkg/slog"
 
 	"golang.org/x/crypto/ssh"
@@ -85,7 +86,7 @@ func RunServer(cfg *Config) {
 	s := &server{
 		Logger: log,
 		sessionTrack: &sessionTrack{
-			Sessions: make(map[int64]*Session),
+			Sessions: make(map[int64]*session.BidirectionalSession),
 		},
 		remoteSessions: make(map[string]*RemoteSessionState),
 		sshConf:        sshConf,

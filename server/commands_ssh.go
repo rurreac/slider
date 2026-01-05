@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slider/pkg/conf"
 	"slider/pkg/instance"
-	"slider/server/remote"
+	"slider/pkg/remote"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -82,14 +82,14 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if !isRemote {
 		// Local Strategy
-		session, sErr := svr.getSession(int(uSess.ActualID))
+		session, sErr := svr.GetSession(int(uSess.ActualID))
 		if sErr != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
 		if *sKill > 0 {
-			if session.SSHInstance.IsEnabled() {
-				if err := session.SSHInstance.Stop(); err != nil {
+			if session.GetSSHInstance().IsEnabled() {
+				if err := session.GetSSHInstance().Stop(); err != nil {
 					return fmt.Errorf("error stopping SSH server: %w", err)
 				}
 				ui.PrintSuccess("SSH Endpoint gracefully stopped")
@@ -100,8 +100,8 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		if *sSession > 0 {
-			if session.SSHInstance.IsEnabled() {
-				if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
+			if session.GetSSHInstance().IsEnabled() {
+				if port, pErr := session.GetSSHInstance().GetEndpointPort(); pErr == nil {
 					return fmt.Errorf("ssh endpoint already running on port: %d", port)
 				}
 				return nil
@@ -114,7 +114,8 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer sshTicker.Stop()
 			timeout := time.After(conf.Timeout)
 
-			go session.sshEnable(*sPort, *sExpose, notifier)
+			// Need to figure out a way to better use that error if needed
+			go func() { _ = session.EnableSSH(*sPort, *sExpose, notifier) }()
 
 			for {
 				select {
@@ -123,7 +124,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 						return fmt.Errorf("endpoint error: %w", nErr)
 					}
 				case <-sshTicker.C:
-					port, sErr := session.SSHInstance.GetEndpointPort()
+					port, sErr := session.GetSSHInstance().GetEndpointPort()
 					if port == 0 || sErr != nil {
 						continue
 					}
@@ -169,7 +170,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			// Setup Remote Connection
-			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}

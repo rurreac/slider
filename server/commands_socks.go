@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slider/pkg/conf"
 	"slider/pkg/instance"
-	"slider/server/remote"
+	"slider/pkg/remote"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -82,17 +82,17 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if !isRemote {
 		// Local Strategy
-		session, err := svr.getSession(int(uSess.ActualID))
+		session, err := svr.GetSession(int(uSess.ActualID))
 		if err != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
 		if *sKill > 0 {
-			if session.SocksInstance == nil || !session.SocksInstance.IsEnabled() {
+			if session.GetSocksInstance() == nil || !session.GetSocksInstance().IsEnabled() {
 				ui.PrintWarn("No SOCKS5 server running on session %d", sessionID)
 				return nil
 			}
-			if err := session.SocksInstance.Stop(); err != nil {
+			if err := session.GetSocksInstance().Stop(); err != nil {
 				return fmt.Errorf("error stopping SOCKS5 server: %w", err)
 			}
 			ui.PrintSuccess("SOCKS5 server stopped on session %d", sessionID)
@@ -100,8 +100,8 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		if *sSession > 0 {
-			if session.SocksInstance.IsEnabled() {
-				if port, pErr := session.SocksInstance.GetEndpointPort(); pErr == nil {
+			if session.GetSocksInstance().IsEnabled() {
+				if port, pErr := session.GetSocksInstance().GetEndpointPort(); pErr == nil {
 					return fmt.Errorf("socks endpoint already running on port: %d", port)
 				}
 				return nil
@@ -114,7 +114,8 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer socksTicker.Stop()
 			timeout := time.After(conf.Timeout)
 
-			go session.socksEnable(*sPort, *sExpose, notifier)
+			// Need to figure out a way to better use that error if needed
+			go func() { _ = session.EnableSocks(*sPort, *sExpose, notifier) }()
 
 			for {
 				select {
@@ -123,8 +124,8 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 						return fmt.Errorf("endpoint error: %w", nErr)
 					}
 				case <-socksTicker.C:
-					if session.SocksInstance != nil {
-						port, portErr := session.SocksInstance.GetEndpointPort()
+					if session.GetSocksInstance() != nil {
+						port, portErr := session.GetSocksInstance().GetEndpointPort()
 						if port == 0 || portErr != nil {
 							continue
 						}
@@ -171,7 +172,7 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			// Setup Remote Connection
-			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}

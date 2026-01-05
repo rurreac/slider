@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"sort"
 	"sync"
 	"time"
 
@@ -12,8 +13,8 @@ import (
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/scrypt"
+	"slider/pkg/session"
 	"slider/pkg/slog"
-	"slider/server/remote"
 )
 
 const (
@@ -23,9 +24,9 @@ const (
 
 // sessionTrack keeps track of sessions and clients
 type sessionTrack struct {
-	SessionCount  int64              // Number of Sessions created
-	SessionActive int64              // Number of Active Sessions
-	Sessions      map[int64]*Session // Map of Sessions
+	SessionCount  int64                                   // Number of Sessions created
+	SessionActive int64                                   // Number of Active Sessions
+	Sessions      map[int64]*session.BidirectionalSession // Map of Sessions
 }
 
 type server struct {
@@ -66,6 +67,7 @@ type server struct {
 type RemoteSessionState struct {
 	SocksInstance *instance.Config
 	SSHInstance   *instance.Config
+	ShellInstance *instance.Config
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -99,12 +101,57 @@ func (s *server) GetInterpreter() *interpreter.Interpreter {
 }
 
 // GetSession retrieves a session by ID
-func (s *server) GetSession(id int) (remote.Session, error) {
-	sess, err := s.getSession(id)
-	if err != nil {
-		return nil, err
+// Implements session.ApplicationServer interface
+func (s *server) GetSession(id int) (*session.BidirectionalSession, error) {
+	s.sessionTrackMutex.Lock()
+	defer s.sessionTrackMutex.Unlock()
+
+	sess, ok := s.sessionTrack.Sessions[int64(id)]
+	if !ok {
+		return nil, fmt.Errorf("session %d not found", id)
 	}
 	return sess, nil
+}
+
+// GetSessions returns all local sessions sorted by ID
+func (s *server) GetSessions() []*session.BidirectionalSession {
+	s.sessionTrackMutex.Lock()
+	sessions := make([]*session.BidirectionalSession, 0, len(s.sessionTrack.Sessions))
+	for _, sess := range s.sessionTrack.Sessions {
+		sessions = append(sessions, sess)
+	}
+	s.sessionTrackMutex.Unlock()
+
+	// Sort sessions by ID to ensure deterministic order
+	sort.Slice(sessions, func(i, j int) bool {
+		return sessions[i].GetID() < sessions[j].GetID()
+	})
+
+	return sessions
+}
+
+// GetServerInterpreter returns the server's interpreter information
+// Implements session.ApplicationServer interface
+func (s *server) GetServerInterpreter() *interpreter.Interpreter {
+	return s.serverInterpreter
+}
+
+// dropWebSocketSession removes a session from tracking
+func (s *server) dropWebSocketSession(sess *session.BidirectionalSession) {
+	if sess == nil {
+		return
+	}
+
+	id := sess.GetID()
+	if id == 0 {
+		return
+	}
+
+	s.sessionTrackMutex.Lock()
+	defer s.sessionTrackMutex.Unlock()
+
+	delete(s.sessionTrack.Sessions, id)
+	s.sessionTrack.SessionActive--
 }
 
 // GetKeepalive returns the keepalive duration in seconds

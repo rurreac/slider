@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"slider/pkg/conf"
-	"slider/pkg/instance"
-	"slider/server/remote"
 	"text/tabwriter"
 	"time"
+
+	"slider/pkg/conf"
+	"slider/pkg/instance"
+	"slider/pkg/remote"
 
 	"github.com/spf13/pflag"
 )
@@ -109,7 +110,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		// 1. Local Sessions Listing
 		sessionList := slices.Collect(maps.Values(svr.sessionTrack.Sessions))
 		for _, sItem := range sessionList {
-			totalGlobalTcpIp += listSessionForwarding(tw, sItem.sessionID, sItem.SSHInstance)
+			totalGlobalTcpIp += listSessionForwarding(tw, sItem.GetID(), sItem.GetSSHInstance())
 		}
 
 		// 2. Remote Sessions Listing
@@ -137,16 +138,16 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		if *pSession <= 0 {
 			return fmt.Errorf("invalid session ID")
 		}
-		session, err := svr.getSession(int(uSess.ActualID))
+		bidirSession, err := svr.GetSession(int(uSess.ActualID))
 		if err != nil {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
 		if *pLocal {
-			return handleLocalForward(svr, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleLocalForward(svr, ui, bidirSession.GetSSHInstance(), portFwdFlags.Args()[0], *pRemove)
 		}
 		if *pReverse {
-			return handleReverseForward(svr, ui, session.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+			return handleReverseForward(svr, ui, bidirSession.GetSSHInstance(), portFwdFlags.Args()[0], *pRemove)
 		}
 	} else {
 		// Remote Strategy
@@ -160,7 +161,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		// Ensure SSHInstance exists (generic)
 		if state.SSHInstance == nil {
-			gatewaySession, err := svr.getSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
 			if err != nil {
 				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 			}

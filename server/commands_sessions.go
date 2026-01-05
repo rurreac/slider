@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slider/pkg/conf"
-	"slider/pkg/interpreter"
-	"slider/server/remote"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
+
+	"slider/pkg/conf"
+	"slider/pkg/interpreter"
+	"slider/pkg/remote"
+	"slider/pkg/session"
 
 	"github.com/pkg/sftp"
 	"github.com/spf13/pflag"
@@ -36,6 +37,7 @@ type UnifiedSession struct {
 	Host           string
 	System         string
 	HomeDir        string
+	WorkingDir     string // Current SFTP working directory (if active)
 	Extra          string // For port info etc
 	IsListener     bool
 	ConnectionAddr string
@@ -49,46 +51,46 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	maxID := int64(0)
 
 	// 1. Collect Local Sessions
-	s.sessionTrackMutex.Lock()
-	// Copy sessions to avoid locking during remote calls later
-	localSessions := make([]*Session, 0, len(s.sessionTrack.Sessions))
-	for _, sess := range s.sessionTrack.Sessions {
-		localSessions = append(localSessions, sess)
-	}
-	s.sessionTrackMutex.Unlock()
+	localSessions := s.GetSessions()
 
 	for _, sess := range localSessions {
 		uSess := UnifiedSession{
-			UnifiedID: sess.sessionID,
-			ActualID:  sess.sessionID,
+			UnifiedID: sess.GetID(),
+			ActualID:  sess.GetID(),
 			OwnerID:   0,
 			User:      "unknown",
 			Host:      "unknown",
 			System:    "unknown",
 		}
 
-		if sess.sessionID > maxID {
-			maxID = sess.sessionID
+		if sess.GetID() > maxID {
+			maxID = sess.GetID()
 		}
 
-		if sess.sshClient != nil {
+		if sess.GetSSHClient() != nil {
 			uSess.Type = "PROMISCUOUS/SERVER"
 			uSess.User = "server"
-			uSess.Host = sess.wsConn.RemoteAddr().String()
+			uSess.Host = sess.GetWebSocketConn().RemoteAddr().String()
 			uSess.System = "unknown/unknown (P)"
 			uSess.HomeDir = "/"
-			if sess.clientInterpreter != nil {
-				uSess.User = sess.clientInterpreter.User
-				uSess.Host = sess.clientInterpreter.Hostname
-				uSess.System = fmt.Sprintf("%s/%s (P)", sess.clientInterpreter.Arch, sess.clientInterpreter.System)
-				uSess.HomeDir = sess.clientInterpreter.HomeDir
+			if sess.GetInterpreter() != nil {
+				uSess.User = sess.GetInterpreter().User
+				uSess.Host = sess.GetInterpreter().Hostname
+				uSess.System = fmt.Sprintf("%s/%s (P)", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
+				uSess.HomeDir = sess.GetInterpreter().HomeDir
 			}
-		} else if sess.clientInterpreter != nil {
-			uSess.User = sess.clientInterpreter.User
-			uSess.Host = sess.clientInterpreter.Hostname
-			uSess.System = fmt.Sprintf("%s/%s", sess.clientInterpreter.Arch, sess.clientInterpreter.System)
-			uSess.HomeDir = sess.clientInterpreter.HomeDir
+		} else if sess.GetInterpreter() != nil {
+			uSess.User = sess.GetInterpreter().User
+			uSess.Host = sess.GetInterpreter().Hostname
+			uSess.System = fmt.Sprintf("%s/%s", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
+			uSess.HomeDir = sess.GetInterpreter().HomeDir
 			uSess.Type = "LOCAL"
+		}
+
+		// Get the current SFTP working directory if available
+		uSess.WorkingDir = sess.GetSftpWorkingDir()
+		if uSess.WorkingDir == "" {
+			uSess.WorkingDir = uSess.HomeDir
 		}
 
 		unifiedMap[uSess.UnifiedID] = uSess
@@ -97,7 +99,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	// 2. Collect Remote Sessions
 	// Iterate only over Promiscuous Clients (Gateways)
 	for _, sess := range localSessions {
-		if sess.sshClient != nil {
+		if sess.GetSSHClient() != nil {
 			// Fetch remotes
 			currentIdentity := fmt.Sprintf("%s:%d", s.fingerprint, s.port)
 			visited := []string{currentIdentity}
@@ -113,12 +115,13 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 					uSess := UnifiedSession{
 						UnifiedID:      maxID,
 						ActualID:       rs.ID,
-						OwnerID:        sess.sessionID, // This local session is the gateway
+						OwnerID:        sess.GetID(), // This local session is the gateway
 						Type:           "REMOTE",
 						User:           rs.User,
 						Host:           rs.Host,
 						System:         system,
 						HomeDir:        rs.HomeDir,
+						WorkingDir:     rs.WorkingDir,
 						IsListener:     rs.IsListener,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
@@ -144,9 +147,9 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 	sessionsFlags := pflag.NewFlagSet(sessionsCmd, pflag.ContinueOnError)
 	sessionsFlags.SetOutput(ui.Writer())
 
-	sInteract := sessionsFlags.StringP("interactive", "i", "", "Start Interactive Slider Shell on a Session ID")
-	sDisconnect := sessionsFlags.StringP("disconnect", "d", "", "Disconnect Session ID")
-	sKill := sessionsFlags.StringP("kill", "k", "", "Kill Session ID")
+	sInteract := sessionsFlags.IntP("interactive", "i", 0, "Start Interactive Slider Shell on a Session ID")
+	sDisconnect := sessionsFlags.IntP("disconnect", "d", 0, "Disconnect Session ID")
+	sKill := sessionsFlags.IntP("kill", "k", 0, "Kill Session ID")
 
 	sessionsFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sessionsUsage)
@@ -211,34 +214,35 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 				// If Local, fetch detailed info from actual session
 				if uSess.OwnerID == 0 {
-					if session, ok := svr.sessionTrack.Sessions[uSess.ActualID]; ok {
-						if session.SocksInstance.IsEnabled() {
-							if port, pErr := session.SocksInstance.GetEndpointPort(); pErr == nil {
+					if sess, ok := svr.sessionTrack.Sessions[uSess.ActualID]; ok {
+						if sess.GetSocksInstance().IsEnabled() {
+							if port, pErr := sess.GetSocksInstance().GetEndpointPort(); pErr == nil {
 								socksPort = fmt.Sprintf("%d", port)
 							}
 						}
-						if session.SSHInstance.IsEnabled() {
-							if port, pErr := session.SSHInstance.GetEndpointPort(); pErr == nil {
+						if sess.GetSSHInstance().IsEnabled() {
+							if port, pErr := sess.GetSSHInstance().GetEndpointPort(); pErr == nil {
 								sshPort = fmt.Sprintf("%d", port)
 							}
 						}
-						if session.ShellInstance.IsEnabled() {
-							if port, pErr := session.ShellInstance.GetEndpointPort(); pErr == nil {
+						if sess.GetShellInstance().IsEnabled() {
+							if port, pErr := sess.GetShellInstance().GetEndpointPort(); pErr == nil {
 								shellPort = fmt.Sprintf("%d", port)
 							}
 							shellTLS = "off"
-							if session.ShellInstance.IsTLSOn() {
+							if sess.GetShellInstance().IsTLSOn() {
 								shellTLS = "on"
 							}
 						}
-						if svr.authOn && session.certInfo.id != 0 {
-							certID = fmt.Sprintf("%d", session.certInfo.id)
+						certIDVal, _ := sess.GetCertInfo()
+						if svr.authOn && certIDVal != 0 {
+							certID = fmt.Sprintf("%d", certIDVal)
 						}
 						inOut = "<-"
-						if session.isListener {
+						if sess.GetRole() == session.ListenerRole {
 							inOut = "->"
 						}
-						connection = session.wsConn.RemoteAddr().String()
+						connection = sess.GetWebSocketConn().RemoteAddr().String()
 					}
 				} else {
 					// Remote Session Logic
@@ -268,6 +272,22 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 						if state.SSHInstance != nil && state.SSHInstance.IsEnabled() {
 							if port, pErr := state.SSHInstance.GetEndpointPort(); pErr == nil {
 								sshPort = fmt.Sprintf("%d", port)
+							}
+						}
+					}
+					svr.remoteSessionsMutex.Unlock()
+
+					// Check for Shell
+					shellKey := fmt.Sprintf("shell:%d:%v", uSess.OwnerID, uSess.Path)
+					svr.remoteSessionsMutex.Lock()
+					if state, ok := svr.remoteSessions[shellKey]; ok {
+						if state.ShellInstance != nil && state.ShellInstance.IsEnabled() {
+							if port, pErr := state.ShellInstance.GetEndpointPort(); pErr == nil {
+								shellPort = fmt.Sprintf("%d", port)
+								// Check if TLS is enabled
+								if state.ShellInstance.IsTLSOn() {
+									shellTLS = "on"
+								}
 							}
 						}
 					}
@@ -306,64 +326,52 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		return nil
 	}
 
-	if *sDisconnect != "" {
-		if id, err := strconv.Atoi(*sDisconnect); err == nil {
-			session, sessErr := svr.getSession(id)
-			if sessErr != nil {
-				return fmt.Errorf("unknown session ID %d", id)
-			}
-			if cErr := session.wsConn.Close(); cErr != nil {
-				return fmt.Errorf("failed to close connection to session ID %d: %w", session.sessionID, cErr)
-			}
-			ui.PrintSuccess("Closed connection to Session ID %d", session.sessionID)
-			return nil
+	if *sDisconnect != 0 {
+		sess, sessErr := svr.GetSession(*sDisconnect)
+		if sessErr != nil {
+			return fmt.Errorf("unknown session ID %d", *sDisconnect)
 		}
-		return fmt.Errorf("remote session disconnect not implemented yet")
+		if cErr := sess.GetWebSocketConn().Close(); cErr != nil {
+			return fmt.Errorf("failed to close connection to session ID %d: %w", sess.GetID(), cErr)
+		}
+		ui.PrintSuccess("Closed connection to Session ID %d", sess.GetID())
+		return nil
 	}
 
-	if *sKill != "" {
-		if id, err := strconv.Atoi(*sKill); err == nil {
-			session, sessErr := svr.getSession(id)
-			if sessErr != nil {
-				return fmt.Errorf("unknown session ID %d", id)
-			}
-			var err error
-			if _, _, err = session.sendRequest(
-				"shutdown",
-				true,
-				nil,
-			); err != nil {
-				return fmt.Errorf("client did not answer properly to the request: %w", err)
-			}
-			ui.PrintSuccess("SessionID %d terminated gracefully", id)
-
-			return nil
+	if *sKill != 0 {
+		sess, sessErr := svr.GetSession(*sKill)
+		if sessErr != nil {
+			return fmt.Errorf("unknown session ID %d", *sKill)
 		}
-		return fmt.Errorf("remote session kill not implemented yet")
+		var err error
+		if _, _, err = sess.SendRequest(
+			"shutdown",
+			true,
+			nil,
+		); err != nil {
+			return fmt.Errorf("client did not answer properly to the request: %w", err)
+		}
+		ui.PrintSuccess("SessionID %d terminated gracefully", *sKill)
+
+		return nil
 	}
 
-	if *sInteract != "" {
-		// Parse Unified ID
-		uID, err := strconv.ParseInt(*sInteract, 10, 64)
-		if err != nil {
-			return fmt.Errorf("invalid session ID: %s (must be integer)", *sInteract)
-		}
-
+	if *sInteract != 0 {
 		unifiedMap := svr.ResolveUnifiedSessions()
-		uSess, ok := unifiedMap[uID]
+		uSess, ok := unifiedMap[int64(*sInteract)]
 		if !ok {
-			return fmt.Errorf("session %d not found", uID)
+			return fmt.Errorf("session %d not found", *sInteract)
 		}
 
 		// ROUTE BASED ON LOCAL vs REMOTE
 		if uSess.OwnerID == 0 {
 			// LOCAL SESSION
-			session, sessErr := svr.getSession(int(uSess.ActualID))
+			sess, sessErr := svr.GetSession(int(uSess.ActualID))
 			if sessErr != nil {
-				return fmt.Errorf("unknown local session ID %d", uSess.ActualID)
+				return fmt.Errorf("session %d not found", uSess.ActualID)
 			}
 
-			sftpCli, sErr := session.newSftpClient()
+			sftpCli, sErr := sess.NewSftpClient()
 			if sErr != nil {
 				return fmt.Errorf("failed to create SFTP client: %w", sErr)
 			}
@@ -373,19 +381,20 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			if !ok {
 				return fmt.Errorf("UI is not a Console")
 			}
-			svr.newSftpConsole(console, session, sftpCli)
+			// Use the working directory from the unified session
+			svr.newSftpConsoleWithInterpreter(console, sess, sftpCli, nil, 0)
 			console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 			return nil
 		}
 
 		// REMOTE SESSION
 		// 1. Get Gateway Session
-		gatewaySession, sessErr := svr.getSession(int(uSess.OwnerID))
+		gatewaySession, sessErr := svr.GetSession(int(uSess.OwnerID))
 		if sessErr != nil {
-			return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
+			return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 		}
 
-		if gatewaySession.sshClient == nil {
+		if gatewaySession.GetSSHClient() == nil {
 			return fmt.Errorf("gateway session %d is not promiscuous", uSess.OwnerID)
 		}
 
@@ -402,7 +411,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 		payload, _ := json.Marshal(connReq)
 
-		sftpChan, reqs, err := gatewaySession.sshClient.OpenChannel("slider-connect", payload)
+		sftpChan, reqs, err := gatewaySession.GetSSHClient().OpenChannel("slider-connect", payload)
 		if err != nil {
 			return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
 		}
@@ -424,13 +433,18 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			remoteSystem = strings.ToLower(systemStr)
 		}
 
-		// Get HomeDir from UnifiedSession - convert to SFTP format if needed
+		// Get HomeDir and WorkingDir from UnifiedSession - convert to SFTP format if needed
 		homeDir := uSess.HomeDir
 		if homeDir == "" {
 			homeDir = "/" // Fallback to root if not provided
 		}
 
-		// Convert HomeDir to SFTP format if it's a Windows path
+		workingDir := uSess.WorkingDir
+		if workingDir == "" {
+			workingDir = homeDir // Fallback to home directory if no working dir is set
+		}
+
+		// Convert paths to SFTP format if they're Windows paths
 		if remoteSystem == "windows" {
 			if strings.Contains(homeDir, "\\") {
 				homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
@@ -453,7 +467,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			for req := range reqs {
 				switch req.Type {
 				case "keep-alive":
-					_ = gatewaySession.replyConnRequest(req, true, []byte("pong"))
+					_ = gatewaySession.ReplyConnRequest(req, true, []byte("pong"))
 				case "client-info":
 					ci := &conf.ClientInfo{}
 					if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
@@ -476,7 +490,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 						remoteInterpreter.System = strings.ToLower(ci.Interpreter.System)
 						remoteInterpreter.Arch = ci.Interpreter.Arch
 					}
-					_ = gatewaySession.replyConnRequest(req, true, nil)
+					_ = gatewaySession.ReplyConnRequest(req, true, nil)
 				default:
 					if req.WantReply {
 						_ = req.Reply(false, nil)
@@ -501,6 +515,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		// Use the unified session ID for display and pass the separate interpreter
+		// Pass the workingDir so the console starts in the target session's current directory
 		// This prevents session confusion when connecting to multiple remote targets
 		svr.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
 		console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)

@@ -33,8 +33,8 @@ func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 		return err
 	}
 	ui := ctx.UI()
-	sftpCtx := session.sftpContext
-	if ctx == nil {
+	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
 
