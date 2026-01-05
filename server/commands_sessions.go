@@ -507,6 +507,9 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Use the unified session ID for display and pass the separate interpreter
 		// Pass the workingDir so the console starts in the target session's current directory
 		// This prevents session confusion when connecting to multiple remote targets
+		// TODO: Persistent working directory is NOT yet available for remote leaf sessions (multi-hop).
+		// Currently, uSess.WorkingDir may be empty or stale for leaves because the intermediate gateway
+		// does not track/persist the state of transient SFTP channels opened to the leaf.
 		svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
 			Session:           gatewaySession,
 			SftpClient:        sftpCli,
