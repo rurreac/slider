@@ -88,6 +88,9 @@ func (s *server) initSftpRegistry(sess *session.BidirectionalSession, sftpClient
 	registry.Register(&SftpStatCommand{})
 	registry.RegisterAlias("info", statCmd)
 
+	// Register sysinfo command
+	registry.Register(&SftpSysInfoCommand{})
+
 	// Register mv command (remote only)
 	registry.Register(&SftpMvCommand{})
 	registry.RegisterAlias("rename", mvCmd)
