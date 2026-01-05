@@ -32,6 +32,8 @@ type Interpreter struct {
 	CmdArgs     []string `json:"CmdArgs"`
 	PtyOn       bool     `json:"PtyOn"`
 	ColorOn     bool     `json:"ColorOn"`
+	SliderDir   string   `json:"SliderDir"`
+	LaunchDir   string   `json:"LaunchDir"`
 	Pty         Pty
 	inputModes  uint32
 	outputModes uint32
@@ -232,5 +234,14 @@ func NewInterpreter() (*Interpreter, error) {
 	i.ShellArgs = []string{}
 	i.CmdArgs = []string{"/c"}
 
+	i.CmdArgs = []string{"/c"}
+	// Capture binary path
+	if exe, err := os.Executable(); err == nil {
+		i.SliderDir = exe
+	}
+	// Capture initial working directory
+	if wd, err := os.Getwd(); err == nil {
+		i.LaunchDir = wd
+	}
 	return i, nil
 }

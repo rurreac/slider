@@ -89,10 +89,6 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 
 		// Get the current SFTP working directory if available
 		uSess.WorkingDir = sess.GetSftpWorkingDir()
-		if uSess.WorkingDir == "" {
-			uSess.WorkingDir = uSess.HomeDir
-		}
-
 		unifiedMap[uSess.UnifiedID] = uSess
 	}
 
@@ -382,7 +378,11 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("UI is not a Console")
 			}
 			// Use the working directory from the unified session
-			svr.newSftpConsoleWithInterpreter(console, sess, sftpCli, nil, 0)
+			svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
+				Session:    sess,
+				SftpClient: sftpCli,
+				LatestDir:  uSess.WorkingDir,
+			})
 			console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 			return nil
 		}
@@ -433,18 +433,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			remoteSystem = strings.ToLower(systemStr)
 		}
 
-		// Get HomeDir and WorkingDir from UnifiedSession - convert to SFTP format if needed
+		// Get HomeDir from UnifiedSession - convert to SFTP format if needed
 		homeDir := uSess.HomeDir
-		if homeDir == "" {
-			homeDir = "/" // Fallback to root if not provided
-		}
-
-		workingDir := uSess.WorkingDir
-		if workingDir == "" {
-			workingDir = homeDir // Fallback to home directory if no working dir is set
-		}
-
-		// Convert paths to SFTP format if they're Windows paths
 		if remoteSystem == "windows" {
 			if strings.Contains(homeDir, "\\") {
 				homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
@@ -517,7 +507,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Use the unified session ID for display and pass the separate interpreter
 		// Pass the workingDir so the console starts in the target session's current directory
 		// This prevents session confusion when connecting to multiple remote targets
-		svr.newSftpConsoleWithInterpreter(console, gatewaySession, sftpCli, remoteInterpreter, uSess.UnifiedID)
+		svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
+			Session:           gatewaySession,
+			SftpClient:        sftpCli,
+			RemoteInterpreter: remoteInterpreter,
+			DisplaySessionID:  uSess.UnifiedID,
+			LatestDir:         uSess.WorkingDir,
+		})
 		console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 	}
 
