@@ -1,0 +1,210 @@
+package session
+
+import (
+	"slider/pkg/instance"
+	"slider/pkg/interpreter"
+	"slider/pkg/slog"
+	"slider/pkg/types"
+	"sync"
+
+	"github.com/gorilla/websocket"
+	"golang.org/x/crypto/ssh"
+)
+
+// BidirectionalSession represents a session that can act as client or server.
+// This single type replaces both client.Session and server.Session.
+type BidirectionalSession struct {
+	// ========================================
+	// Core Identity
+	// ========================================
+	logger    *slog.Logger
+	sessionID int64
+	role      Role
+
+	// ========================================
+	// Network Connections
+	// ========================================
+	wsConn *websocket.Conn // WebSocket underlying connection
+
+	// SSH Connections - exactly ONE will be set based on role:
+	// - ClientRole/PromiscuousRole: sshClient is set
+	// - ServerRole/ListenerRole: sshServerConn is set
+	sshClient     *ssh.Client       // When acting as SSH client
+	sshServerConn *ssh.ServerConn   // When acting as SSH server
+	sshConfig     *ssh.ServerConfig // Server configuration (ServerRole/ListenerRole only)
+
+	// ========================================
+	// Session State
+	// ========================================
+	localInterpreter *interpreter.Interpreter // Host system info for local process execution
+	peerInterpreter  *interpreter.Interpreter // Remote system info received from peer
+	initTermSize     types.TermDimensions
+
+	// Channel tracking
+	channels      []ssh.Channel
+	channelsMutex sync.RWMutex
+
+	// ========================================
+	// Lifecycle Management
+	// ========================================
+	KeepAliveChan chan bool
+	keepAliveOn   bool
+	Disconnect    chan bool // Exported for compatibility
+	active        bool
+	sessionMutex  sync.Mutex
+
+	// ========================================
+	// Feature-Specific State
+	// ========================================
+
+	// Port Forwarding (used in ClientRole)
+	revPortFwdMap map[uint32]*RevPortControl
+	fwdMutex      sync.RWMutex
+
+	// Endpoint Instances (ServerRole, PromiscuousRole, ListenerRole)
+	socksInstance *instance.Config
+	sshInstance   *instance.Config
+	shellInstance *instance.Config
+
+	// Application Extensions (ServerRole, PromiscuousRole)
+	// Router handles application-specific channels (e.g., slider-connect)
+	router interface{} // *remote.Router
+	// ApplicationServer provides access to server-level operations
+	// Only injected for promiscuous servers - presence enables multi-hop features
+	applicationServer ApplicationServer
+	// RequestHandler handles application-specific SSH global requests (deprecated, kept for backward compatibility)
+	requestHandler interface{} // ApplicationRequestHandler
+
+	// SFTP State (ServerRole, PromiscuousRole)
+	// Note: CustomHistory, CommandRegistry, and SftpCommandContext are defined in server package
+	// They will be added when we integrate with the server code
+	sftpHistory         interface{} // *server.CustomHistory
+	sftpCommandRegistry interface{} // *server.CommandRegistry
+	sftpContext         interface{} // *server.SftpCommandContext
+	sftpWorkingDir      string
+
+	// Server-specific metadata
+	hostIP     string
+	certInfo   certInfo
+	notifier   chan error
+	serverAddr string // For client role
+
+	// ========================================
+	// Remote Session Tracking (PromiscuousRole)
+	// ========================================
+	remoteSessions      map[string]RemoteSession
+	remoteSessionsMutex sync.RWMutex
+}
+
+// GetID returns the session ID
+func (s *BidirectionalSession) GetID() int64 {
+	return s.sessionID
+}
+
+// GetRole returns the session role
+func (s *BidirectionalSession) GetRole() Role {
+	return s.role
+}
+
+// GetLogger returns the session logger
+func (s *BidirectionalSession) GetLogger() *slog.Logger {
+	return s.logger
+}
+
+// GetHostIP returns the session host IP
+func (s *BidirectionalSession) GetHostIP() string {
+	return s.hostIP
+}
+
+// IsActive returns whether the session is active
+func (s *BidirectionalSession) IsActive() bool {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.active
+}
+
+// GetConnection returns the SSH connection (abstracted)
+func (s *BidirectionalSession) GetConnection() ssh.Conn {
+	if s.sshClient != nil {
+		return s.sshClient.Conn
+	}
+	return s.sshServerConn
+}
+
+// GetSSHClient returns the SSH client (ClientRole/PromiscuousRole only)
+func (s *BidirectionalSession) GetSSHClient() *ssh.Client {
+	return s.sshClient
+}
+
+// GetWebSocketConn returns the WebSocket connection
+func (s *BidirectionalSession) GetWebSocketConn() *websocket.Conn {
+	return s.wsConn
+}
+
+// GetInterpreter returns the remote session (peer) interpreter info
+func (s *BidirectionalSession) GetInterpreter() *interpreter.Interpreter {
+	return s.peerInterpreter
+}
+
+// GetLocalInterpreter returns the host (local) interpreter info
+func (s *BidirectionalSession) GetLocalInterpreter() *interpreter.Interpreter {
+	return s.localInterpreter
+}
+
+// GetSSHConn returns the SSH connection (interface method for compatibility)
+func (s *BidirectionalSession) GetSSHConn() ssh.Conn {
+	return s.GetConnection()
+}
+
+// SetInitTermSize sets the initial terminal size
+func (s *BidirectionalSession) SetInitTermSize(size types.TermDimensions) {
+	s.sessionMutex.Lock()
+	s.initTermSize = size
+	s.sessionMutex.Unlock()
+}
+
+// GetInitTermSize gets the initial terminal size
+func (s *BidirectionalSession) GetInitTermSize() types.TermDimensions {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.initTermSize
+}
+
+// AddSessionChannel adds a channel to the session (interface method for compatibility)
+func (s *BidirectionalSession) AddSessionChannel(ch ssh.Channel) {
+	s.AddChannel(ch)
+}
+
+// IsPtyOn returns whether PTY is enabled on the peer system
+func (s *BidirectionalSession) IsPtyOn() bool {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	if s.peerInterpreter == nil {
+		return false
+	}
+	return s.peerInterpreter.PtyOn
+}
+
+// AddChannel registers a channel with the session
+func (s *BidirectionalSession) AddChannel(ch ssh.Channel) {
+	s.channelsMutex.Lock()
+	defer s.channelsMutex.Unlock()
+	s.channels = append(s.channels, ch)
+}
+
+// GetChannels returns all registered channels
+func (s *BidirectionalSession) GetChannels() []ssh.Channel {
+	s.channelsMutex.RLock()
+	defer s.channelsMutex.RUnlock()
+
+	result := make([]ssh.Channel, len(s.channels))
+	copy(result, s.channels)
+	return result
+}
+
+// GetCertInfo returns certificate information
+func (s *BidirectionalSession) GetCertInfo() (id int64, fingerprint string) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.certInfo.id, s.certInfo.fingerprint
+}
