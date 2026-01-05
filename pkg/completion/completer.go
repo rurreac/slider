@@ -12,8 +12,8 @@ type PathCompleter interface {
 	Complete(ctx context.Context, input string, cwd string, system string, homeDir string) ([]string, string, error)
 }
 
-// CompletionResult holds the results of a completion operation
-type CompletionResult struct {
+// Result holds the results of a completion operation
+type Result struct {
 	Matches      []string // All matching entries
 	CommonPrefix string   // Common prefix of all matches
 	NeedsQuoting bool     // Whether result needs quoting due to spaces
@@ -125,8 +125,8 @@ func matchesPrefix(name, prefix string) bool {
 }
 
 // buildResult constructs the completion result from filtered entries
-func buildResult(entries []os.FileInfo, prefix, system string) CompletionResult {
-	result := CompletionResult{
+func buildResult(entries []os.FileInfo, prefix, system string) Result {
+	result := Result{
 		Matches: make([]string, 0, len(entries)),
 	}
 
