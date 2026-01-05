@@ -9,17 +9,27 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// CopyStdinCancellable copies from stdin to dst until done is closed.
-// Uses WaitForSingleObject with timeout to make the copy cancellable.
-// Returns when either: done channel is closed, stdin returns EOF, or write to dst fails.
-func CopyStdinCancellable(dst io.Writer, done <-chan struct{}) {
-	handle, err := windows.GetStdHandle(windows.STD_INPUT_HANDLE)
-	if err != nil {
-		// Fallback: blocking copy (user will need to press a key to return)
+// CopyInteractiveCancellable copies from src to dst until done is closed.
+// Uses WaitForSingleObject with timeout to make the copy cancellable if src is a file.
+// Returns when either: done channel is closed, src returns EOF, or write to dst fails.
+func CopyInteractiveCancellable(dst io.Writer, src io.Reader, done <-chan struct{}) {
+	var handle windows.Handle
+	var isFile bool
+
+	if f, ok := src.(*os.File); ok {
+		handle = windows.Handle(f.Fd())
+		isFile = true
+	} else if f, ok := src.(interface{ Fd() uintptr }); ok {
+		handle = windows.Handle(f.Fd())
+		isFile = true
+	}
+
+	if !isFile {
+		// Fallback for non-file readers: blocking copy
 		go func() {
 			<-done
 		}()
-		_, _ = io.Copy(dst, os.Stdin)
+		_, _ = io.Copy(dst, src)
 		return
 	}
 
@@ -42,7 +52,7 @@ func CopyStdinCancellable(dst io.Writer, done <-chan struct{}) {
 		switch event {
 		case uint32(windows.WAIT_OBJECT_0):
 			// Input is available - read it
-			nr, readErr := os.Stdin.Read(buf)
+			nr, readErr := src.Read(buf)
 			if readErr != nil {
 				return
 			}
