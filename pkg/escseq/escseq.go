@@ -1,6 +1,9 @@
 package escseq
 
-import "fmt"
+import (
+	"fmt"
+	"io"
+)
 
 const KeyEscape = 27
 
@@ -12,6 +15,7 @@ var (
 	cursorClear = []byte{KeyEscape, '[', '0', 'J'}
 	cursorHome  = []byte{KeyEscape, '[', '2', 'H'}
 	cursorUp    = []byte{KeyEscape, '[', '1', 'A'}
+	cursorSave  = []byte{KeyEscape, '[', '6', 'n'}
 	blink       = []byte{KeyEscape, '[', '5', 'm'}
 	resetBlink  = []byte{KeyEscape, '[', '2', '5', 'm'}
 	// Colors
@@ -63,6 +67,25 @@ func CursorHome() string {
 
 func ClearScreen() string {
 	return string(eraseScreen) + string(cursorHome)
+}
+
+// CenterScreen is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
+func CenterScreen(rw io.ReadWriter) string {
+	// Ask the terminal for the cursor position (DSR)
+	_, _ = rw.Write(cursorSave)
+
+	// Read the response from Stdin (Format: \x1b[Y;XR)
+	var row, col int
+	_, _ = fmt.Sscanf(readResponse(rw), "\x1b[%d;%dR", &row, &col)
+
+	// Return a string with the Escape Keys for scrolling up as many lines as written and sending the Cursor Home
+	return fmt.Sprintf("\x1b[%dS", row) + string(cursorHome)
+}
+
+func readResponse(r io.Reader) string {
+	buf := make([]byte, 32)
+	n, _ := r.Read(buf)
+	return string(buf[:n])
 }
 
 // Colors

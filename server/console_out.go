@@ -86,3 +86,7 @@ func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
 	f.PrintDefaults()
 	_, _ = fmt.Fprintf(c.Term, "\n")
 }
+
+func (c *Console) CenterScreen() {
+	_, _ = fmt.Fprint(c.Term, escseq.CenterScreen(c.ReadWriter))
+}
