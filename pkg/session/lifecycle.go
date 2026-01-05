@@ -420,15 +420,6 @@ func GetTotalCount() int64 {
 	return atomic.LoadInt64(&sessionCounter)
 }
 
-// NewRouter creates a new router for the session
-func NewRouter(sess *BidirectionalSession) *Router {
-	return &Router{
-		handlers: make(map[string]HandlerFunc),
-		session:  sess,
-		logger:   sess.logger,
-	}
-}
-
 // RegisterHandler registers a channel handler with the router
 func (r *Router) RegisterHandler(channelType string, handler HandlerFunc) {
 	r.handlers[channelType] = handler
