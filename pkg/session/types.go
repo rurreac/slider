@@ -126,7 +126,7 @@ type Session interface {
 	AddReversePortForward(port uint32, bindAddress string, stopChan chan bool) error
 	RemoveReversePortForward(port uint32) error
 	GetReversePortForwards() map[uint32]*RevPortControl
-	RouteLocalChannel(nc ssh.NewChannel, channelType string) error
+	RouteChannel(nc ssh.NewChannel, channelType string) error
 }
 
 // ApplicationRouter handles application-specific channel types (e.g., slider-connect)

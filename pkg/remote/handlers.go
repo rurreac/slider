@@ -30,7 +30,7 @@ func HandleSliderConnect(nc ssh.NewChannel, sess session.Session, srv session.Ap
 	}
 
 	if len(req.Target) == 0 {
-		return sess.RouteLocalChannel(nc, req.ChannelType)
+		return sess.RouteChannel(nc, req.ChannelType)
 	}
 
 	return routeToNextHop(nc, sess, srv, &req)

@@ -23,17 +23,12 @@ import (
 // This works for ANY role - client, server, promiscuous, or listener
 func (s *BidirectionalSession) HandleIncomingChannels(newChannels <-chan ssh.NewChannel) {
 	for nc := range newChannels {
-		go s.routeChannel(nc)
+		go s.RouteChannel(nc, nc.ChannelType())
 	}
 }
 
-// routeChannel routes a channel to the appropriate handler
-func (s *BidirectionalSession) routeChannel(nc ssh.NewChannel) {
-	_ = s.RouteLocalChannel(nc, nc.ChannelType())
-}
-
-// RouteLocalChannel routes a channel to the appropriate handler using an explicit type
-func (s *BidirectionalSession) RouteLocalChannel(nc ssh.NewChannel, channelType string) error {
+// RouteChannel routes a channel to the appropriate handler using an explicit type
+func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType string) error {
 	s.logger.DebugWith("Routing channel",
 		slog.F("session_id", s.sessionID),
 		slog.F("type", channelType),
