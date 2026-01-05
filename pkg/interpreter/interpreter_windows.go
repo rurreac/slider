@@ -38,10 +38,72 @@ type Interpreter struct {
 }
 
 type winPty struct {
-	con *conpty.ConPty
+	con               *conpty.ConPty
+	stripInitialClear bool
 }
 
-func (p *winPty) Read(b []byte) (n int, err error)  { return p.con.Read(b) }
+// Read implements io.Reader for the pty with a nasty hack to strip initial clear sequences,
+// and prevent the initial clear sequence from being printed to the terminal, allowing the same
+// behavior as unix platforms.
+func (p *winPty) Read(b []byte) (n int, err error) {
+	n, err = p.con.Read(b)
+	if n > 0 && p.stripInitialClear {
+		// We look for sequences at the start of the buffer
+		offset := 0
+		found := false
+		for offset < n {
+			if n-offset >= 2 && b[offset] == '\x1b' && b[offset+1] == '[' {
+				// We found a CSI (Control Sequence Introducer) sequence: ESC [ ... <final_char>
+				j := offset + 2
+				// Skip parameters: 0-9, ;, ?
+				for j < n && ((b[j] >= '0' && b[j] <= '9') || b[j] == ';' || b[j] == '?') {
+					j++
+				}
+				if j < n {
+					// Final character found
+					cmd := b[j]
+					// H: Home, J: Erase (2J is screen), f: HVP (similar to Home)
+					if cmd == 'H' || cmd == 'J' || cmd == 'f' {
+						found = true
+						offset = j + 1
+						continue
+					}
+					// Also skip common initialization sequences that might come before the clear/home:
+					// h/l: Set/Reset Mode (e.g. ?25h cursor show/hide), m: SGR (colors), c: DA (attributes)
+					if cmd == 'h' || cmd == 'l' || cmd == 'm' || cmd == 'c' {
+						offset = j + 1
+						continue
+					}
+				} else {
+					// Incomplete sequence at end of buffer, wait for next read
+					break
+				}
+			} else if b[offset] == '\r' || b[offset] == '\n' || b[offset] == ' ' {
+				// Skip leading newlines/carriage returns/spaces
+				offset++
+				continue
+			}
+			// Stop at the first non-matching or unknown sequence (the actual text)
+			break
+		}
+
+		if offset > 0 {
+			// Strip everything we found up to this point
+			if n-offset > 0 {
+				copy(b[0:], b[offset:n])
+			}
+			n = n - offset
+		}
+
+		// We stop stripping if:
+		// 1. We found a clear-screen sequence (found == true)
+		// 2. We hit the actual text (offset < initial_n and n > 0)
+		if found || (offset > 0 && n > 0) || (offset == 0 && n > 0) {
+			p.stripInitialClear = false
+		}
+	}
+	return n, err
+}
 func (p *winPty) Write(b []byte) (n int, err error) { return p.con.Write(b) }
 func (p *winPty) Close() error                      { return p.con.Close() }
 func (p *winPty) Resize(cols, rows uint32) error {
@@ -63,7 +125,7 @@ func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &winPty{con: c}, nil
+	return &winPty{con: c, stripInitialClear: true}, nil
 }
 
 func isPtyOn() bool {
