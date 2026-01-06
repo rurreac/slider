@@ -79,13 +79,25 @@ func replaceSlashes(s string, oldChar, newChar byte) string {
 // For Windows: /C:/Users/user → C:\Users\user
 // For Unix: /home/user → /home/user (unchanged)
 func SFTPPathForDisplay(sftpPath, system string) string {
-	if system != "windows" {
+	if system != "windows" || sftpPath == "" {
 		return sftpPath
 	}
 
-	// Windows: Convert /C:/Users/user → C:\Users\user
-	path := strings.TrimPrefix(sftpPath, "/")
-	path = strings.ReplaceAll(path, "/", "\\")
+	// Windows: Handle absolute paths
+	// If it's in format /C:/... then convert to C:\...
+	if len(sftpPath) >= 3 && sftpPath[0] == '/' && sftpPath[2] == ':' {
+		path := strings.TrimPrefix(sftpPath, "/")
+		path = strings.ReplaceAll(path, "/", "\\")
+		return path
+	}
+
+	// If it's already a native Windows path (contains backslashes) or absolute from root, stay careful
+	if !strings.HasPrefix(sftpPath, "/") {
+		return strings.ReplaceAll(sftpPath, "/", "\\")
+	}
+
+	// Default conversion for other absolute SFTP paths (e.g., from root-relative paths)
+	path := strings.ReplaceAll(sftpPath, "/", "\\")
 	return path
 }
 

@@ -8,6 +8,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
+	"slider/pkg/session"
 	"slider/pkg/spath"
 	"strings"
 
@@ -17,7 +18,7 @@ import (
 // SftpCommandContext provides SFTP-specific context for commands
 type SftpCommandContext struct {
 	sftpCli           *sftp.Client
-	session           *Session
+	session           *session.BidirectionalSession
 	localSystem       string
 	localHomeDir      string
 	localCwd          *string
@@ -28,18 +29,19 @@ type SftpCommandContext struct {
 }
 
 // initSftpRegistry initializes the SFTP command registry with optional remote interpreter
-func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
-	session.sftpCommandRegistry = NewCommandRegistry()
+func (s *server) initSftpRegistry(sess *session.BidirectionalSession, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
+	registry := NewCommandRegistry()
+	sess.SetSftpCommandRegistry(registry)
 
 	// Use provided interpreter or fall back to session's interpreter
 	targetInterpreter := remoteInterpreter
 	if targetInterpreter == nil {
-		targetInterpreter = session.clientInterpreter
+		targetInterpreter = sess.GetInterpreter()
 	}
 
-	session.sftpContext = &SftpCommandContext{
+	ctx := &SftpCommandContext{
 		sftpCli:           sftpClient,
-		session:           session,
+		session:           sess,
 		localSystem:       s.serverInterpreter.System,
 		localHomeDir:      s.serverInterpreter.HomeDir,
 		localCwd:          localCwd,
@@ -48,60 +50,64 @@ func (s *server) initSftpRegistry(session *Session, sftpClient *sftp.Client, rem
 		remoteCwd:         remoteCwd,
 		remoteInterpreter: remoteInterpreter, // Store reference for dynamic updates
 	}
+	sess.SetSftpContext(ctx)
 
 	// Register basic commands
-	session.sftpCommandRegistry.Register(&SftpHelpCommand{})
-	session.sftpCommandRegistry.Register(&SftpExitCommand{})
+	registry.Register(&SftpHelpCommand{})
+	registry.Register(&SftpExitCommand{})
 
 	// Register pwd commands
-	session.sftpCommandRegistry.Register(&SftpPwdCommand{isRemote: true})
-	session.sftpCommandRegistry.RegisterAlias("getwd", pwdCmd)
-	session.sftpCommandRegistry.Register(&SftpPwdCommand{isRemote: false})
-	session.sftpCommandRegistry.RegisterAlias("lgetwd", lPwdCmd)
+	registry.Register(&SftpPwdCommand{isRemote: true})
+	registry.RegisterAlias("getwd", pwdCmd)
+	registry.Register(&SftpPwdCommand{isRemote: false})
+	registry.RegisterAlias("lgetwd", lPwdCmd)
 
 	// Register cd commands
-	session.sftpCommandRegistry.Register(&SftpCdCommand{isRemote: true})
-	session.sftpCommandRegistry.RegisterAlias("chdir", cdCmd)
-	session.sftpCommandRegistry.Register(&SftpCdCommand{isRemote: false})
+	registry.Register(&SftpCdCommand{isRemote: true})
+	registry.RegisterAlias("chdir", cdCmd)
+	registry.Register(&SftpCdCommand{isRemote: false})
 
 	// Register ls commands
-	session.sftpCommandRegistry.Register(&SftpLsCommand{isRemote: true})
-	session.sftpCommandRegistry.RegisterAlias("dir", lsCmd)
-	session.sftpCommandRegistry.RegisterAlias("list", lsCmd)
-	session.sftpCommandRegistry.Register(&SftpLsCommand{isRemote: false})
-	session.sftpCommandRegistry.RegisterAlias("ldir", lLsCmd)
-	session.sftpCommandRegistry.RegisterAlias("llist", lLsCmd)
+	registry.Register(&SftpLsCommand{isRemote: true})
+	registry.RegisterAlias("dir", lsCmd)
+	registry.RegisterAlias("list", lsCmd)
+	registry.Register(&SftpLsCommand{isRemote: false})
+	registry.RegisterAlias("ldir", lLsCmd)
+	registry.RegisterAlias("llist", lLsCmd)
 
 	// Register mkdir commands
-	session.sftpCommandRegistry.Register(&SftpMkdirCommand{isRemote: true})
-	session.sftpCommandRegistry.Register(&SftpMkdirCommand{isRemote: false})
+	registry.Register(&SftpMkdirCommand{isRemote: true})
+	registry.Register(&SftpMkdirCommand{isRemote: false})
 
 	// Register rm command (remote only)
-	session.sftpCommandRegistry.Register(&SftpRmCommand{})
-	session.sftpCommandRegistry.RegisterAlias("del", rmCmd)
-	session.sftpCommandRegistry.RegisterAlias("delete", rmCmd)
+	registry.Register(&SftpRmCommand{})
+	registry.RegisterAlias("del", rmCmd)
+	registry.RegisterAlias("delete", rmCmd)
 
 	// Register stat command (remote only)
-	session.sftpCommandRegistry.Register(&SftpStatCommand{})
-	session.sftpCommandRegistry.RegisterAlias("info", statCmd)
+	registry.Register(&SftpStatCommand{})
+	registry.RegisterAlias("info", statCmd)
+
+	// Register sysinfo command
+	registry.Register(&SftpSysInfoCommand{})
 
 	// Register mv command (remote only)
-	session.sftpCommandRegistry.Register(&SftpMvCommand{})
-	session.sftpCommandRegistry.RegisterAlias("rename", mvCmd)
-	session.sftpCommandRegistry.RegisterAlias("move", mvCmd)
+	registry.Register(&SftpMvCommand{})
+	registry.RegisterAlias("rename", mvCmd)
+	registry.RegisterAlias("move", mvCmd)
 
 	// Register chmod command (remote only, non-Windows)
-	if session.clientInterpreter.System != "windows" {
-		session.sftpCommandRegistry.Register(&SftpChmodCommand{})
+	if sess.GetInterpreter().System != "windows" {
+		registry.Register(&SftpChmodCommand{})
 	}
 
 	// Register get command
-	session.sftpCommandRegistry.Register(&SftpGetCommand{})
-	session.sftpCommandRegistry.RegisterAlias("download", getCmd)
+	registry.Register(&SftpGetCommand{})
+	registry.RegisterAlias("download", getCmd)
 
 	// Register put command
-	session.sftpCommandRegistry.Register(&SftpPutCommand{})
-	session.sftpCommandRegistry.RegisterAlias("upload", putCmd)
+	registry.Register(&SftpPutCommand{})
+	registry.RegisterAlias("upload", putCmd)
 }
 
 func (ctx *SftpCommandContext) getCwd(isRemote bool) string {
@@ -114,6 +120,10 @@ func (ctx *SftpCommandContext) getCwd(isRemote bool) string {
 func (ctx *SftpCommandContext) setCwd(path string, isRemote bool) {
 	if isRemote {
 		*ctx.remoteCwd = path
+		// Also persist the working directory to the session for promiscuous mode tracking
+		if ctx.session != nil {
+			ctx.session.SetSftpWorkingDir(path)
+		}
 	} else {
 		*ctx.localCwd = path
 	}
@@ -181,8 +191,8 @@ func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 		if ctx.remoteInterpreter != nil {
 			return strings.ToLower(ctx.remoteInterpreter.System)
 		}
-		if ctx.session != nil && ctx.session.clientInterpreter != nil {
-			return strings.ToLower(ctx.session.clientInterpreter.System)
+		if ctx.session != nil && ctx.session.GetInterpreter() != nil {
+			return strings.ToLower(ctx.session.GetInterpreter().System)
 		}
 		return ctx.remoteSystem
 	}
@@ -197,8 +207,8 @@ func (ctx *SftpCommandContext) getContextHomeDir(isRemote bool) string {
 		if ctx.remoteInterpreter != nil {
 			return ctx.remoteInterpreter.HomeDir
 		}
-		if ctx.session != nil && ctx.session.clientInterpreter != nil {
-			return ctx.session.clientInterpreter.HomeDir
+		if ctx.session != nil && ctx.session.GetInterpreter() != nil {
+			return ctx.session.GetInterpreter().HomeDir
 		}
 		return ctx.remoteHomeDir
 	}

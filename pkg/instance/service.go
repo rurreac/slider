@@ -30,15 +30,12 @@ func NewServiceManager() *ServiceManager {
 }
 
 // RegisterService registers a service with the manager
+// If a service of the same type already exists, it will be replaced
 func (sm *ServiceManager) RegisterService(service Service) error {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
 
 	serviceType := service.Type()
-	if _, exists := sm.services[serviceType]; exists {
-		return fmt.Errorf("service type %s already registered", serviceType)
-	}
-
 	sm.services[serviceType] = service
 	return nil
 }

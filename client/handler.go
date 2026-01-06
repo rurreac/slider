@@ -50,10 +50,8 @@ func (c *client) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	session := c.newWebSocketSession(wsConn)
 	defer c.dropWebSocketSession(session)
 
-	session.disconnect = make(chan bool, 1)
-
 	go c.newSSHClient(session)
 
-	<-session.disconnect
-	close(session.disconnect)
+	<-session.Disconnect
+	close(session.Disconnect)
 }

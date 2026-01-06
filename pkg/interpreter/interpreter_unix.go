@@ -26,6 +26,8 @@ type Interpreter struct {
 	CmdArgs   []string `json:"CmdArgs"`
 	PtyOn     bool     `json:"PtyOn"`
 	ColorOn   bool     `json:"ColorOn"`
+	SliderDir string   `json:"SliderDir"`
+	LaunchDir string   `json:"LaunchDir"`
 	Pty       Pty
 }
 
@@ -141,6 +143,22 @@ func NewInterpreter() (*Interpreter, error) {
 
 	if i.Shell == "" {
 		return nil, fmt.Errorf("can not find a suitable shell on system %s", i.System)
+	}
+
+	if i.Shell == "" {
+		return nil, fmt.Errorf("can not find a suitable shell on system %s", i.System)
+	}
+
+	// Capture binary path
+	if exe, err := os.Executable(); err == nil {
+		i.SliderDir = exe
+	}
+
+	// Capture initial working directory
+	var err error
+	i.LaunchDir, err = os.Getwd()
+	if err != nil {
+		i.LaunchDir = i.HomeDir
 	}
 
 	return i, nil

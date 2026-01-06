@@ -13,7 +13,9 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/listener"
 	"slider/pkg/scrypt"
+	pkgsession "slider/pkg/session"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 	"strings"
 
 	"github.com/creack/pty"
@@ -102,10 +104,34 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		slog.F("remote_addr", r.RemoteAddr),
 	)
 
-	session := s.newWebSocketSession(wsConn)
+	// Create server session for incoming client connection
+	remoteAddr := wsConn.RemoteAddr().String()
+	opts := &pkgsession.ServerSessionOptions{
+		CertificateAuthority: s.CertificateAuthority,
+		ServerKey:            s.serverKey,
+		AuthOn:               s.authOn,
+	}
+
+	session := pkgsession.NewServerFromClientSession(
+		s.Logger,
+		wsConn,
+		nil,        // sshServerConn will be set by NewSSHServer
+		s.sshConf,  // SSH server config
+		nil,        // interpreter will be detected later
+		remoteAddr, // hostIP
+		opts,
+	)
+
+	// Add to server's session track
+	s.sessionTrackMutex.Lock()
+	s.sessionTrack.Sessions[session.GetID()] = session
+	s.sessionTrack.SessionCount = session.GetID()
+	s.sessionTrack.SessionActive++
+	s.sessionTrackMutex.Unlock()
+
 	defer func() {
 		s.dropWebSocketSession(session)
-		s.NotifyUpstreamDisconnect(session.sessionID)
+		s.NotifyUpstreamDisconnect(session.GetID())
 	}()
 
 	s.NewSSHServer(session)
@@ -190,13 +216,7 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	}
 	defer func() { _ = wsConn.Close() }()
 
-	session := s.newWebSocketSession(wsConn)
-	defer s.dropWebSocketSession(session)
-
-	session.setListenerOn(true)
-	session.addSessionNotifier(notifier)
-
-	// Create a new ssh server configuration
+	// Create a new ssh configuration for this connection
 	sshConf := *s.sshConf
 	if certID != 0 {
 		keyPair, kErr := s.getCert(certID)
@@ -205,7 +225,6 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			notifier <- kErr
 			return
 		}
-		session.addCertInfo(certID, keyPair.FingerPrint)
 
 		signerKey, sErr := scrypt.SignerFromKey(keyPair.PrivateKey)
 		if sErr != nil {
@@ -215,13 +234,63 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		}
 		sshConf.AddHostKey(signerKey)
 	}
-	session.setSSHConf(&sshConf)
+
+	// Create session with the appropriate role based on connection mode
+	remoteAddr := wsConn.RemoteAddr().String()
+	opts := &pkgsession.ServerSessionOptions{
+		CertificateAuthority: s.CertificateAuthority,
+		ServerKey:            s.serverKey,
+		AuthOn:               s.authOn,
+	}
+
+	var session *pkgsession.BidirectionalSession
+
+	if promiscuous {
+		// Promiscuous mode: we're a server connecting TO another server as a client
+		session = pkgsession.NewServerToServerSession(
+			s.Logger,
+			wsConn,
+			nil, // sshClient will be set by NewSSHClient
+			nil, // interpreter will be detected later
+			remoteAddr,
+			opts,
+		)
+	} else {
+		// Listener mode: we're a server connecting TO a client acting as a server
+		session = pkgsession.NewServerToListenerSession(
+			s.Logger,
+			wsConn,
+			nil,      // sshServerConn will be set by NewSSHServer
+			&sshConf, // SSH server config
+			nil,      // interpreter will be detected later
+			remoteAddr,
+			opts,
+		)
+	}
+
+	// Set certificate info if we have one
+	if certID != 0 {
+		keyPair, _ := s.getCert(certID)
+		session.SetCertInfo(certID, keyPair.FingerPrint)
+	}
+
+	// Add to server's session track
+	s.sessionTrackMutex.Lock()
+	s.sessionTrack.Sessions[session.GetID()] = session
+	s.sessionTrack.SessionCount = session.GetID()
+	s.sessionTrack.SessionActive++
+	s.sessionTrackMutex.Unlock()
+
+	defer s.dropWebSocketSession(session)
+
+	session.AddNotifier(notifier)
+	session.SetSSHConfig(&sshConf)
 
 	if promiscuous {
 		// If connecting in promiscuous mode, we act as a client
 		s.NewSSHClient(session)
 	} else {
-		// Standard connection, we act as a server
+		// Standard listener connection, we act as a server
 		s.NewSSHServer(session)
 	}
 
@@ -312,8 +381,6 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 			slog.F("err", err))
 		return err
 	}
-	s.consoleBanner(webConsole)
-
 	// Channel to signal goroutine shutdown
 	done := make(chan struct{})
 	defer close(done)
@@ -345,6 +412,17 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 								Cols: resizeMsg.Cols,
 							})
 							_ = webConsole.Term.SetSize(int(resizeMsg.Cols), int(resizeMsg.Rows))
+
+							_ = webConsole.Term.SetSize(int(resizeMsg.Cols), int(resizeMsg.Rows))
+
+							// Propagate resize to the active command in this console
+							if webConsole.ResizeChan != nil {
+								select {
+								case webConsole.ResizeChan <- types.TermDimensions{Width: uint32(resizeMsg.Cols), Height: uint32(resizeMsg.Rows)}:
+								default:
+									// Channel full, skip
+								}
+							}
 						}
 						continue
 					}
@@ -377,6 +455,9 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}()
+
+	// Display banner once the bridge is ready
+	s.consoleBanner(webConsole)
 
 	// Main goroutine: Console command loop
 	for {
@@ -431,6 +512,7 @@ func (s *server) newWebConsole(ptyTTY *os.File, history *CustomHistory) (*Consol
 		Term:       term.NewTerminal(ptyTTY, getPrompt()),
 		ReadWriter: ptyTTY,
 		History:    history,
+		ResizeChan: make(chan types.TermDimensions, 10),
 	}
 
 	// Initialize command registry if needed

@@ -19,6 +19,14 @@ var DefaultHistory = &CustomHistory{
 	maxSize: conf.DefaultHistorySize,
 }
 
+// NewCustomHistory creates a new history instance
+func NewCustomHistory() *CustomHistory {
+	return &CustomHistory{
+		entries: make([]string, 0),
+		maxSize: conf.DefaultHistorySize,
+	}
+}
+
 func (h *CustomHistory) Add(entry string) {
 	// Skip empty entries
 	entry = strings.TrimSpace(entry)

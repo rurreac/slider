@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"slider/pkg/session"
 )
 
 var (
@@ -17,7 +19,7 @@ var (
 // ExecutionContext provides execution environment for commands
 type ExecutionContext struct {
 	server  *server
-	session *Session // nil for non-session commands
+	session *session.BidirectionalSession // nil for non-session commands
 	ui      UserInterface
 }
 
@@ -27,7 +29,7 @@ func (c *ExecutionContext) getServer() *server {
 }
 
 // Session returns the session instance (may be nil)
-func (c *ExecutionContext) Session() *Session {
+func (c *ExecutionContext) Session() *session.BidirectionalSession {
 	return c.session
 }
 
@@ -37,7 +39,7 @@ func (c *ExecutionContext) UI() UserInterface {
 }
 
 // RequireSession returns session or error if nil
-func (c *ExecutionContext) RequireSession() (*Session, error) {
+func (c *ExecutionContext) RequireSession() (*session.BidirectionalSession, error) {
 	if c.session == nil {
 		return nil, fmt.Errorf("command requires an active session")
 	}

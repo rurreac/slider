@@ -3,23 +3,24 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
+	"slider/pkg/session"
 	"slider/pkg/slog"
-	"slider/server/remote"
-	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
 // NewSSHClient establishes an SSH connection as a client (Promiscuous Mode)
-func (s *server) NewSSHClient(session *Session) {
-	netConn := sconn.WsConnToNetConn(session.wsConn)
+func (s *server) NewSSHClient(session *session.BidirectionalSession) {
+	netConn := sconn.WsConnToNetConn(session.GetWebSocketConn())
 
 	s.DebugWith(
 		"Established WebSocket connection with server (Promiscuous)",
-		slog.F("session_id", session.sessionID),
+		slog.F("session_id", session.GetID()),
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
@@ -42,126 +43,83 @@ func (s *server) NewSSHClient(session *Session) {
 		ClientVersion:   "SSH-slider-server-client",
 	}
 
-	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, session.wsConn.RemoteAddr().String(), sshConfig)
+	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, session.GetWebSocketConn().RemoteAddr().String(), sshConfig)
 	if err != nil {
 		s.DErrorWith("Failed to establish SSH client connection", slog.F("err", err))
-		if session.notifier != nil {
-			session.notifier <- err
+		if session.GetNotifier() != nil {
+			session.GetNotifier() <- err
 		}
 		return
 	}
-
-	// Handle global requests (keep-alive) in separate goroutine
 
 	// Identify ourselves to the upstream server
 	interp, iErr := interpreter.NewInterpreter()
 	if iErr == nil {
 		clientInfo := &conf.ClientInfo{Interpreter: interp}
 		payload, _ := json.Marshal(clientInfo)
-		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", session.sessionID))
+		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", session.GetID()))
 		ok, reply, sErr := cConn.SendRequest("client-info", true, payload)
 		if sErr == nil && ok && len(reply) > 0 {
 			// The server identifies itself in the reply
 			var remoteInterp interpreter.Interpreter
 			if mErr := json.Unmarshal(reply, &remoteInterp); mErr == nil {
-				session.setInterpreter(&remoteInterp)
+				session.SetInterpreter(&remoteInterp)
 			}
 		}
 	}
 
 	// Start KeepAlive sender
-	go session.keepAlive(s.keepalive)
+	go session.KeepAlive(s.keepalive)
 
-	// Create and configure router
-	router := remote.NewRouter(s.Logger)
-	session.Router = router
+	// Inject application server for local interpreter and state access
+	session.SetApplicationServer(s)
 
-	// Handle incoming requests (KeepAlive from server)
-	go s.handlePromiscuousRequests(session, reqChan)
+	// Note: For upstream connections (PromiscuousRole connecting TO another server),
+	// we do NOT inject application-specific router by default. This is an outgoing client connection,
+	// and slider-* requests/channels are typically handled on the server side of the connection.
+	// The centralized handlers in the session package will now have access to the local server
+	// info via the injected applicationServer.
 
-	// Route channels
-	go func() {
-		for nc := range newChan {
-			go func(nnc ssh.NewChannel) {
-				if err := router.Route(nnc, session, s); err != nil {
-					s.DErrorWith("Channel routing error", slog.F("err", err))
-				}
-			}(nc)
-		}
-	}()
+	// Use centralized request handling
+	// Session handles common protocol requests (keep-alive, tcpip-forward)
+	// Application-specific requests (client-info, shutdown) are delegated to injected handler
+	go session.HandleIncomingRequests(reqChan)
+
+	// Use centralized channel routing
+	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)
+	// Application-specific channels (slider-connect) are delegated to injected router
+	go session.HandleIncomingChannels(newChan)
 
 	// Pass nil for channels since we consume reqChan directly
 	client := ssh.NewClient(cConn, nil, nil)
 
-	s.DebugWith("SSH Client Connection Established", slog.F("session_id", session.sessionID))
+	s.DebugWith("SSH Client Connection Established", slog.F("session_id", session.GetID()))
 
 	// Store the connection
-	session.setSSHClient(client)
+	session.SetSSHClient(client)
 
-	if session.notifier != nil {
-		session.notifier <- nil
+	// Update endpoint instances with the SSH client connection
+	// (they were initialized with nil when the session was first created)
+	if session.GetShellInstance() != nil {
+		session.GetShellInstance().SetSSHConn(client)
+	}
+	if session.GetSocksInstance() != nil {
+		session.GetSocksInstance().SetSSHConn(client)
+	}
+	if session.GetSSHInstance() != nil {
+		session.GetSSHInstance().SetSSHConn(client)
+	}
+
+	if session.GetNotifier() != nil {
+		session.GetNotifier() <- nil
 	}
 
 	// Block until connection closes
 	_ = client.Wait()
 }
 
-// RemoteSession defines the session info returned by RPC
-type RemoteSession struct {
-	ID                int64   `json:"id"`
-	ServerFingerprint string  `json:"server_fingerprint"`
-	User              string  `json:"user"`
-	Host              string  `json:"host"`
-	System            string  `json:"system"`
-	Arch              string  `json:"arch"`
-	HomeDir           string  `json:"home_dir"`
-	IsListener        bool    `json:"is_listener"`
-	ConnectionAddr    string  `json:"connection_addr"`
-	Path              []int64 `json:"path"`
-}
-
-// GetRemoteSessionsRequest defines the payload for slider-sessions request
-type GetRemoteSessionsRequest struct {
-	Visited []string `json:"visited"`
-}
-
-// GetRemoteSessions fetches sessions from the connected promiscuous server
-func (session *Session) GetRemoteSessions(visited []string) ([]RemoteSession, error) {
-	session.sessionMutex.Lock()
-	client := session.sshClient
-	session.sessionMutex.Unlock()
-
-	if client == nil {
-		return nil, fmt.Errorf("no active ssh client connection")
-	}
-
-	req := GetRemoteSessionsRequest{
-		Visited: visited,
-	}
-	payload, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	// Send a specific request to the server to get sessions
-	ok, resPayload, err := client.SendRequest("slider-sessions", true, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send slider-sessions request: %w", err)
-	}
-	if !ok {
-		return nil, fmt.Errorf("server rejected slider-sessions request")
-	}
-
-	var sessions []RemoteSession
-	if err := json.Unmarshal(resPayload, &sessions); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal sessions: %w", err)
-	}
-
-	return sessions, nil
-}
-
 // HandleSessionsRequest processes incoming slider-sessions requests
-func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session) (err error) {
+func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session.BidirectionalSession) (err error) {
 	// Panic Recovery
 	defer func() {
 		if r := recover(); r != nil {
@@ -170,7 +128,7 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 		}
 	}()
 
-	var request GetRemoteSessionsRequest
+	var request session.GetRemoteSessionsRequest
 	if len(req.Payload) > 0 {
 		if err := json.Unmarshal(req.Payload, &request); err != nil {
 			return fmt.Errorf("failed to unmarshal request: %w", err)
@@ -189,52 +147,60 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 	visitedChain := append(request.Visited, currentIdentity)
 
 	// Gather sessions
-	var sessions []RemoteSession
+	var sessions []session.RemoteSession
 
 	// 1. Local sessions
-	s.sessionTrackMutex.Lock()
-	s.DebugWith("Processing HandleSessionsRequest", slog.F("total_sessions", len(s.sessionTrack.Sessions)))
-	for _, sess := range s.sessionTrack.Sessions {
+	localSessions := s.GetSessions()
+	s.DebugWith("Processing HandleSessionsRequest", slog.F("total_sessions", len(localSessions)))
+
+	promiscuousClients := make([]*session.BidirectionalSession, 0)
+	for _, sess := range localSessions {
 		// Skip the session that is asking for the list (the caller)
-		if sess.sessionID == currentSession.sessionID {
+		if sess.GetID() == currentSession.GetID() {
 			continue
 		}
 
-		s.DebugWith("Checking session for list", slog.F("id", sess.sessionID), slog.F("is_client", sess.clientInterpreter != nil), slog.F("is_promiscuous", sess.sshClient != nil))
-		// Identify user/host/system/arch/homeDir
+		s.DebugWith("Checking session for list", slog.F("id", sess.GetID()), slog.F("is_client", sess.GetInterpreter() != nil), slog.F("is_promiscuous", sess.GetSSHClient() != nil))
+		// Identify user/host/system/arch/homeDir/workingDir
 		user := "slider"
-		host := sess.hostIP
+		host := sess.GetHostIP()
 		system := "unknown"
 		arch := "unknown"
 		homeDir := "/"
-		if sess.clientInterpreter != nil {
-			user = sess.clientInterpreter.User
-			host = sess.clientInterpreter.Hostname
-			system = sess.clientInterpreter.System
-			arch = sess.clientInterpreter.Arch
-			homeDir = sess.clientInterpreter.HomeDir
+		workingDir := ""
+		if sess.GetInterpreter() != nil {
+			user = sess.GetInterpreter().User
+			host = sess.GetInterpreter().Hostname
+			system = sess.GetInterpreter().System
+			arch = sess.GetInterpreter().Arch
+			homeDir = sess.GetInterpreter().HomeDir
 		}
 
-		sessions = append(sessions, RemoteSession{
-			ID:                sess.sessionID,
+		// Get the current SFTP working directory if available
+		// This is set when a user is actively using an SFTP console and changes directories
+		workingDir = sess.GetSftpWorkingDir()
+		// If no working directory is set, use the home directory as default
+		if workingDir == "" {
+			workingDir = homeDir
+		}
+
+		sessions = append(sessions, session.RemoteSession{
+			ID:                sess.GetID(),
 			ServerFingerprint: s.fingerprint,
 			User:              user,
 			Host:              host,
 			System:            system,
 			Arch:              arch,
 			HomeDir:           homeDir,
-			IsListener:        sess.isListener,
-			ConnectionAddr:    sess.wsConn.RemoteAddr().String(),
+			WorkingDir:        workingDir,
+			IsListener:        sess.GetRole() == session.ListenerRole,
+			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
 		})
-	}
 
-	promiscuousClients := make([]*Session, 0)
-	for _, sess := range s.sessionTrack.Sessions {
-		if sess.sshClient != nil {
+		if sess.GetSSHClient() != nil {
 			promiscuousClients = append(promiscuousClients, sess)
 		}
 	}
-	s.sessionTrackMutex.Unlock()
 
 	// 2. Remote sessions (recursive)
 	for _, clientSess := range promiscuousClients {
@@ -243,9 +209,9 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 			s.WarnWith("Failed to fetch remote sessions", slog.F("err", err))
 			continue
 		}
-		// Prepend clientSess.sessionID to Path
+		// Prepend clientSess.GetID() to Path
 		for i := range remoteSessions {
-			remoteSessions[i].Path = append([]int64{clientSess.sessionID}, remoteSessions[i].Path...)
+			remoteSessions[i].Path = append([]int64{clientSess.GetID()}, remoteSessions[i].Path...)
 		}
 		sessions = append(sessions, remoteSessions...)
 	}
@@ -259,46 +225,6 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *Session
 	return req.Reply(true, payload)
 }
 
-// handlePromiscuousRequests handles global requests from the upstream server
-func (s *server) handlePromiscuousRequests(session *Session, reqs <-chan *ssh.Request) {
-	for req := range reqs {
-		switch req.Type {
-		case "keep-alive":
-			_ = session.replyConnRequest(req, true, []byte("pong"))
-		case "client-info":
-			ci := &conf.ClientInfo{}
-			if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
-				session.setInterpreter(ci.Interpreter)
-			}
-			_ = session.replyConnRequest(req, true, nil)
-		case "shutdown":
-			// Handle graceful shutdown request from upstream
-			s.InfoWith("Received shutdown request, closing connection",
-				slog.F("session_id", session.sessionID))
-
-			// Reply to acknowledge the shutdown
-			if req.WantReply {
-				_ = req.Reply(true, nil)
-			}
-
-			// Close the SSH client connection
-			if session.sshClient != nil {
-				_ = session.sshClient.Close()
-			}
-
-			// Close the WebSocket connection
-			_ = session.wsConn.Close()
-
-			// Exit the request handling loop
-			return
-		default:
-			if req.WantReply {
-				_ = req.Reply(false, nil)
-			}
-		}
-	}
-}
-
 // EventRequest defines the payload for slider-event request
 type EventRequest struct {
 	Type      string `json:"type"`       // e.g., "disconnect"
@@ -309,9 +235,9 @@ type EventRequest struct {
 // NotifyUpstreamDisconnect sends a disconnect event to all connected upstream servers
 func (s *server) NotifyUpstreamDisconnect(id int64) {
 	s.sessionTrackMutex.Lock()
-	var upstreams []*Session
+	var upstreams []*session.BidirectionalSession
 	for _, sess := range s.sessionTrack.Sessions {
-		if sess.sshClient != nil {
+		if sess.GetSSHClient() != nil {
 			upstreams = append(upstreams, sess)
 		}
 	}
@@ -326,10 +252,8 @@ func (s *server) NotifyUpstreamDisconnect(id int64) {
 	payload, _ := json.Marshal(req)
 
 	for _, up := range upstreams {
-		go func(sess *Session) {
-			sess.sessionMutex.Lock()
-			client := sess.sshClient
-			sess.sessionMutex.Unlock()
+		go func(sess *session.BidirectionalSession) {
+			client := sess.GetSSHClient()
 			if client == nil {
 				return
 			}
@@ -339,7 +263,7 @@ func (s *server) NotifyUpstreamDisconnect(id int64) {
 }
 
 // HandleEventRequest processes incoming slider-event requests
-func (s *server) HandleEventRequest(req *ssh.Request, fromSession *Session) error {
+func (s *server) HandleEventRequest(req *ssh.Request, fromSession *session.BidirectionalSession) error {
 	var event EventRequest
 	if err := json.Unmarshal(req.Payload, &event); err != nil {
 		return fmt.Errorf("failed to unmarshal event: %w", err)
@@ -348,7 +272,7 @@ func (s *server) HandleEventRequest(req *ssh.Request, fromSession *Session) erro
 	s.InfoWith("Received Upstream Event",
 		slog.F("type", event.Type),
 		slog.F("remote_session_id", event.SessionID),
-		slog.F("via_session", fromSession.sessionID),
+		slog.F("via_session", fromSession.GetID()),
 	)
 
 	return nil

@@ -7,6 +7,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
+	"sync"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -19,6 +20,9 @@ type Service struct {
 	opener        ChannelOpener
 	envVarList    []struct{ Key, Value string }
 	interactiveOn bool
+	initTermSize  *types.TermDimensions
+	winChannels   map[net.Conn]chan []byte
+	mutex         sync.Mutex
 }
 
 // ChannelOpener defines the interface for opening SSH channels and sending requests
@@ -35,6 +39,35 @@ func NewService(logger *slog.Logger, sessionID int64, opener ChannelOpener) *Ser
 		opener:        opener,
 		envVarList:    make([]struct{ Key, Value string }, 0),
 		interactiveOn: false,
+		winChannels:   make(map[net.Conn]chan []byte),
+	}
+}
+
+// SetInitTermSize sets the initial terminal size for next shell connection
+func (s *Service) SetInitTermSize(size types.TermDimensions) {
+	s.initTermSize = &size
+}
+
+// Resize all active shell connections
+func (s *Service) Resize(cols, rows uint32) {
+	s.logger.DebugWith("Propagating resize to shell service",
+		slog.F("session_id", s.sessionID),
+		slog.F("cols", cols),
+		slog.F("rows", rows))
+
+	payload := ssh.Marshal(types.PtyRequest{
+		TermWidthCols:  cols,
+		TermHeightRows: rows,
+	})
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	for _, ch := range s.winChannels {
+		select {
+		case ch <- payload:
+		default:
+			// Full channel, skip
+		}
 	}
 }
 
@@ -47,18 +80,35 @@ func (s *Service) Type() string {
 func (s *Service) Start(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 
-	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
-	if tErr != nil {
-		s.logger.ErrorWith("Failed to get terminal size",
+	var cols, rows uint32
+
+	// Use configured initial size if available (e.g. from web console)
+	if s.initTermSize != nil && s.initTermSize.Width > 0 && s.initTermSize.Height > 0 {
+		cols = s.initTermSize.Width
+		rows = s.initTermSize.Height
+		s.logger.DebugWith("Using pre-configured terminal size",
 			slog.F("session_id", s.sessionID),
-			slog.F("err", tErr))
-		return tErr
+			slog.F("width", cols),
+			slog.F("height", rows))
+	} else {
+		// Fallback to os.Stdout size if available
+		w, h, tErr := term.GetSize(int(os.Stdout.Fd()))
+		if tErr != nil {
+			s.logger.DebugWith("Failed to get terminal size from stdout, using defaults",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", tErr))
+			cols = 80
+			rows = 24
+		} else {
+			cols = uint32(w)
+			rows = uint32(h)
+		}
 	}
 
 	initSize, uErr := json.Marshal(
 		&types.TermDimensions{
-			Width:  uint32(width),
-			Height: uint32(height),
+			Width:  cols,
+			Height: rows,
 		},
 	)
 	if uErr != nil {
@@ -81,7 +131,17 @@ func (s *Service) Start(conn net.Conn) error {
 	_ = initChan.Close()
 
 	winChange := make(chan []byte, 10)
-	defer close(winChange)
+	s.mutex.Lock()
+	s.winChannels[conn] = winChange
+	s.mutex.Unlock()
+
+	defer func() {
+		s.mutex.Lock()
+		delete(s.winChannels, conn)
+		s.mutex.Unlock()
+		close(winChange)
+	}()
+
 	envChange := make(chan []byte, 10)
 	defer close(envChange)
 
