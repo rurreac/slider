@@ -126,20 +126,25 @@ func (si *Config) setControls() {
 
 func (si *Config) SetSSHConn(conn ChannelOpener) {
 	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+
 	si.sshSessionConn = conn
-	// Initialize or update port forwarding manager and SOCKS client when connection is set
-	if si.portFwdManager == nil {
-		si.portFwdManager = portforward.NewManager(si.Logger, si.SessionID, conn)
-	}
-	if si.socksClient == nil {
-		si.socksClient = socks.NewClient(si.Logger, si.SessionID, conn)
-		_ = si.serviceManager.RegisterService(si.socksClient)
-	}
-	if si.shellService == nil {
-		si.shellService = shell.NewService(si.Logger, si.SessionID, conn)
-		_ = si.serviceManager.RegisterService(si.shellService)
-	}
-	si.instanceMutex.Unlock()
+
+	// Always recreate services with the new connection
+	si.portFwdManager = portforward.NewManager(si.Logger, si.SessionID, conn)
+	si.socksClient = socks.NewClient(si.Logger, si.SessionID, conn)
+	si.shellService = shell.NewService(si.Logger, si.SessionID, conn)
+
+	// Register services with the service manager
+	_ = si.serviceManager.RegisterService(si.socksClient)
+	_ = si.serviceManager.RegisterService(si.shellService)
+}
+
+// GetSSHConn returns the SSH connection (thread-safe)
+func (si *Config) GetSSHConn() ChannelOpener {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	return si.sshSessionConn
 }
 
 func (si *Config) GetPortForwardManager() *portforward.Manager {
@@ -184,6 +189,22 @@ func (si *Config) SetEnvVarList(evl []struct{ Key, Value string }) {
 	si.instanceMutex.Lock()
 	si.envVarList = evl
 	si.instanceMutex.Unlock()
+}
+
+func (si *Config) SetInitTermSize(size types.TermDimensions) {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	if si.shellService != nil {
+		si.shellService.SetInitTermSize(size)
+	}
+}
+
+func (si *Config) Resize(cols, rows uint32) {
+	si.instanceMutex.Lock()
+	defer si.instanceMutex.Unlock()
+	if si.shellService != nil {
+		si.shellService.Resize(cols, rows)
+	}
 }
 
 func (si *Config) StartEndpoint(port int) error {
@@ -303,6 +324,15 @@ func (si *Config) runSshComm(conn net.Conn) {
 
 func (si *Config) runShellComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
+
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
+		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
+			slog.F("session_id", si.SessionID))
+		return
+	}
+
 	width, height, tErr := term.GetSize(int(os.Stdout.Fd()))
 	if tErr != nil {
 		si.Logger.ErrorWith("Failed to get terminal size",
@@ -325,7 +355,7 @@ func (si *Config) runShellComm(conn net.Conn) {
 	}
 
 	// Send message with initial size
-	initChan, reqs, oErr := si.sshSessionConn.OpenChannel("init-size", initSize)
+	initChan, reqs, oErr := sshConn.OpenChannel("init-size", initSize)
 	if oErr != nil {
 		si.Logger.ErrorWith("Failed to open channel",
 			slog.F("session_id", si.SessionID),
@@ -521,6 +551,14 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 
 // sendInitTermSize receives a req-pty payload extracts the terminal size and sends it through an init-size channel payload
 func (si *Config) sendInitTermSize(payload []byte) {
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
+		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
+			slog.F("session_id", si.SessionID))
+		return
+	}
+
 	// Do not panic if payload happens to be empty
 	if len(payload) > 0 {
 		var ptyReq types.PtyRequest
@@ -551,7 +589,7 @@ func (si *Config) sendInitTermSize(payload []byte) {
 				slog.F("err", uErr))
 		}
 
-		sliderClientChannel, requests, oErr := si.sshSessionConn.OpenChannel("init-size", initSize)
+		sliderClientChannel, requests, oErr := sshConn.OpenChannel("init-size", initSize)
 		if oErr != nil {
 			si.Logger.ErrorWith("Failed to open SSH channel",
 				slog.F("session_id", si.SessionID),
@@ -566,9 +604,10 @@ func (si *Config) sendInitTermSize(payload []byte) {
 
 }
 
-func (si *Config) ExecuteCommand(command string, initState *term.State) error {
-	// Check if SSH connection is available
-	if si.sshSessionConn == nil {
+func (si *Config) ExecuteCommand(command string, initState *term.State, out io.Writer) error {
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
 		return fmt.Errorf("no active SSH connection available")
 	}
 
@@ -578,9 +617,9 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 	payload := []byte{0, 0, 0, byte(cmdLen)}
 	payload = append(payload, cmdBytes...)
 
-	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel("exec", payload)
+	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel("exec", payload)
 	if oErr != nil {
-		return fmt.Errorf("could not open ssh channel - %v", oErr)
+		return fmt.Errorf("could not open ssh channel: %v", oErr)
 	}
 	defer func() { _ = sliderClientChannel.Close() }()
 
@@ -602,11 +641,14 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 			}
 		}
 	}()
-	state, _ := term.GetState(int(os.Stdin.Fd()))
-	if rErr := term.Restore(int(os.Stdin.Fd()), initState); rErr != nil {
-		return rErr
+
+	if initState != nil {
+		state, _ := term.GetState(int(os.Stdin.Fd()))
+		if rErr := term.Restore(int(os.Stdin.Fd()), initState); rErr != nil {
+			return rErr
+		}
+		defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 	}
-	defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
 
 	// Capture interrupt signal for Ctrl+C handling
 	go func() {
@@ -621,13 +663,21 @@ func (si *Config) ExecuteCommand(command string, initState *term.State) error {
 		}
 	}()
 
-	_, _ = io.Copy(os.Stdout, sliderClientChannel)
+	_, _ = io.Copy(out, sliderClientChannel)
 
 	return nil
 }
 
 func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte) {
-	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
+		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
+			slog.F("session_id", si.SessionID))
+		return
+	}
+
+	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel(channelType, payload)
 	if oErr != nil {
 		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),
@@ -644,7 +694,15 @@ func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType stri
 }
 
 func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
-	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
+		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
+			slog.F("session_id", si.SessionID))
+		return
+	}
+
+	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel(channelType, payload)
 	if oErr != nil {
 		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),
@@ -686,7 +744,15 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 }
 
 func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
-	sliderClientChannel, shellRequests, oErr := si.sshSessionConn.OpenChannel(channelType, payload)
+	// Get SSH connection (thread-safe)
+	sshConn := si.GetSSHConn()
+	if sshConn == nil {
+		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
+			slog.F("session_id", si.SessionID))
+		return
+	}
+
+	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel(channelType, payload)
 	if oErr != nil {
 		si.Logger.ErrorWith("Failed to open SSH channel",
 			slog.F("session_id", si.SessionID),

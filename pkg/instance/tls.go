@@ -57,7 +57,14 @@ func (si *Config) StartTLSEndpoint(port int) error {
 			break
 		}
 
-		go si.runShellComm(conn)
+		// For interactive mode (server console connection), use runShellComm
+		// which gets the server's terminal size and opens channels to the client
+		if si.interactiveOn {
+			go si.runShellComm(conn)
+		} else {
+			// For external connections, use service handler
+			go si.handleServiceConnection("shell", conn)
+		}
 	}
 
 	si.done <- true

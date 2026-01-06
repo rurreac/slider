@@ -24,6 +24,7 @@ type Console struct {
 	FirstRun   bool
 	History    *CustomHistory
 	ReadWriter io.ReadWriter
+	ResizeChan chan types.TermDimensions
 }
 
 type screenIO struct {
@@ -31,8 +32,18 @@ type screenIO struct {
 	io.Writer
 }
 
+func (sIO screenIO) Fd() uintptr {
+	if f, ok := sIO.Reader.(*os.File); ok {
+		return f.Fd()
+	}
+	if f, ok := sIO.Reader.(interface{ Fd() uintptr }); ok {
+		return f.Fd()
+	}
+	return 0
+}
+
 func (s *server) consoleBanner(ui *Console) {
-	ui.clearScreen()
+	ui.CenterScreen()
 	ui.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
 	ui.PrintInfo("Type \"bg\" to return to logging.")
 	ui.PrintInfo("Type \"help\" to see available commands.")
@@ -96,6 +107,7 @@ func (s *server) NewConsole() string {
 	if sErr != nil {
 		s.Fatalf("Failed to read terminal size: %v", sErr)
 	}
+	s.console.ResizeChan = make(chan types.TermDimensions, 10)
 	defer func() {
 		_ = term.Restore(int(os.Stdin.Fd()), s.console.InitState)
 	}()

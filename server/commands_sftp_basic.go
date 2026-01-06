@@ -28,7 +28,7 @@ func (c *SftpHelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 
 	// Get primary commands with their aliases
-	primaryCommands := session.sftpCommandRegistry.GetPrimaryCommands()
+	primaryCommands := session.GetSftpCommandRegistry().(*CommandRegistry).GetPrimaryCommands()
 
 	// Create a sorted list of primary command names
 	var cmdNames []string
@@ -38,7 +38,7 @@ func (c *SftpHelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
-		if cmd, ok := session.sftpCommandRegistry.Get(cmdName); ok {
+		if cmd, ok := session.GetSftpCommandRegistry().(*CommandRegistry).Get(cmdName); ok {
 			aliases := primaryCommands[cmdName]
 			aliasStr := strings.Join(aliases, ", ")
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", aliasStr, cmd.Description())

@@ -3,6 +3,7 @@ package remote
 import (
 	"encoding/json"
 	"fmt"
+	"slider/pkg/session"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 
@@ -11,12 +12,12 @@ import (
 
 // Proxy represents a remote connection proxy for promiscuous mode
 type Proxy struct {
-	gateway    Session
+	gateway    session.Session
 	targetPath []int64
 }
 
 // NewProxy creates a new remote connection proxy
-func NewProxy(gateway Session, path []int64) *Proxy {
+func NewProxy(gateway session.Session, path []int64) *Proxy {
 
 	return &Proxy{
 		gateway:    gateway,

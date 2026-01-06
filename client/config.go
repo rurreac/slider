@@ -13,6 +13,7 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/listener"
 	"slider/pkg/scrypt"
+	"slider/pkg/session"
 	"slider/pkg/slog"
 
 	"golang.org/x/crypto/ssh"
@@ -78,7 +79,7 @@ func RunClient(cfg *Config) {
 		Logger:   log,
 		shutdown: make(chan bool, 1),
 		sessionTrack: &sessionTrack{
-			Sessions: make(map[int64]*Session),
+			Sessions: make(map[int64]*session.BidirectionalSession),
 		},
 		firstRun:    true,
 		customProto: cfg.CustomProto,

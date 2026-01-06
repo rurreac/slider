@@ -3,10 +3,11 @@ package server
 import (
 	"errors"
 	"fmt"
-	"slider/pkg/instance"
-	"slider/pkg/slog"
-	"slider/server/remote"
 	"strings"
+
+	"slider/pkg/instance"
+	"slider/pkg/remote"
+	"slider/pkg/slog"
 
 	"github.com/spf13/pflag"
 )
@@ -90,7 +91,7 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		if uSess.OwnerID == 0 {
 			// Local
-			session, err := svr.getSession(int(uSess.ActualID))
+			bidirSession, err := svr.GetSession(int(uSess.ActualID))
 			if err != nil {
 				if !*eAll {
 					return fmt.Errorf("session %d not found", uSess.UnifiedID)
@@ -99,8 +100,8 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 
 			var envVarList []struct{ Key, Value string }
-			i := session.newExecInstance(envVarList)
-			if err := i.ExecuteCommand(command, svr.console.InitState); err != nil {
+			i := bidirSession.NewExecInstance(envVarList)
+			if err := i.ExecuteCommand(command, svr.console.InitState, ui.Writer()); err != nil {
 				if !*eAll {
 					return fmt.Errorf("execution error: %w", err)
 				}
@@ -115,14 +116,14 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 				ui.PrintError("Remote Execution Failed on %d: %v", uSess.UnifiedID, err)
 			}
 		}
-		svr.console.Println("")
+		ui.Printf("\n")
 	}
 	return nil
 }
 
-func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, command string, _ UserInterface) error {
+func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, command string, ui UserInterface) error {
 	// 1. Get Gateway Session
-	gatewaySession, sessErr := s.getSession(int(uSess.OwnerID))
+	gatewaySession, sessErr := s.GetSession(int(uSess.OwnerID))
 	if sessErr != nil {
 		return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
 	}
@@ -150,9 +151,9 @@ func (c *ExecuteCommand) handleRemoteExecute(s *server, uSess UnifiedSession, co
 	// config.SetEnvVarList? None for now.
 
 	// 5. Execute
-	if err := config.ExecuteCommand(command, s.console.InitState); err != nil {
+	if err := config.ExecuteCommand(command, s.console.InitState, ui.Writer()); err != nil {
 		return err
 	}
-	s.console.Println("")
+	ui.Printf("\n")
 	return nil
 }

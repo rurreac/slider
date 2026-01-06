@@ -50,7 +50,7 @@ func (c *SftpPwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		return err
 	}
 
-	sftpCtx := session.sftpContext
+	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}

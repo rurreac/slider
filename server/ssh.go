@@ -3,24 +3,23 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"slider/pkg/conf"
-	"slider/pkg/sconn"
-	"slider/pkg/slog"
-	"slider/pkg/types"
-	"slider/server/remote"
 	"strconv"
 
+	"slider/pkg/remote"
+	"slider/pkg/sconn"
+	pkgsession "slider/pkg/session"
+	"slider/pkg/slog"
+	"slider/pkg/types"
+
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/term"
 )
 
-func (s *server) NewSSHServer(session *Session) {
-	netConn := sconn.WsConnToNetConn(session.wsConn)
+func (s *server) NewSSHServer(session *pkgsession.BidirectionalSession) {
+	netConn := sconn.WsConnToNetConn(session.GetWebSocketConn())
 
 	s.DebugWith(
 		"Established WebSocket connection with client",
-		slog.F("session_id", session.sessionID),
+		slog.F("session_id", session.GetID()),
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
@@ -29,26 +28,37 @@ func (s *server) NewSSHServer(session *Session) {
 	var reqChan <-chan *ssh.Request
 	var err error
 
-	sshConf := session.sshConf
-	// Disable authentication for listener clients
-	if session.isListener {
+	sshConf := session.GetSSHConfig()
+	// Disable authentication for listener sessions
+	if session.GetRole() == pkgsession.ListenerRole {
 		sshConf.NoClientAuth = true
 	}
 
 	sshServerConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
 	if err != nil {
 		s.DErrorWith("Failed to create SSH server", slog.F("err", err))
-		if session.notifier != nil {
-			session.notifier <- err
+		if session.GetNotifier() != nil {
+			session.GetNotifier() <- err
 		}
 		return
 	}
-	session.addSessionSSHConnection(sshServerConn)
+	session.SetSSHServerConn(sshServerConn)
 
-	// If authentication was enabled and not connecting to a listener save the client certificate info
-	if s.authOn && !session.isListener {
+	// Update endpoint instances with the SSH connection
+	if session.GetShellInstance() != nil {
+		session.GetShellInstance().SetSSHConn(sshServerConn)
+	}
+	if session.GetSocksInstance() != nil {
+		session.GetSocksInstance().SetSSHConn(sshServerConn)
+	}
+	if session.GetSSHInstance() != nil {
+		session.GetSSHInstance().SetSSHConn(sshServerConn)
+	}
+
+	// If authentication was enabled and not a listener session, save the client certificate info
+	if s.authOn && session.GetRole() != pkgsession.ListenerRole {
 		if certID, cErr := strconv.Atoi(sshServerConn.Permissions.Extensions["cert_id"]); cErr == nil {
-			session.addCertInfo(
+			session.SetCertInfo(
 				int64(certID),
 				sshServerConn.Permissions.Extensions["fingerprint"],
 			)
@@ -58,49 +68,45 @@ func (s *server) NewSSHServer(session *Session) {
 
 	s.DebugWith(
 		"Upgraded Websocket transport to SSH Connection",
-		slog.F("session_id", session.sessionID),
-		slog.F("host", session.sshConn.RemoteAddr().String()),
-		slog.F("client_version", session.sshConn.ClientVersion()),
+		slog.F("session_id", session.GetID()),
+		slog.F("host", session.GetSSHServerConn().RemoteAddr().String()),
+		slog.F("client_version", session.GetSSHServerConn().ClientVersion()),
 	)
 
-	if session.notifier != nil {
-		session.notifier <- nil
+	if session.GetNotifier() != nil {
+		session.GetNotifier() <- nil
 	}
 
 	// Handle Keep Alive
-	go session.keepAlive(s.keepalive)
+	go session.KeepAlive(s.keepalive)
 
-	// Create and configure router
-	router := remote.NewRouter(s.Logger)
+	// Inject application server for all sessions to provide access to local interpreter and state
+	// Presence of these components enables proper local process execution and multi-hop features
+	session.SetApplicationServer(s)
+
 	if s.promiscuous {
-		router.RegisterHandler("session", remote.HandleSession)
-		router.RegisterHandler("forwarded-tcpip", remote.HandleForwardedTcpIp)
-		router.RegisterHandler("slider-connect", remote.HandleSliderConnect)
-		router.RegisterHandler("sftp", remote.HandleSftp)
-		router.RegisterHandler("init-size", remote.HandleInitSize)
-		router.RegisterHandler("shell", remote.HandleShell)
+		// Create and configure application router for slider-connect channels
+		appRouter := remote.NewRouter(s.Logger)
+		appRouter.RegisterHandler("slider-connect", remote.HandleSliderConnect)
+		session.SetRouter(appRouter)
 	}
-	session.Router = router
 
-	// Handle incoming requests
-	go func() {
-		for nc := range newChan {
-			go func(nnc ssh.NewChannel) {
-				if err := router.Route(nnc, session, s); err != nil {
-					s.DErrorWith("Channel routing error", slog.F("err", err))
-				}
-			}(nc)
-		}
-	}()
+	// Use centralized channel routing
+	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)
+	// Application-specific channels (slider-connect) are delegated to injected router
+	go session.HandleIncomingChannels(newChan)
 
-	go s.handleConnRequests(session, reqChan)
+	// Use centralized request handling
+	// Session handles common protocol requests (keep-alive, tcpip-forward)
+	// Application-specific requests (slider-*, client-info, etc.) are delegated to injected handler
+	go session.HandleIncomingRequests(reqChan)
 
 	// Block until connection closes
 	_ = sshServerConn.Wait()
 }
 
 // HandleForwardRequest processes generic forwarded requests
-func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error {
+func (s *server) HandleForwardRequest(req *ssh.Request, session *pkgsession.BidirectionalSession) error {
 	var payload types.ForwardRequestPayload
 	if err := json.Unmarshal(req.Payload, &payload); err != nil {
 		if req.WantReply {
@@ -123,7 +129,7 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 	nextID := int(target[0])
 
 	// Lookup Session
-	nextHopSession, err := s.getSession(nextID)
+	nextHop, err := s.GetSession(nextID)
 	if err != nil {
 		if req.WantReply {
 			_ = req.Reply(false, nil)
@@ -131,14 +137,14 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 		return fmt.Errorf("next hop session %d not found: %w", nextID, err)
 	}
 
-	session.Logger.DebugWith("Forwarding Request",
+	session.GetLogger().DebugWith("Forwarding Request",
 		slog.F("req_type", payload.ReqType),
 		slog.F("next_hop", nextID),
 		slog.F("remaining_path", target[1:]),
 	)
 
 	// Determine if Next Hop is Promiscuous (Intermediate) or Leaf
-	if nextHopSession.sshClient != nil && len(target) > 1 {
+	if nextHop.GetSSHClient() != nil && len(target) > 1 {
 		// PROMISOUS / INTERMEDIATE
 		// Forward as slider-forward-request
 		remainingPath := target[1:]
@@ -156,7 +162,7 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 			return fmt.Errorf("failed to marshal new payload: %w", mErr)
 		}
 
-		ok, reply, sErr := nextHopSession.sshClient.SendRequest("slider-forward-request", req.WantReply, newData)
+		ok, reply, sErr := nextHop.GetSSHClient().SendRequest("slider-forward-request", req.WantReply, newData)
 		if sErr != nil {
 			return sErr
 		}
@@ -166,18 +172,18 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 		return nil
 
 	}
-	// LEAF (or end of path)
+	// End of path
 	// Send request to target client via ServerConn
 
-	// If nextHopSession.sshConn is nil?
-	if nextHopSession.sshConn == nil {
+	// If nextHop.GetSSHServerConn() is nil?
+	if nextHop.GetSSHServerConn() == nil {
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
 		return fmt.Errorf("next hop session %d has no SSH connection", nextID)
 	}
 
-	ok, reply, sErr := nextHopSession.sshConn.SendRequest(payload.ReqType, req.WantReply, payload.Payload)
+	ok, reply, sErr := nextHop.GetSSHServerConn().SendRequest(payload.ReqType, req.WantReply, payload.Payload)
 	if sErr != nil {
 		return sErr
 	}
@@ -185,183 +191,4 @@ func (s *server) HandleForwardRequest(req *ssh.Request, session *Session) error 
 		_ = req.Reply(ok, reply)
 	}
 	return nil
-}
-
-func (s *server) handleConnRequests(session *Session, connReq <-chan *ssh.Request) {
-	for r := range connReq {
-		var payload []byte
-		switch r.Type {
-		case "window-size":
-			// Get terminal size from stdout (cross-platform compatible)
-			width, height, err := term.GetSize(int(os.Stdout.Fd()))
-			if err != nil {
-				session.Logger.Errorf("Failed to obtain terminal size")
-			}
-			tSize := types.TermDimensions{
-				Height: uint32(height),
-				Width:  uint32(width),
-			}
-			payload, _ = json.Marshal(tSize)
-			_ = session.replyConnRequest(r, true, payload)
-		case "keep-alive":
-			session.Logger.DebugWith("Received keep-alive request", slog.F("session_id", session.sessionID))
-			replyErr := session.replyConnRequest(r, true, []byte("pong"))
-			if replyErr != nil {
-				session.Logger.DErrorWith("Connection error while replying.",
-					slog.F("session_id", session.sessionID),
-					slog.F("request_type", r.Type),
-					slog.F("err", replyErr),
-				)
-				return
-			}
-		case "client-info":
-			ci := &conf.ClientInfo{}
-			if jErr := json.Unmarshal(r.Payload, ci); jErr != nil {
-				session.Logger.DErrorWith("Failed to parse Client Info",
-					slog.F("session_id", session.sessionID),
-					slog.F("err", jErr),
-				)
-			}
-			session.setInterpreter(ci.Interpreter)
-
-			// Reply with server interpreter for client identification
-			serverInterp := *s.serverInterpreter
-			interpreterPayload, jErr := json.Marshal(serverInterp)
-			if jErr != nil {
-				session.Logger.DErrorWith("Error marshaling Server Info",
-					slog.F("session_id", session.sessionID),
-					slog.F("err", jErr),
-				)
-				_ = session.replyConnRequest(r, true, nil)
-			} else {
-				_ = session.replyConnRequest(r, true, interpreterPayload)
-			}
-		case "slider-sessions":
-			if err := s.HandleSessionsRequest(r, session); err != nil {
-				session.Logger.DErrorWith("Failed to handle slider-sessions request",
-					slog.F("session_id", session.sessionID),
-					slog.F("err", err),
-				)
-			}
-		case "slider-forward-request":
-			if err := s.HandleForwardRequest(r, session); err != nil {
-				session.Logger.DErrorWith("Failed to handle forward request",
-					slog.F("session_id", session.sessionID),
-					slog.F("err", err),
-				)
-			}
-		case "slider-event":
-			if err := s.HandleEventRequest(r, session); err != nil {
-				session.Logger.DErrorWith("Failed to handle slider-event request",
-					slog.F("session_id", session.sessionID),
-					slog.F("err", err),
-				)
-			}
-		case "shutdown":
-			// Handle graceful shutdown request
-			session.Logger.InfoWith("Received shutdown request, closing connection",
-				slog.F("session_id", session.sessionID))
-
-			// Reply to acknowledge the shutdown
-			if r.WantReply {
-				_ = r.Reply(true, nil)
-			}
-
-			// Close the WebSocket connection to trigger cleanup
-			_ = session.wsConn.Close()
-
-			// Exit the request handling loop
-			return
-		default:
-			session.Logger.DebugWith("Rejected unknown request type",
-				slog.F("request_type", r.Type))
-			if r.WantReply {
-				_ = r.Reply(false, nil)
-			}
-		}
-
-	}
-}
-
-func (session *Session) handleForwardedTcpIpChannel(nc ssh.NewChannel) {
-	var err error
-	var requests <-chan *ssh.Request
-	session.Logger.DebugWith("Forwarded TCP IP Channel",
-		slog.F("session_id", session.sessionID),
-	)
-
-	forwardedChannel, requests, err := nc.Accept()
-	if err != nil {
-		session.Logger.DErrorWith("Failed to accept channel",
-			slog.F("session_id", session.sessionID),
-			slog.F("channel_type", nc.ChannelType()),
-			slog.F("err", err),
-		)
-		return
-	}
-	defer func() { _ = forwardedChannel.Close() }()
-	go ssh.DiscardRequests(requests)
-
-	payload := &types.CustomTcpIpChannelMsg{}
-
-	if uErr := json.Unmarshal(nc.ExtraData(), payload); uErr != nil {
-		session.Logger.DErrorWith("Failed to parse ssh channel extra data",
-			slog.F("session_id", session.sessionID),
-			slog.F("channel_type", nc.ChannelType()),
-			slog.F("extra_data", nc.ExtraData()),
-			slog.F("err", uErr),
-		)
-		return
-	}
-
-	// Set the forwarded channel in the port forwarding manager
-	if session.SSHInstance.GetPortForwardManager() != nil {
-		session.SSHInstance.GetPortForwardManager().SetForwardedChannel(forwardedChannel)
-	}
-
-	// Find PortFwd mapping
-	boundPort := int(payload.DstPort)
-	control, mErr := session.SSHInstance.GetRemotePortMapping(boundPort)
-	if mErr != nil {
-		// This should never happen
-		session.Logger.ErrorWith("Failed to find PortFwd mapping",
-			slog.F("session_id", session.sessionID),
-			slog.F("bound_port", boundPort),
-			slog.F("err", mErr),
-		)
-		return
-	}
-
-	tcpIpMsg := &types.TcpIpChannelMsg{
-		DstHost: payload.DstHost,
-		DstPort: payload.DstPort,
-		SrcHost: payload.SrcHost,
-		SrcPort: payload.SrcPort,
-	}
-	if payload.IsSshConn {
-		session.Logger.DebugWith("Received SSH TCPIP Forwarded channel",
-			slog.F("session_id", session.sessionID),
-			slog.F("bound_port", boundPort),
-			slog.F("dst_host", control.DstHost),
-			slog.F("dst_port", control.DstPort),
-		)
-		// Send the payload to the SSH instance
-		control.RcvChan <- tcpIpMsg
-		// Wait until done
-		<-control.DoneChan
-	} else {
-		session.Logger.DebugWith("Received MSG TCPIP Forwarded channel",
-			slog.F("session_id", session.sessionID),
-			slog.F("bound_port", boundPort),
-			slog.F("src_host", control.SrcHost),
-			slog.F("src_port", control.SrcPort),
-			slog.F("dst_host", control.DstHost),
-			slog.F("dst_port", control.DstPort),
-		)
-		// Send the payload to the msg request
-		control.RcvChan <- tcpIpMsg
-		// Wait until done
-		<-control.DoneChan
-	}
-
 }
