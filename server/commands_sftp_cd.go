@@ -123,7 +123,7 @@ func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
 	// Display path in native format for user
 	displayPath := newPath
 	if c.isRemote {
-		displayPath = spath.SFTPPathForDisplay(newPath, system)
+		displayPath = spath.NormalizeToSystemPath(newPath, system)
 	}
 	ui.PrintSuccess("Current %s path: %s", c.Name(), displayPath)
 

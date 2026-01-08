@@ -55,8 +55,8 @@ func (c *SftpSysInfoCommand) Run(ctx *ExecutionContext, args []string) error {
 	_, _ = fmt.Fprintf(tw, "\tUser\t%s\t\n", interpreter.User)
 	_, _ = fmt.Fprintf(tw, "\tBinary Path\t%s\t\n", interpreter.SliderDir)
 	_, _ = fmt.Fprintf(tw, "\tLaunch Path\t%s\t\n", interpreter.LaunchDir)
-	_, _ = fmt.Fprintf(tw, "\tHome Directory\t%s\t\n", spath.SFTPPathForDisplay(interpreter.HomeDir, interpreter.System))
-	_, _ = fmt.Fprintf(tw, "\tWorking Directory\t%s\t\n", spath.SFTPPathForDisplay(*sftpCtx.remoteCwd, interpreter.System))
+	_, _ = fmt.Fprintf(tw, "\tHome Directory\t%s\t\n", spath.NormalizeToSystemPath(interpreter.HomeDir, interpreter.System))
+	_, _ = fmt.Fprintf(tw, "\tWorking Directory\t%s\t\n", spath.NormalizeToSystemPath(*sftpCtx.remoteCwd, interpreter.System))
 	_, _ = fmt.Fprintln(tw)
 
 	return tw.Flush()

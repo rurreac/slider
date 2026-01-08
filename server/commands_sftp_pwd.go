@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"slider/pkg/spath"
 )
 
 const (
@@ -57,6 +58,13 @@ func (c *SftpPwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	cwd := sftpCtx.getCwd(c.isRemote)
 
-	ctx.UI().Printf("%s\n\n", cwd)
+	// Display path in native format for user
+	displayPath := cwd
+	if c.isRemote {
+		system := sftpCtx.getContextSystem(c.isRemote)
+		displayPath = spath.NormalizeToSystemPath(cwd, system)
+	}
+
+	ctx.UI().Printf("%s\n\n", displayPath)
 	return nil
 }
