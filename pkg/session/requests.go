@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"slider/pkg/conf"
@@ -405,6 +406,7 @@ func (s *BidirectionalSession) handleWindowSize(req *ssh.Request) {
 }
 
 // handleSliderSessions handles slider-sessions requests (promiscuous servers only)
+// Gathers all local and remote sessions and returns them to the requester
 func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 	if s.applicationServer == nil {
 		s.logger.ErrorWith("Application server not set",
@@ -415,10 +417,133 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.RouteSessionsRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle slider-sessions request",
+	// Panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.ErrorWith("Panic in handleSliderSessions", slog.F("panic", r))
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+		}
+	}()
+
+	var request GetRemoteSessionsRequest
+	if len(req.Payload) > 0 {
+		if err := json.Unmarshal(req.Payload, &request); err != nil {
+			s.logger.DErrorWith("Failed to unmarshal request",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			return
+		}
+	}
+
+	// Loop detection using server identity
+	currentIdentity := s.applicationServer.GetServerIdentity()
+	if slices.Contains(request.Visited, currentIdentity) {
+		s.logger.WarnWith("Loop/Self-connection detected in session listing",
+			slog.F("session_id", s.sessionID),
+			slog.F("identity", currentIdentity))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+	// Add self to visited
+	visitedChain := append(request.Visited, currentIdentity)
+
+	// Gather sessions
+	var sessions []RemoteSession
+	fingerprint := s.applicationServer.GetFingerprint()
+
+	// Local sessions from server registry
+	localSessions := s.applicationServer.GetAllSessions()
+	s.logger.DebugWith("Processing slider-sessions request",
+		slog.F("session_id", s.sessionID),
+		slog.F("total_sessions", len(localSessions)))
+
+	promiscuousClients := make([]*BidirectionalSession, 0)
+	for _, sess := range localSessions {
+		// Skip the session that is asking for the list (the caller)
+		if sess.GetID() == s.sessionID {
+			continue
+		}
+
+		s.logger.DebugWith("Checking session for list",
+			slog.F("id", sess.GetID()),
+			slog.F("is_client", sess.GetInterpreter() != nil),
+			slog.F("is_promiscuous", sess.GetSSHClient() != nil))
+
+		// Identify user/host/system/arch/homeDir/workingDir
+		var user, system, arch, homeDir, workingDir, sliderDir, launchDir string
+		host := sess.GetHostIP()
+		if sess.GetInterpreter() != nil {
+			user = sess.GetInterpreter().User
+			host = sess.GetInterpreter().Hostname
+			system = sess.GetInterpreter().System
+			arch = sess.GetInterpreter().Arch
+			homeDir = sess.GetInterpreter().HomeDir
+			sliderDir = sess.GetInterpreter().SliderDir
+			launchDir = sess.GetInterpreter().LaunchDir
+		}
+
+		// Get the current SFTP working directory if available
+		workingDir = sess.GetSftpWorkingDir()
+
+		sessions = append(sessions, RemoteSession{
+			ID:                sess.GetID(),
+			ServerFingerprint: fingerprint,
+			User:              user,
+			Host:              host,
+			System:            system,
+			Role:              sess.GetPeerRole().String(),
+			Arch:              arch,
+			HomeDir:           homeDir,
+			WorkingDir:        workingDir,
+			SliderDir:         sliderDir,
+			LaunchDir:         launchDir,
+			IsConnector:       sess.GetRole().IsConnector(),
+			IsPromiscuous:     sess.GetIsPromiscuous(),
+			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
+		})
+
+		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
+			promiscuousClients = append(promiscuousClients, sess)
+		}
+	}
+
+	// Remote sessions (recursive)
+	for _, clientSess := range promiscuousClients {
+		remoteSessions, err := clientSess.GetRemoteSessions(visitedChain)
+		if err != nil {
+			s.logger.WarnWith("Failed to fetch remote sessions",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
+			continue
+		}
+		// Prepend clientSess.GetID() to Path
+		for i := range remoteSessions {
+			remoteSessions[i].Path = append([]int64{clientSess.GetID()}, remoteSessions[i].Path...)
+		}
+		sessions = append(sessions, remoteSessions...)
+	}
+
+	// Marshal and send response
+	payload, err := json.Marshal(sessions)
+	if err != nil {
+		s.logger.DErrorWith("Failed to marshal sessions response",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	if req.WantReply {
+		_ = req.Reply(true, payload)
 	}
 }
 

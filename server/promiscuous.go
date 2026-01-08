@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"slider/pkg/conf"
@@ -119,117 +118,6 @@ func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
 
 	// Block until connection closes
 	_ = client.Wait()
-}
-
-// RouteSessionsRequest processes incoming slider-sessions requests
-func (s *server) RouteSessionsRequest(req *ssh.Request, currentSession *session.BidirectionalSession) (err error) {
-	// Panic Recovery
-	defer func() {
-		if r := recover(); r != nil {
-			s.ErrorWith("Panic in RouteSessionsRequest", slog.F("panic", r))
-			err = fmt.Errorf("internal server error")
-		}
-	}()
-
-	var request session.GetRemoteSessionsRequest
-	if len(req.Payload) > 0 {
-		if err := json.Unmarshal(req.Payload, &request); err != nil {
-			return fmt.Errorf("failed to unmarshal request: %w", err)
-		}
-	}
-
-	// Loop detection
-	currentIdentity := fmt.Sprintf("%s:%d", s.fingerprint, s.port)
-	for _, visited := range request.Visited {
-		if visited == currentIdentity {
-			s.WarnWith("Loop/Self-connection detected in session listing", slog.F("identity", currentIdentity))
-			return fmt.Errorf("loop detected: server %s is already in the chain", currentIdentity)
-		}
-	}
-	// Add self to visited
-	visitedChain := append(request.Visited, currentIdentity)
-
-	// Gather sessions
-	var sessions []session.RemoteSession
-
-	// Local sessions
-	localSessions := s.GetSessions()
-	s.DebugWith("Processing RouteSessionsRequest", slog.F("total_sessions", len(localSessions)))
-
-	promiscuousClients := make([]*session.BidirectionalSession, 0)
-	for _, sess := range localSessions {
-		// Skip the session that is asking for the list (the caller)
-		if sess.GetID() == currentSession.GetID() {
-			continue
-		}
-
-		s.DebugWith("Checking session for list", slog.F("id", sess.GetID()), slog.F("is_client", sess.GetInterpreter() != nil), slog.F("is_promiscuous", sess.GetSSHClient() != nil))
-		// Identify user/host/system/arch/homeDir/workingDir
-		user := "slider"
-		host := sess.GetHostIP()
-		system := "unknown"
-		arch := "unknown"
-		homeDir := "/"
-		workingDir := ""
-		sliderDir := ""
-		launchDir := ""
-		if sess.GetInterpreter() != nil {
-			user = sess.GetInterpreter().User
-			host = sess.GetInterpreter().Hostname
-			system = sess.GetInterpreter().System
-			arch = sess.GetInterpreter().Arch
-			homeDir = sess.GetInterpreter().HomeDir
-			sliderDir = sess.GetInterpreter().SliderDir
-			launchDir = sess.GetInterpreter().LaunchDir
-		}
-
-		// Get the current SFTP working directory if available
-		// This is set when a user is actively using an SFTP console and changes directories
-		workingDir = sess.GetSftpWorkingDir()
-
-		sessions = append(sessions, session.RemoteSession{
-			ID:                sess.GetID(),
-			ServerFingerprint: s.fingerprint,
-			User:              user,
-			Host:              host,
-			System:            system,
-			Role:              sess.GetPeerRole().String(),
-			Arch:              arch,
-			HomeDir:           homeDir,
-			WorkingDir:        workingDir,
-			SliderDir:         sliderDir,
-			LaunchDir:         launchDir,
-			IsConnector:       sess.GetRole().IsConnector(),
-			IsPromiscuous:     sess.GetIsPromiscuous(),
-			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
-		})
-
-		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
-			promiscuousClients = append(promiscuousClients, sess)
-		}
-	}
-
-	// Remote sessions (recursive)
-	for _, clientSess := range promiscuousClients {
-		remoteSessions, err := clientSess.GetRemoteSessions(visitedChain)
-		if err != nil {
-			s.WarnWith("Failed to fetch remote sessions", slog.F("err", err))
-			continue
-		}
-		// Prepend clientSess.GetID() to Path
-		for i := range remoteSessions {
-			remoteSessions[i].Path = append([]int64{clientSess.GetID()}, remoteSessions[i].Path...)
-		}
-		sessions = append(sessions, remoteSessions...)
-	}
-
-	// Marshal response
-	payload, err := json.Marshal(sessions)
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
-	}
-
-	return req.Reply(true, payload)
 }
 
 // EventRequest defines the payload for slider-event request

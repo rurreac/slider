@@ -113,8 +113,9 @@ func (s *server) GetSession(id int) (*session.BidirectionalSession, error) {
 	return sess, nil
 }
 
-// GetSessions returns all local sessions sorted by ID
-func (s *server) GetSessions() []*session.BidirectionalSession {
+// GetAllSessions returns all local sessions sorted by ID
+// Implements session.SessionRegistry interface
+func (s *server) GetAllSessions() []*session.BidirectionalSession {
 	s.sessionTrackMutex.Lock()
 	sessions := make([]*session.BidirectionalSession, 0, len(s.sessionTrack.Sessions))
 	for _, sess := range s.sessionTrack.Sessions {
@@ -131,15 +132,27 @@ func (s *server) GetSessions() []*session.BidirectionalSession {
 }
 
 // GetServerInterpreter returns the server's interpreter information
-// Implements session.ApplicationServer interface
+// Implements session.ServerInfo interface
 func (s *server) GetServerInterpreter() *interpreter.Interpreter {
 	return s.serverInterpreter
 }
 
 // IsPromiscuous returns whether the server is in promiscuous mode
-// Implements session.ApplicationServer interface
+// Implements session.ServerInfo interface
 func (s *server) IsPromiscuous() bool {
 	return s.promiscuous
+}
+
+// GetServerIdentity returns a unique identifier for loop detection (fingerprint:port)
+// Implements session.ServerInfo interface
+func (s *server) GetServerIdentity() string {
+	return fmt.Sprintf("%s:%d", s.fingerprint, s.port)
+}
+
+// GetFingerprint returns the server's fingerprint for session stamping
+// Implements session.ServerInfo interface
+func (s *server) GetFingerprint() string {
+	return s.fingerprint
 }
 
 // dropWebSocketSession removes a session from tracking

@@ -104,6 +104,8 @@ type certInfo struct {
 type SessionRegistry interface {
 	// GetSession retrieves a session by ID from the server's registry
 	GetSession(id int) (*BidirectionalSession, error)
+	// GetAllSessions returns all sessions from the server's registry
+	GetAllSessions() []*BidirectionalSession
 }
 
 // ServerInfo provides server-level metadata
@@ -112,6 +114,10 @@ type ServerInfo interface {
 	GetServerInterpreter() *interpreter.Interpreter
 	// IsPromiscuous returns whether the local server is in promiscuous mode
 	IsPromiscuous() bool
+	// GetServerIdentity returns a unique identifier for loop detection (fingerprint:port)
+	GetServerIdentity() string
+	// GetFingerprint returns the server's fingerprint for session stamping
+	GetFingerprint() string
 }
 
 // ApplicationServer combines all server capabilities needed by sessions
@@ -119,8 +125,6 @@ type ServerInfo interface {
 type ApplicationServer interface {
 	SessionRegistry
 	ServerInfo
-	// RouteSessionsRequest routes slider-sessions requests through the mesh (multi-hop listing)
-	RouteSessionsRequest(req *ssh.Request, sess *BidirectionalSession) error
 }
 
 // Session interface for use by remote handlers

@@ -54,7 +54,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	maxID := int64(0)
 
 	// 1. Collect Local Sessions
-	localSessions := s.GetSessions()
+	localSessions := s.GetAllSessions()
 
 	for _, sess := range localSessions {
 		uSess := UnifiedSession{
