@@ -121,12 +121,12 @@ func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
 	_ = client.Wait()
 }
 
-// HandleSessionsRequest processes incoming slider-sessions requests
-func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session.BidirectionalSession) (err error) {
+// RouteSessionsRequest processes incoming slider-sessions requests
+func (s *server) RouteSessionsRequest(req *ssh.Request, currentSession *session.BidirectionalSession) (err error) {
 	// Panic Recovery
 	defer func() {
 		if r := recover(); r != nil {
-			s.ErrorWith("Panic in HandleSessionsRequest", slog.F("panic", r))
+			s.ErrorWith("Panic in RouteSessionsRequest", slog.F("panic", r))
 			err = fmt.Errorf("internal server error")
 		}
 	}()
@@ -152,9 +152,9 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session
 	// Gather sessions
 	var sessions []session.RemoteSession
 
-	// 1. Local sessions
+	// Local sessions
 	localSessions := s.GetSessions()
-	s.DebugWith("Processing HandleSessionsRequest", slog.F("total_sessions", len(localSessions)))
+	s.DebugWith("Processing RouteSessionsRequest", slog.F("total_sessions", len(localSessions)))
 
 	promiscuousClients := make([]*session.BidirectionalSession, 0)
 	for _, sess := range localSessions {
@@ -209,7 +209,7 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session
 		}
 	}
 
-	// 2. Remote sessions (recursive)
+	// Remote sessions (recursive)
 	for _, clientSess := range promiscuousClients {
 		remoteSessions, err := clientSess.GetRemoteSessions(visitedChain)
 		if err != nil {
@@ -267,20 +267,4 @@ func (s *server) NotifyUpstreamDisconnect(id int64) {
 			_, _, _ = client.SendRequest("slider-event", false, payload)
 		}(up)
 	}
-}
-
-// HandleEventRequest processes incoming slider-event requests
-func (s *server) HandleEventRequest(req *ssh.Request, fromSession *session.BidirectionalSession) error {
-	var event EventRequest
-	if err := json.Unmarshal(req.Payload, &event); err != nil {
-		return fmt.Errorf("failed to unmarshal event: %w", err)
-	}
-
-	s.InfoWith("Received Upstream Event",
-		slog.F("type", event.Type),
-		slog.F("remote_session_id", event.SessionID),
-		slog.F("via_session", fromSession.GetID()),
-	)
-
-	return nil
 }

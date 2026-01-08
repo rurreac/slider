@@ -415,7 +415,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.HandleSessionsRequest(req, s); err != nil {
+	if err := s.applicationServer.RouteSessionsRequest(req, s); err != nil {
 		s.logger.DErrorWith("Failed to handle slider-sessions request",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
@@ -423,6 +423,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 }
 
 // handleSliderForwardRequest handles slider-forward-request requests (promiscuous servers only)
+// Routes forwarded requests through the mesh to their target session
 func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 	if s.applicationServer == nil {
 		s.logger.ErrorWith("Application server not set",
@@ -433,28 +434,136 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.RouteForwardRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle forward request",
+	var payload types.ForwardRequestPayload
+	if err := json.Unmarshal(req.Payload, &payload); err != nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Failed to unmarshal forward payload",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
+		return
 	}
+
+	target := payload.Target
+
+	// Parse path to find next hop
+	// Path format: [id1, id2, ...]
+	if len(target) == 0 {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Empty target path in forward request",
+			slog.F("session_id", s.sessionID))
+		return
+	}
+
+	nextID := int(target[0])
+
+	// Lookup Session via the application server's registry
+	nextHop, err := s.applicationServer.GetSession(nextID)
+	if err != nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Next hop session not found",
+			slog.F("session_id", s.sessionID),
+			slog.F("next_id", nextID),
+			slog.F("err", err))
+		return
+	}
+
+	s.logger.DebugWith("Forwarding Request",
+		slog.F("req_type", payload.ReqType),
+		slog.F("next_hop", nextID),
+		slog.F("remaining_path", target[1:]),
+	)
+
+	// Determine if Next Hop is Promiscuous (Intermediate) or Leaf
+	if nextHop.GetSSHClient() != nil && len(target) > 1 {
+		// PROMISCUOUS / INTERMEDIATE
+		// Forward as slider-forward-request
+		remainingPath := target[1:]
+
+		newPayload := types.ForwardRequestPayload{
+			Target:  remainingPath,
+			ReqType: payload.ReqType,
+			Payload: payload.Payload,
+		}
+		newData, mErr := json.Marshal(newPayload)
+		if mErr != nil {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			s.logger.DErrorWith("Failed to marshal new payload",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", mErr))
+			return
+		}
+
+		ok, reply, sErr := nextHop.GetSSHClient().SendRequest("slider-forward-request", req.WantReply, newData)
+		if sErr != nil {
+			s.logger.DErrorWith("Failed to send forward request",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", sErr))
+			return
+		}
+		if req.WantReply {
+			_ = req.Reply(ok, reply)
+		}
+		return
+	}
+
+	// End of path - Send request to target client via ServerConn
+	if nextHop.GetSSHServerConn() == nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Next hop session has no SSH connection",
+			slog.F("session_id", s.sessionID),
+			slog.F("next_id", nextID))
+		return
+	}
+
+	ok, reply, sErr := nextHop.GetSSHServerConn().SendRequest(payload.ReqType, req.WantReply, payload.Payload)
+	if sErr != nil {
+		s.logger.DErrorWith("Failed to send request to target",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", sErr))
+		return
+	}
+	if req.WantReply {
+		_ = req.Reply(ok, reply)
+	}
+}
+
+// eventRequest defines the payload for slider-event request
+type eventRequest struct {
+	Type      string `json:"type"`       // e.g., "disconnect"
+	SessionID int64  `json:"session_id"` // Local ID that caused the event
+	Timestamp int64  `json:"timestamp"`
 }
 
 // handleSliderEvent handles slider-event requests (promiscuous servers only)
 func (s *BidirectionalSession) handleSliderEvent(req *ssh.Request) {
-	if s.applicationServer == nil {
-		s.logger.ErrorWith("Application server not set",
-			slog.F("session_id", s.sessionID))
+	var event eventRequest
+	if err := json.Unmarshal(req.Payload, &event); err != nil {
+		s.logger.DErrorWith("Failed to unmarshal event",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
 		return
 	}
 
-	if err := s.applicationServer.HandleEventRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle slider-event request",
-			slog.F("session_id", s.sessionID),
-			slog.F("err", err))
+	s.logger.InfoWith("Received Upstream Event",
+		slog.F("type", event.Type),
+		slog.F("remote_session_id", event.SessionID),
+	)
+
+	if req.WantReply {
+		_ = req.Reply(true, nil)
 	}
 }
 

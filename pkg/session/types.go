@@ -100,22 +100,27 @@ type certInfo struct {
 // Interfaces for Application Extensions
 // ========================================
 
-// ApplicationServer provides server-level operations needed by application-specific
-// channel handlers (e.g., slider-connect). This allows session to delegate to
-// server logic without creating a circular dependency.
-type ApplicationServer interface {
+// SessionRegistry provides access to the server's session registry
+type SessionRegistry interface {
 	// GetSession retrieves a session by ID from the server's registry
 	GetSession(id int) (*BidirectionalSession, error)
+}
+
+// ServerInfo provides server-level metadata
+type ServerInfo interface {
 	// GetServerInterpreter returns the server's interpreter information
 	GetServerInterpreter() *interpreter.Interpreter
-	// HandleSessionsRequest handles slider-sessions requests (multi-hop listing)
-	HandleSessionsRequest(req *ssh.Request, sess *BidirectionalSession) error
-	// RouteForwardRequest routes slider-forward-request requests through the mesh (multi-hop forwarding)
-	RouteForwardRequest(req *ssh.Request, sess *BidirectionalSession) error
-	// HandleEventRequest handles slider-event requests (event propagation)
-	HandleEventRequest(req *ssh.Request, sess *BidirectionalSession) error
 	// IsPromiscuous returns whether the local server is in promiscuous mode
 	IsPromiscuous() bool
+}
+
+// ApplicationServer combines all server capabilities needed by sessions
+// This allows session to delegate to server logic without creating a circular dependency.
+type ApplicationServer interface {
+	SessionRegistry
+	ServerInfo
+	// RouteSessionsRequest routes slider-sessions requests through the mesh (multi-hop listing)
+	RouteSessionsRequest(req *ssh.Request, sess *BidirectionalSession) error
 }
 
 // Session interface for use by remote handlers
