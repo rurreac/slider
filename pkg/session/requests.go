@@ -433,7 +433,7 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.HandleForwardRequest(req, s); err != nil {
+	if err := s.applicationServer.RouteForwardRequest(req, s); err != nil {
 		s.logger.DErrorWith("Failed to handle forward request",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))

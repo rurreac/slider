@@ -105,8 +105,8 @@ func (s *server) NewSSHServer(session *pkgsession.BidirectionalSession) {
 	_ = sshServerConn.Wait()
 }
 
-// HandleForwardRequest processes generic forwarded requests
-func (s *server) HandleForwardRequest(req *ssh.Request, session *pkgsession.BidirectionalSession) error {
+// RouteForwardRequest processes generic forwarded requests by routing them through the mesh
+func (s *server) RouteForwardRequest(req *ssh.Request, session *pkgsession.BidirectionalSession) error {
 	var payload types.ForwardRequestPayload
 	if err := json.Unmarshal(req.Payload, &payload); err != nil {
 		if req.WantReply {

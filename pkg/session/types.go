@@ -110,8 +110,8 @@ type ApplicationServer interface {
 	GetServerInterpreter() *interpreter.Interpreter
 	// HandleSessionsRequest handles slider-sessions requests (multi-hop listing)
 	HandleSessionsRequest(req *ssh.Request, sess *BidirectionalSession) error
-	// HandleForwardRequest handles slider-forward-request requests (multi-hop forwarding)
-	HandleForwardRequest(req *ssh.Request, sess *BidirectionalSession) error
+	// RouteForwardRequest routes slider-forward-request requests through the mesh (multi-hop forwarding)
+	RouteForwardRequest(req *ssh.Request, sess *BidirectionalSession) error
 	// HandleEventRequest handles slider-event requests (event propagation)
 	HandleEventRequest(req *ssh.Request, sess *BidirectionalSession) error
 	// IsPromiscuous returns whether the local server is in promiscuous mode
