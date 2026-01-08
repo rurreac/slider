@@ -38,41 +38,42 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 
 	switch channelType {
 	case "shell":
-		// All roles can handle shell (needed for multi-hop via slider-connect)
-		// Security: only accepted when explicitly opened by connected peer
-		err = s.HandleShell(nc)
+		if s.role.IsAgent() {
+			err = s.HandleShell(nc)
+		} else {
+			s.rejectChannel(nc, channelType, "only agents accept shell")
+			return nil
+		}
 
 	case "exec":
-		// All roles can handle exec (needed for multi-hop via slider-connect)
-		// Security: only accepted when explicitly opened by connected peer
-		err = s.HandleExec(nc)
+		if s.role.IsAgent() {
+			err = s.HandleExec(nc)
+		} else {
+			s.rejectChannel(nc, channelType, "only agents accept exec")
+			return nil
+		}
 
 	case "sftp":
-		// All roles can handle sftp (needed for multi-hop via slider-connect)
-		// Security: only accepted when explicitly opened by connected peer
-		err = s.HandleSFTP(nc)
+		if s.role.IsAgent() {
+			err = s.HandleSFTP(nc)
+		} else {
+			s.rejectChannel(nc, channelType, "only agents accept sftp")
+			return nil
+		}
 
 	case "direct-tcpip":
-		// Client and Promiscuous roles handle direct-tcpip (local port forwarding) from server
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() {
 			err = s.HandleDirectTcpIp(nc)
 		} else {
-			s.logger.WarnWith("direct-tcpip not supported in this role",
-				slog.F("session_id", s.sessionID),
-				slog.F("role", s.role.String()))
-			_ = nc.Reject(ssh.Prohibited, fmt.Sprintf("direct-tcpip not supported in %s mode", s.role.String()))
+			s.rejectChannel(nc, channelType, "direct-tcpip only available for agents")
 			return nil
 		}
 
 	case "socks5":
-		// Client and Promiscuous roles handle socks5 requests from server
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() {
 			err = s.HandleSocks(nc)
 		} else {
-			s.logger.WarnWith("socks5 not supported in this role",
-				slog.F("session_id", s.sessionID),
-				slog.F("role", s.role.String()))
-			_ = nc.Reject(ssh.Prohibited, fmt.Sprintf("socks5 not supported in %s mode", s.role.String()))
+			s.rejectChannel(nc, channelType, "socks5 only available for agents")
 			return nil
 		}
 
@@ -81,24 +82,23 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 		err = s.HandleInitSize(nc)
 
 	case "slider-connect":
-		// Application-specific extension (only valid when router and server are injected)
 		if s.router != nil && s.applicationServer != nil {
 			err = s.router.Route(nc, s, s.applicationServer)
 		} else {
-			s.logger.WarnWith("slider-connect not supported (no application router/server injected)",
-				slog.F("session_id", s.sessionID),
-				slog.F("role", s.role.String()))
-			_ = nc.Reject(ssh.Prohibited, "slider-connect not supported in this mode")
+			s.rejectChannel(nc, channelType, "slider-connect only supported with application router/server")
 			return nil
 		}
 
 	case "session":
-		// Standard SSH session - route to shell
-		// All roles can handle (needed for multi-hop via slider-connect)
-		err = s.HandleShell(nc)
+		if s.role.IsAgent() {
+			err = s.HandleShell(nc)
+		} else {
+			s.rejectChannel(nc, channelType, "only agents accept session channels")
+			return nil
+		}
 
 	case "forwarded-tcpip":
-		// Reverse port forwarding
+		// All roles handle forwarded-tcpip responses
 		err = s.HandleForwardedTcpIp(nc)
 
 	default:
@@ -263,4 +263,14 @@ func (s *BidirectionalSession) HandleForwardedTcpIp(nc ssh.NewChannel) error {
 	// forwarded-tcpip appropriately based on the session's role
 	s.HandleForwardedTcpIpChannel(nc)
 	return nil
+}
+
+// rejectChannel rejects a channel request and logs it
+func (s *BidirectionalSession) rejectChannel(nc ssh.NewChannel, channelType, reason string) {
+	s.logger.WarnWith("Rejected channel request",
+		slog.F("session_id", s.sessionID),
+		slog.F("type", channelType),
+		slog.F("role", s.role.String()),
+		slog.F("reason", reason))
+	_ = nc.Reject(ssh.Prohibited, reason)
 }

@@ -18,7 +18,7 @@ var (
 	activeCount    int64 // Active session count
 )
 
-// NewClientToServerSession creates a new session for a client connecting to a server (ClientRole)
+// NewClientToServerSession creates a new session for a client connecting to a server (AgentRole)
 func NewClientToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -40,7 +40,7 @@ func NewClientToServerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ClientRole,
+		role:             AgentConnector,
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
@@ -103,7 +103,7 @@ type ServerSessionOptions struct {
 	AuthOn               bool
 }
 
-// NewServerFromClientSession creates a new session for a server accepting a connection from a client (ServerRole)
+// NewServerFromClientSession creates a new session for a server accepting a connection from a client (OperatorRole/GatewayRole)
 func NewServerFromClientSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -127,7 +127,7 @@ func NewServerFromClientSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ServerRole,
+		role:             OperatorListener,
 		wsConn:           wsConn,
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
@@ -181,7 +181,7 @@ func NewServerFromClientSession(
 	return sess
 }
 
-// NewServerToServerSession creates a new session for a server connecting to another server (PromiscuousRole)
+// NewServerToServerSession creates a new session for a server connecting to another server (OperatorRole)
 func NewServerToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -204,7 +204,7 @@ func NewServerToServerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             PromiscuousRole,
+		role:             OperatorConnector,
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
@@ -255,7 +255,7 @@ func NewServerToServerSession(
 	return sess
 }
 
-// NewServerToListenerSession creates a new session for a server connecting to a listening client (ListenerRole)
+// NewServerToListenerSession creates a new session for a server connecting to a listening client (OperatorRole)
 func NewServerToListenerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -270,7 +270,7 @@ func NewServerToListenerSession(
 
 	logger.InfoWith("Creating server-to-listener session",
 		slog.F("session_id", id),
-		slog.F("role", "LISTENER"),
+		slog.F("role", "OPERATOR"),
 		slog.F("host_ip", hostIP))
 
 	// Create local interpreter for local execution
@@ -279,7 +279,8 @@ func NewServerToListenerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ListenerRole,
+		role:             OperatorConnector,
+		isListener:       true,
 		wsConn:           wsConn,
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
@@ -379,7 +380,7 @@ func (s *BidirectionalSession) Close() error {
 	}
 
 	// Stop endpoint instances (if server/promiscuous/listener)
-	if s.role == ServerRole || s.role == PromiscuousRole || s.role == ListenerRole {
+	if s.role.IsOperator() || s.role.IsGateway() || s.role.IsAgent() {
 		if s.socksInstance != nil && s.socksInstance.IsEnabled() {
 			_ = s.socksInstance.Stop()
 		}
@@ -391,8 +392,8 @@ func (s *BidirectionalSession) Close() error {
 		}
 	}
 
-	// Cancel port forwards (ClientRole)
-	if s.role == ClientRole {
+	// Cancel port forwards (AgentRole)
+	if s.role.IsAgent() {
 		s.fwdMutex.Lock()
 		for _, pfc := range s.revPortFwdMap {
 			if pfc.StopChan != nil {

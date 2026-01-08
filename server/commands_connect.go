@@ -87,7 +87,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Then check ticker and timeout
 		select {
 		case <-ticker.C:
-			fmt.Printf(".")
+			ui.FlatPrintf(".")
 		case <-timeout:
 			return fmt.Errorf("connection timeout")
 		}

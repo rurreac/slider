@@ -136,6 +136,12 @@ func (s *server) GetServerInterpreter() *interpreter.Interpreter {
 	return s.serverInterpreter
 }
 
+// IsPromiscuous returns whether the server is in promiscuous mode
+// Implements session.ApplicationServer interface
+func (s *server) IsPromiscuous() bool {
+	return s.promiscuous
+}
+
 // dropWebSocketSession removes a session from tracking
 func (s *server) dropWebSocketSession(sess *session.BidirectionalSession) {
 	if sess == nil {

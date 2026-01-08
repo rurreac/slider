@@ -66,13 +66,6 @@ func ResolveURL(rawURL string) (*url.URL, error) {
 	return u, nil
 }
 
-// WebSocket operation constants
-const (
-	OperationClient      = "client"
-	OperationServer      = "server"
-	OperationPromiscuous = "promiscuous"
-)
-
 // IsSliderWebSocket checks if the request is a slider WebSocket upgrade
 // accepting any of the provided operations
 func IsSliderWebSocket(r *http.Request, customProto string, operations []string) bool {

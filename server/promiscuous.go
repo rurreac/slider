@@ -15,12 +15,12 @@ import (
 )
 
 // NewSSHClient establishes an SSH connection as a client (Promiscuous Mode)
-func (s *server) NewSSHClient(session *session.BidirectionalSession) {
-	netConn := sconn.WsConnToNetConn(session.GetWebSocketConn())
+func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
+	netConn := sconn.WsConnToNetConn(sess.GetWebSocketConn())
 
 	s.DebugWith(
 		"Established WebSocket connection with server (Promiscuous)",
-		slog.F("session_id", session.GetID()),
+		slog.F("session_id", sess.GetID()),
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
@@ -43,11 +43,11 @@ func (s *server) NewSSHClient(session *session.BidirectionalSession) {
 		ClientVersion:   "SSH-slider-server-client",
 	}
 
-	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, session.GetWebSocketConn().RemoteAddr().String(), sshConfig)
+	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, sess.GetWebSocketConn().RemoteAddr().String(), sshConfig)
 	if err != nil {
 		s.DErrorWith("Failed to establish SSH client connection", slog.F("err", err))
-		if session.GetNotifier() != nil {
-			session.GetNotifier() <- err
+		if sess.GetNotifier() != nil {
+			sess.GetNotifier() <- err
 		}
 		return
 	}
@@ -55,26 +55,30 @@ func (s *server) NewSSHClient(session *session.BidirectionalSession) {
 	// Identify ourselves to the upstream server
 	interp, iErr := interpreter.NewInterpreter()
 	if iErr == nil {
-		clientInfo := &conf.ClientInfo{Interpreter: interp}
+		clientInfo := &conf.ClientInfo{
+			Interpreter: interp,
+		}
 		payload, _ := json.Marshal(clientInfo)
-		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", session.GetID()))
+		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", sess.GetID()))
 		ok, reply, sErr := cConn.SendRequest("client-info", true, payload)
 		if sErr == nil && ok && len(reply) > 0 {
 			// The server identifies itself in the reply
-			var remoteInterp interpreter.Interpreter
-			if mErr := json.Unmarshal(reply, &remoteInterp); mErr == nil {
-				session.SetInterpreter(&remoteInterp)
+			var ciAnswer conf.ClientInfo
+			if mErr := json.Unmarshal(reply, &ciAnswer); mErr == nil {
+				if ciAnswer.Interpreter != nil {
+					sess.SetInterpreter(ciAnswer.Interpreter)
+				}
 			}
 		}
 	}
 
 	// Start KeepAlive sender
-	go session.KeepAlive(s.keepalive)
+	go sess.KeepAlive(s.keepalive)
 
 	// Inject application server for local interpreter and state access
-	session.SetApplicationServer(s)
+	sess.SetApplicationServer(s)
 
-	// Note: For upstream connections (PromiscuousRole connecting TO another server),
+	// Note: For upstream connections (OperatorRole connecting TO another server),
 	// we do NOT inject application-specific router by default. This is an outgoing client connection,
 	// and slider-* requests/channels are typically handled on the server side of the connection.
 	// The centralized handlers in the session package will now have access to the local server
@@ -83,35 +87,34 @@ func (s *server) NewSSHClient(session *session.BidirectionalSession) {
 	// Use centralized request handling
 	// Session handles common protocol requests (keep-alive, tcpip-forward)
 	// Application-specific requests (client-info, shutdown) are delegated to injected handler
-	go session.HandleIncomingRequests(reqChan)
+	go sess.HandleIncomingRequests(reqChan)
 
 	// Use centralized channel routing
 	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)
 	// Application-specific channels (slider-connect) are delegated to injected router
-	go session.HandleIncomingChannels(newChan)
+	go sess.HandleIncomingChannels(newChan)
 
 	// Pass nil for channels since we consume reqChan directly
 	client := ssh.NewClient(cConn, nil, nil)
 
-	s.DebugWith("SSH Client Connection Established", slog.F("session_id", session.GetID()))
+	s.DebugWith("SSH Client Connection Established", slog.F("session_id", sess.GetID()))
 
 	// Store the connection
-	session.SetSSHClient(client)
-
+	sess.SetSSHClient(client)
 	// Update endpoint instances with the SSH client connection
 	// (they were initialized with nil when the session was first created)
-	if session.GetShellInstance() != nil {
-		session.GetShellInstance().SetSSHConn(client)
+	if sess.GetShellInstance() != nil {
+		sess.GetShellInstance().SetSSHConn(client)
 	}
-	if session.GetSocksInstance() != nil {
-		session.GetSocksInstance().SetSSHConn(client)
+	if sess.GetSocksInstance() != nil {
+		sess.GetSocksInstance().SetSSHConn(client)
 	}
-	if session.GetSSHInstance() != nil {
-		session.GetSSHInstance().SetSSHConn(client)
+	if sess.GetSSHInstance() != nil {
+		sess.GetSSHInstance().SetSSHConn(client)
 	}
 
-	if session.GetNotifier() != nil {
-		session.GetNotifier() <- nil
+	if sess.GetNotifier() != nil {
+		sess.GetNotifier() <- nil
 	}
 
 	// Block until connection closes
@@ -168,21 +171,21 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session
 		arch := "unknown"
 		homeDir := "/"
 		workingDir := ""
+		sliderDir := ""
+		launchDir := ""
 		if sess.GetInterpreter() != nil {
 			user = sess.GetInterpreter().User
 			host = sess.GetInterpreter().Hostname
 			system = sess.GetInterpreter().System
 			arch = sess.GetInterpreter().Arch
 			homeDir = sess.GetInterpreter().HomeDir
+			sliderDir = sess.GetInterpreter().SliderDir
+			launchDir = sess.GetInterpreter().LaunchDir
 		}
 
 		// Get the current SFTP working directory if available
 		// This is set when a user is actively using an SFTP console and changes directories
 		workingDir = sess.GetSftpWorkingDir()
-		// If no working directory is set, use the home directory as default
-		if workingDir == "" {
-			workingDir = homeDir
-		}
 
 		sessions = append(sessions, session.RemoteSession{
 			ID:                sess.GetID(),
@@ -190,14 +193,18 @@ func (s *server) HandleSessionsRequest(req *ssh.Request, currentSession *session
 			User:              user,
 			Host:              host,
 			System:            system,
+			Role:              sess.GetPeerRole().String(),
 			Arch:              arch,
 			HomeDir:           homeDir,
 			WorkingDir:        workingDir,
-			IsListener:        sess.GetRole() == session.ListenerRole,
+			SliderDir:         sliderDir,
+			LaunchDir:         launchDir,
+			IsConnector:       sess.GetRole().IsConnector(),
+			IsPromiscuous:     sess.GetIsPromiscuous(),
 			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
 		})
 
-		if sess.GetSSHClient() != nil {
+		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
 			promiscuousClients = append(promiscuousClients, sess)
 		}
 	}

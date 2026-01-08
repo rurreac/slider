@@ -97,14 +97,14 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleKeepAlive(req)
 
 	case "tcpip-forward":
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() || s.role.IsGateway() {
 			go s.handleTcpIpForward(req)
 		} else {
 			s.rejectRequest(req, "tcpip-forward not supported in this role")
 		}
 
 	case "cancel-tcpip-forward":
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() || s.role.IsGateway() {
 			s.handleCancelTcpIpForward(req)
 		} else {
 			s.rejectRequest(req, "cancel-tcpip-forward not supported in this role")
@@ -117,32 +117,28 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleClientInfo(req)
 
 	case "window-size":
-		// Server and Listener roles handle window-size requests
-		if s.role == ServerRole || s.role == ListenerRole {
-			s.handleWindowSize(req)
-		} else {
-			s.rejectRequest(req, "window-size not supported in this role")
-		}
+		// All connections where someone might want a terminal size
+		s.handleWindowSize(req)
 
 	case "slider-sessions":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderSessions(req)
 		} else {
 			s.rejectRequest(req, "slider-sessions not supported in this configuration")
 		}
 
 	case "slider-forward-request":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderForwardRequest(req)
 		} else {
 			s.rejectRequest(req, "slider-forward-request not supported in this configuration")
 		}
 
 	case "slider-event":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderEvent(req)
 		} else {
 			s.rejectRequest(req, "slider-event not supported in this configuration")
@@ -198,7 +194,7 @@ func (s *BidirectionalSession) handleKeepAlive(req *ssh.Request) {
 }
 
 // handleTcpIpForward handles tcpip-forward requests (reverse port forwarding)
-// This is used by ClientRole and PromiscuousRole to set up reverse port forwarding
+// This is used by AgentRole and GatewayRole to set up reverse port forwarding (target offering fwd)
 func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 	tcpIpForward := &types.CustomTcpIpFwdRequest{}
 	if uErr := json.Unmarshal(req.Payload, tcpIpForward); uErr != nil {
@@ -331,7 +327,7 @@ func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 }
 
 // handleCancelTcpIpForward handles cancel-tcpip-forward requests
-// This is used by ClientRole and PromiscuousRole to cancel reverse port forwarding
+// This is used by AgentRole and GatewayRole to cancel reverse port forwarding
 func (s *BidirectionalSession) handleCancelTcpIpForward(req *ssh.Request) {
 	ok := false
 	tcpIpForward := &types.TcpIpFwdRequest{}
@@ -368,25 +364,26 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 		return
 	}
 
-	// Store interpreter info
+	// Store session info from peer
 	s.SetInterpreter(ci.Interpreter)
 
-	// Reply with server interpreter for client identification (server roles only)
-	if s.role == ServerRole || s.role == ListenerRole {
-		if s.applicationServer != nil {
-			// Get server interpreter from application server
-			if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
-				interpreterPayload, jErr := json.Marshal(serverInfo)
-				if jErr != nil {
-					s.logger.DErrorWith("Error marshaling Server Info",
-						slog.F("session_id", s.sessionID),
-						slog.F("err", jErr))
-					_ = s.ReplyConnRequest(req, true, nil)
-				} else {
-					_ = s.ReplyConnRequest(req, true, interpreterPayload)
-				}
-				return
+	// Reply with server info for identification
+	if s.applicationServer != nil {
+		// Get server info from application server
+		if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
+			replyInfo := &conf.ClientInfo{
+				Interpreter: serverInfo,
 			}
+			interpreterPayload, jErr := json.Marshal(replyInfo)
+			if jErr != nil {
+				s.logger.DErrorWith("Error marshaling Server Info",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", jErr))
+				_ = s.ReplyConnRequest(req, true, nil)
+			} else {
+				_ = s.ReplyConnRequest(req, true, interpreterPayload)
+			}
+			return
 		}
 	}
 	_ = s.ReplyConnRequest(req, true, nil)
@@ -472,8 +469,8 @@ func (s *BidirectionalSession) handleShutdown(req *ssh.Request) {
 	}
 
 	// Close connections based on role
-	if s.role == ClientRole || s.role == PromiscuousRole {
-		// For upstream connections, close SSH client
+	if s.role.IsAgent() {
+		// For outbound agent connections, close SSH client
 		if s.sshClient != nil {
 			_ = s.sshClient.Close()
 		}

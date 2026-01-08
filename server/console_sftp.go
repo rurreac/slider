@@ -219,10 +219,16 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 			ui:      ui,
 		}
 
+		// Use displaySessionID for remote sessions, bSession.GetID() for local
+		sessionIDToUse := displaySessionID
+		if sessionIDToUse == 0 {
+			sessionIDToUse = bSession.GetID()
+		}
+
 		// Process commands
 		switch command {
 		case "shell":
-			eArgs := []string{"-s", fmt.Sprintf("%d", bSession.GetID()), "-i"}
+			eArgs := []string{"-s", fmt.Sprintf("%d", sessionIDToUse), "-i"}
 			_ = s.commandRegistry.Execute(ctx, "shell", eArgs)
 		case "execute":
 			if len(args) < 1 {
@@ -232,7 +238,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 			// Prepend cd command to execute from remoteCwd
 			commandStr := strings.Join(args, " ")
 			commandWithCd := fmt.Sprintf("cd %s && %s", remoteCwd, commandStr)
-			eArgs := []string{"-s", fmt.Sprintf("%d", bSession.GetID()), commandWithCd}
+			eArgs := []string{"-s", fmt.Sprintf("%d", sessionIDToUse), commandWithCd}
 			_ = s.commandRegistry.Execute(ctx, "execute", eArgs)
 		default:
 			// This is meant to be a command to execute locally

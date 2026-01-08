@@ -12,7 +12,7 @@ import (
 // Promiscuous Mode Methods
 // ========================================
 
-// Methods specific to PromiscuousRole
+// Methods specific to routing and multi-hop sessions
 
 // SetRouter sets the channel router (can be *Router or *remote.Router)
 func (s *BidirectionalSession) SetRouter(router ApplicationRouter) {
@@ -54,7 +54,7 @@ func (s *BidirectionalSession) GetRequestHandler() ApplicationRequestHandler {
 	return s.requestHandler
 }
 
-// AddRemoteSession registers a remote session (PromiscuousRole only)
+// AddRemoteSession registers a remote session (Gateways only)
 func (s *BidirectionalSession) AddRemoteSession(key string, rs RemoteSession) {
 	s.remoteSessionsMutex.Lock()
 	defer s.remoteSessionsMutex.Unlock()
@@ -122,8 +122,8 @@ type GetRemoteSessionsRequest struct {
 
 // GetRemoteSessions fetches sessions from connected servers (recursive)
 func (s *BidirectionalSession) GetRemoteSessions(visited []string) ([]RemoteSession, error) {
-	if s.role != PromiscuousRole {
-		return nil, fmt.Errorf("remote sessions only available in promiscuous mode")
+	if !s.role.IsGateway() && !s.role.IsOperator() {
+		return nil, fmt.Errorf("remote sessions only available in gateway/operator mode")
 	}
 
 	s.sessionMutex.Lock()

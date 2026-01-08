@@ -71,12 +71,11 @@ func (s *server) buildRouter() http.Handler {
 		})
 	}
 
-	// Determine accepted WebSocket operations
-	// Regular server: Only accepts clients
-	// Promiscuous server: Accepts clients and other promiscuous servers
-	acceptedOps := []string{listener.OperationClient}
-	if s.promiscuous {
-		acceptedOps = append(acceptedOps, listener.OperationPromiscuous)
+	// Set accepted operations
+	acceptedOps := []string{conf.OperationOperator, conf.OperationAgent}
+	if !s.promiscuous {
+		// Non-promiscuous servers accept gateway (for connecting to listening clients)
+		acceptedOps = append(acceptedOps, conf.OperationGateway)
 	}
 
 	// Wrap with WebSocket upgrade check for client connections
@@ -121,6 +120,30 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		remoteAddr, // hostIP
 		opts,
 	)
+
+	// Determine role based on operation
+	switch operationType := r.Header.Get("Sec-WebSocket-Operation"); operationType {
+	case conf.OperationAgent:
+		// Callback agent connecting to us
+		if s.promiscuous {
+			session.SetRole(pkgsession.GatewayListener)
+		} else {
+			session.SetRole(pkgsession.OperatorListener)
+		}
+		session.SetPeerRole(pkgsession.AgentConnector)
+
+	case conf.OperationGateway, conf.OperationOperator:
+		// OperationGateway: Server connecting to listening client (client should expose shell)
+		// OperationOperator: Incoming management request (Someone wants to control US)
+		session.SetRole(pkgsession.AgentListener)
+		session.SetPeerRole(pkgsession.OperatorConnector)
+
+	default:
+		// Default fallback
+		session.SetRole(pkgsession.OperatorListener)
+		session.SetPeerRole(pkgsession.AgentConnector)
+	}
+	session.SetIsPromiscuous(false) // Inbound connections are never relays by default
 
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()
@@ -199,10 +222,10 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		}
 
 	}
-	// Operation reflects the connection mode (whether using --promiscuous flag)
-	operation := listener.OperationServer
+	// Operation reflects the connection mode
+	operation := conf.OperationGateway
 	if promiscuous {
-		operation = listener.OperationPromiscuous
+		operation = conf.OperationOperator
 	}
 
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
@@ -255,6 +278,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
+		session.SetRole(pkgsession.OperatorConnector)
+		session.SetPeerRole(pkgsession.GatewayListener)
 	} else {
 		// Listener mode: we're a server connecting TO a client acting as a server
 		session = pkgsession.NewServerToListenerSession(
@@ -266,7 +291,11 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
+		session.SetRole(pkgsession.OperatorConnector)
+		session.SetPeerRole(pkgsession.AgentListener)
 	}
+
+	session.SetIsPromiscuous(promiscuous) // Outbound relay status based on initiator intent
 
 	// Set certificate info if we have one
 	if certID != 0 {

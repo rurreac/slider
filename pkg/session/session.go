@@ -20,6 +20,7 @@ type BidirectionalSession struct {
 	logger    *slog.Logger
 	sessionID int64
 	role      Role
+	peerRole  Role
 
 	// ========================================
 	// Network Connections
@@ -27,11 +28,11 @@ type BidirectionalSession struct {
 	wsConn *websocket.Conn // WebSocket underlying connection
 
 	// SSH Connections - exactly ONE will be set based on role:
-	// - ClientRole/PromiscuousRole: sshClient is set
-	// - ServerRole/ListenerRole: sshServerConn is set
+	// - AgentRole/OperatorRole (Initiator): sshClient is set
+	// - OperatorRole/GatewayRole/AgentRole (Acceptor): sshServerConn is set
 	sshClient     *ssh.Client       // When acting as SSH client
 	sshServerConn *ssh.ServerConn   // When acting as SSH server
-	sshConfig     *ssh.ServerConfig // Server configuration (ServerRole/ListenerRole only)
+	sshConfig     *ssh.ServerConfig // Server configuration (Acceptor roles only)
 
 	// ========================================
 	// Session State
@@ -39,6 +40,8 @@ type BidirectionalSession struct {
 	localInterpreter *interpreter.Interpreter // Host system info for local process execution
 	peerInterpreter  *interpreter.Interpreter // Remote system info received from peer
 	initTermSize     types.TermDimensions
+	isListener       bool // Whether this session is to/from a listener client
+	isPromiscuous    bool // Whether the peer node is in promiscuous mode
 
 	// Channel tracking
 	channels      []ssh.Channel
@@ -57,16 +60,16 @@ type BidirectionalSession struct {
 	// Feature-Specific State
 	// ========================================
 
-	// Port Forwarding (used in ClientRole)
+	// Port Forwarding (used in AgentRole)
 	revPortFwdMap map[uint32]*RevPortControl
 	fwdMutex      sync.RWMutex
 
-	// Endpoint Instances (ServerRole, PromiscuousRole, ListenerRole)
+	// Endpoint Instances (OperatorRole, GatewayRole, AgentRole)
 	socksInstance *instance.Config
 	sshInstance   *instance.Config
 	shellInstance *instance.Config
 
-	// Application Extensions (ServerRole, PromiscuousRole)
+	// Application Extensions (OperatorRole, GatewayRole)
 	// Router handles application-specific channels (e.g., slider-connect)
 	router ApplicationRouter
 	// ApplicationServer provides access to server-level operations
@@ -75,7 +78,7 @@ type BidirectionalSession struct {
 	// RequestHandler handles application-specific SSH global requests (deprecated, kept for backward compatibility)
 	requestHandler ApplicationRequestHandler
 
-	// SFTP State (ServerRole, PromiscuousRole)
+	// SFTP State (OperatorRole, GatewayRole)
 	// Note: CustomHistory, CommandRegistry, and SftpCommandContext are defined in server package
 	// They will be added when we integrate with the server code
 	sftpHistory         interface{} // *server.CustomHistory
@@ -90,7 +93,7 @@ type BidirectionalSession struct {
 	serverAddr string // For client role
 
 	// ========================================
-	// Remote Session Tracking (PromiscuousRole)
+	// Remote Session Tracking (GatewayRole/AgentRole if promiscuous)
 	// ========================================
 	remoteSessions      map[string]RemoteSession
 	remoteSessionsMutex sync.RWMutex
@@ -104,6 +107,21 @@ func (s *BidirectionalSession) GetID() int64 {
 // GetRole returns the session role
 func (s *BidirectionalSession) GetRole() Role {
 	return s.role
+}
+
+// SetRole updates the session role
+func (s *BidirectionalSession) SetRole(role Role) {
+	s.role = role
+}
+
+// GetPeerRole returns the role of the peer
+func (s *BidirectionalSession) GetPeerRole() Role {
+	return s.peerRole
+}
+
+// SetPeerRole updates the peer role
+func (s *BidirectionalSession) SetPeerRole(role Role) {
+	s.peerRole = role
 }
 
 // GetLogger returns the session logger
@@ -123,6 +141,26 @@ func (s *BidirectionalSession) IsActive() bool {
 	return s.active
 }
 
+// GetIsListener returns whether this is a listener session
+func (s *BidirectionalSession) GetIsListener() bool {
+	return s.isListener
+}
+
+// SetIsListener sets whether this is a listener session
+func (s *BidirectionalSession) SetIsListener(isListener bool) {
+	s.isListener = isListener
+}
+
+// GetIsPromiscuous returns whether the peer is in promiscuous mode
+func (s *BidirectionalSession) GetIsPromiscuous() bool {
+	return s.isPromiscuous
+}
+
+// SetIsPromiscuous sets whether the peer is in promiscuous mode
+func (s *BidirectionalSession) SetIsPromiscuous(isPromiscuous bool) {
+	s.isPromiscuous = isPromiscuous
+}
+
 // GetConnection returns the SSH connection (abstracted)
 func (s *BidirectionalSession) GetConnection() ssh.Conn {
 	if s.sshClient != nil {
@@ -131,7 +169,7 @@ func (s *BidirectionalSession) GetConnection() ssh.Conn {
 	return s.sshServerConn
 }
 
-// GetSSHClient returns the SSH client (ClientRole/PromiscuousRole only)
+// GetSSHClient returns the SSH client (Initiator roles only)
 func (s *BidirectionalSession) GetSSHClient() *ssh.Client {
 	return s.sshClient
 }

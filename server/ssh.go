@@ -30,7 +30,7 @@ func (s *server) NewSSHServer(session *pkgsession.BidirectionalSession) {
 
 	sshConf := session.GetSSHConfig()
 	// Disable authentication for listener sessions
-	if session.GetRole() == pkgsession.ListenerRole {
+	if session.GetIsListener() {
 		sshConf.NoClientAuth = true
 	}
 
@@ -56,7 +56,7 @@ func (s *server) NewSSHServer(session *pkgsession.BidirectionalSession) {
 	}
 
 	// If authentication was enabled and not a listener session, save the client certificate info
-	if s.authOn && session.GetRole() != pkgsession.ListenerRole {
+	if s.authOn && !session.GetIsListener() {
 		if certID, cErr := strconv.Atoi(sshServerConn.Permissions.Extensions["cert_id"]); cErr == nil {
 			session.SetCertInfo(
 				int64(certID),
