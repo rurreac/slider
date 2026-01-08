@@ -420,20 +420,3 @@ func GetActiveCount() int64 {
 func GetTotalCount() int64 {
 	return atomic.LoadInt64(&sessionCounter)
 }
-
-// RegisterHandler registers a channel handler with the router
-func (r *Router) RegisterHandler(channelType string, handler HandlerFunc) {
-	r.handlers[channelType] = handler
-}
-
-// Route routes a channel to its handler
-func (r *Router) Route(nc ssh.NewChannel) error {
-	handler, exists := r.handlers[nc.ChannelType()]
-	if !exists {
-		_ = nc.Reject(ssh.UnknownChannelType, "unknown channel type")
-		r.logger.WarnWith("Unknown channel type for router",
-			slog.F("type", nc.ChannelType()))
-		return nil
-	}
-	return handler(nc)
-}

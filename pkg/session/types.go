@@ -90,16 +90,6 @@ type RemoteSession struct {
 	Path              []int64
 }
 
-// Router handles channel routing in promiscuous mode
-type Router struct {
-	handlers map[string]HandlerFunc
-	session  *BidirectionalSession
-	logger   *slog.Logger
-}
-
-// HandlerFunc is a function that handles an SSH channel
-type HandlerFunc func(ssh.NewChannel) error
-
 // certInfo stores certificate authentication information
 type certInfo struct {
 	fingerprint string
