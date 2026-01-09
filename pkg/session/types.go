@@ -85,7 +85,7 @@ type RemoteSession struct {
 	SliderDir         string // Binary path
 	LaunchDir         string // Launch path
 	IsConnector       bool
-	IsPromiscuous     bool
+	IsGateway         bool
 	ConnectionAddr    string
 	Path              []int64
 }
@@ -112,8 +112,8 @@ type SessionRegistry interface {
 type ServerInfo interface {
 	// GetServerInterpreter returns the server's interpreter information
 	GetServerInterpreter() *interpreter.Interpreter
-	// IsPromiscuous returns whether the local server is in promiscuous mode
-	IsPromiscuous() bool
+	// IsGateway returns whether the local server is in gateway mode
+	IsGateway() bool
 	// GetServerIdentity returns a unique identifier for loop detection (fingerprint:port)
 	GetServerIdentity() string
 	// GetFingerprint returns the server's fingerprint for session stamping

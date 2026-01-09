@@ -122,7 +122,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleWindowSize(req)
 
 	case "slider-sessions":
-		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderSessions(req)
 		} else {
@@ -130,7 +130,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		}
 
 	case "slider-forward-request":
-		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderForwardRequest(req)
 		} else {
@@ -138,7 +138,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		}
 
 	case "slider-event":
-		// Only sessions with a router/applicationServer handle this (Gateway/Agent in promisc mode)
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderEvent(req)
 		} else {
@@ -405,7 +405,7 @@ func (s *BidirectionalSession) handleWindowSize(req *ssh.Request) {
 	_ = s.ReplyConnRequest(req, true, payload)
 }
 
-// handleSliderSessions handles slider-sessions requests (promiscuous servers only)
+// handleSliderSessions handles slider-sessions requests (gateway servers only)
 // Gathers all local and remote sessions and returns them to the requester
 func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 	if s.applicationServer == nil {
@@ -464,7 +464,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		slog.F("session_id", s.sessionID),
 		slog.F("total_sessions", len(localSessions)))
 
-	promiscuousClients := make([]*BidirectionalSession, 0)
+	gatewayClients := make([]*BidirectionalSession, 0)
 	for _, sess := range localSessions {
 		// Skip the session that is asking for the list (the caller)
 		if sess.GetID() == s.sessionID {
@@ -474,7 +474,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		s.logger.DebugWith("Checking session for list",
 			slog.F("id", sess.GetID()),
 			slog.F("is_client", sess.GetInterpreter() != nil),
-			slog.F("is_promiscuous", sess.GetSSHClient() != nil))
+			slog.F("is_gateway", sess.GetSSHClient() != nil))
 
 		// Identify user/host/system/arch/homeDir/workingDir
 		var user, system, arch, homeDir, workingDir, sliderDir, launchDir string
@@ -505,17 +505,17 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 			SliderDir:         sliderDir,
 			LaunchDir:         launchDir,
 			IsConnector:       sess.GetRole().IsConnector(),
-			IsPromiscuous:     sess.GetIsPromiscuous(),
+			IsGateway:         sess.GetIsGateway(),
 			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
 		})
 
 		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
-			promiscuousClients = append(promiscuousClients, sess)
+			gatewayClients = append(gatewayClients, sess)
 		}
 	}
 
 	// Remote sessions (recursive)
-	for _, clientSess := range promiscuousClients {
+	for _, clientSess := range gatewayClients {
 		remoteSessions, err := clientSess.GetRemoteSessions(visitedChain)
 		if err != nil {
 			s.logger.WarnWith("Failed to fetch remote sessions",
@@ -547,7 +547,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 	}
 }
 
-// handleSliderForwardRequest handles slider-forward-request requests (promiscuous servers only)
+// handleSliderForwardRequest handles slider-forward-request requests (gateway servers only)
 // Routes forwarded requests through the mesh to their target session
 func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 	if s.applicationServer == nil {
@@ -606,7 +606,7 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 
 	// Determine if Next Hop is Promiscuous (Intermediate) or Leaf
 	if nextHop.GetSSHClient() != nil && len(target) > 1 {
-		// PROMISCUOUS / INTERMEDIATE
+		// GATEWAY / INTERMEDIATE
 		// Forward as slider-forward-request
 		remainingPath := target[1:]
 
@@ -669,7 +669,7 @@ type eventRequest struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
-// handleSliderEvent handles slider-event requests (promiscuous servers only)
+// handleSliderEvent handles slider-event requests (gateway servers only)
 func (s *BidirectionalSession) handleSliderEvent(req *ssh.Request) {
 	var event eventRequest
 	if err := json.Unmarshal(req.Payload, &event); err != nil {

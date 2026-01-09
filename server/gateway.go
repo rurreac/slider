@@ -13,13 +13,13 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// NewSSHClient establishes an SSH connection as a client (Promiscuous Mode)
-func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
-	netConn := sconn.WsConnToNetConn(sess.GetWebSocketConn())
+// NewSSHClient establishes an SSH connection as a client (Gateway Mode)
+func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
+	netConn := sconn.WsConnToNetConn(biSession.GetWebSocketConn())
 
 	s.DebugWith(
-		"Established WebSocket connection with server (Promiscuous)",
-		slog.F("session_id", sess.GetID()),
+		"Established WebSocket connection with server (Gateway)",
+		slog.F("session_id", biSession.GetID()),
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
 
@@ -42,11 +42,11 @@ func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
 		ClientVersion:   "SSH-slider-server-client",
 	}
 
-	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, sess.GetWebSocketConn().RemoteAddr().String(), sshConfig)
+	cConn, newChan, reqChan, err := ssh.NewClientConn(netConn, biSession.GetWebSocketConn().RemoteAddr().String(), sshConfig)
 	if err != nil {
 		s.DErrorWith("Failed to establish SSH client connection", slog.F("err", err))
-		if sess.GetNotifier() != nil {
-			sess.GetNotifier() <- err
+		if biSession.GetNotifier() != nil {
+			biSession.GetNotifier() <- err
 		}
 		return
 	}
@@ -58,24 +58,24 @@ func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
 			Interpreter: interp,
 		}
 		payload, _ := json.Marshal(clientInfo)
-		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", sess.GetID()))
+		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", biSession.GetID()))
 		ok, reply, sErr := cConn.SendRequest("client-info", true, payload)
 		if sErr == nil && ok && len(reply) > 0 {
 			// The server identifies itself in the reply
 			var ciAnswer conf.ClientInfo
 			if mErr := json.Unmarshal(reply, &ciAnswer); mErr == nil {
 				if ciAnswer.Interpreter != nil {
-					sess.SetInterpreter(ciAnswer.Interpreter)
+					biSession.SetInterpreter(ciAnswer.Interpreter)
 				}
 			}
 		}
 	}
 
 	// Start KeepAlive sender
-	go sess.KeepAlive(s.keepalive)
+	go biSession.KeepAlive(s.keepalive)
 
 	// Inject application server for local interpreter and state access
-	sess.SetApplicationServer(s)
+	biSession.SetApplicationServer(s)
 
 	// Note: For upstream connections (OperatorRole connecting TO another server),
 	// we do NOT inject application-specific router by default. This is an outgoing client connection,
@@ -86,34 +86,34 @@ func (s *server) NewSSHClient(sess *session.BidirectionalSession) {
 	// Use centralized request handling
 	// Session handles common protocol requests (keep-alive, tcpip-forward)
 	// Application-specific requests (client-info, shutdown) are delegated to injected handler
-	go sess.HandleIncomingRequests(reqChan)
+	go biSession.HandleIncomingRequests(reqChan)
 
 	// Use centralized channel routing
 	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)
 	// Application-specific channels (slider-connect) are delegated to injected router
-	go sess.HandleIncomingChannels(newChan)
+	go biSession.HandleIncomingChannels(newChan)
 
 	// Pass nil for channels since we consume reqChan directly
 	client := ssh.NewClient(cConn, nil, nil)
 
-	s.DebugWith("SSH Client Connection Established", slog.F("session_id", sess.GetID()))
+	s.DebugWith("SSH Client Connection Established", slog.F("session_id", biSession.GetID()))
 
 	// Store the connection
-	sess.SetSSHClient(client)
+	biSession.SetSSHClient(client)
 	// Update endpoint instances with the SSH client connection
 	// (they were initialized with nil when the session was first created)
-	if sess.GetShellInstance() != nil {
-		sess.GetShellInstance().SetSSHConn(client)
+	if biSession.GetShellInstance() != nil {
+		biSession.GetShellInstance().SetSSHConn(client)
 	}
-	if sess.GetSocksInstance() != nil {
-		sess.GetSocksInstance().SetSSHConn(client)
+	if biSession.GetSocksInstance() != nil {
+		biSession.GetSocksInstance().SetSSHConn(client)
 	}
-	if sess.GetSSHInstance() != nil {
-		sess.GetSSHInstance().SetSSHConn(client)
+	if biSession.GetSSHInstance() != nil {
+		biSession.GetSSHInstance().SetSSHConn(client)
 	}
 
-	if sess.GetNotifier() != nil {
-		sess.GetNotifier() <- nil
+	if biSession.GetNotifier() != nil {
+		biSession.GetNotifier() <- nil
 	}
 
 	// Block until connection closes

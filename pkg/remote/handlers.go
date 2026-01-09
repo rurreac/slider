@@ -74,8 +74,8 @@ func routeToNextHop(nc ssh.NewChannel, sess session.Session, srv session.Applica
 	// More hops remaining - forward through the next hop
 	// This requires the next hop to be a promiscuous session (has an outbound connection)
 	if nextHopSession.GetSSHClient() == nil {
-		_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("session %d is not a promiscuous gateway, cannot forward", nextHopID))
-		return fmt.Errorf("session %d is not a promiscuous gateway", nextHopID)
+		_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("session %d is not a gateway, cannot forward", nextHopID))
+		return fmt.Errorf("session %d is not a gateway", nextHopID)
 	}
 
 	// Forward to the next hop

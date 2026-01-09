@@ -19,7 +19,7 @@ type MockApplicationServer struct {
 	sessions    []*BidirectionalSession
 	fingerprint string
 	identity    string
-	promiscuous bool
+	gateway bool
 	interpreter *interpreter.Interpreter
 
 	// Track method calls for assertions
@@ -33,7 +33,7 @@ func NewMockApplicationServer() *MockApplicationServer {
 		sessions:    make([]*BidirectionalSession, 0),
 		fingerprint: "test-fingerprint",
 		identity:    "test-fingerprint:8080",
-		promiscuous: true,
+		gateway: true,
 	}
 }
 
@@ -59,9 +59,9 @@ func (m *MockApplicationServer) GetServerInterpreter() *interpreter.Interpreter 
 	return m.interpreter
 }
 
-// IsPromiscuous implements ServerInfo
-func (m *MockApplicationServer) IsPromiscuous() bool {
-	return m.promiscuous
+// IsGateway implements ServerInfo
+func (m *MockApplicationServer) IsGateway() bool {
+	return m.gateway
 }
 
 // GetServerIdentity implements ServerInfo
@@ -163,9 +163,9 @@ func (b *SessionBuilder) WithInterpreter(interp *interpreter.Interpreter) *Sessi
 	return b
 }
 
-// WithPromiscuous sets the promiscuous flag
-func (b *SessionBuilder) WithPromiscuous(promiscuous bool) *SessionBuilder {
-	b.session.isPromiscuous = promiscuous
+// WithGateway sets the gateway flag
+func (b *SessionBuilder) WithGateway(gateway bool) *SessionBuilder {
+	b.session.isGateway = gateway
 	return b
 }
 
@@ -231,7 +231,7 @@ func TestMockApplicationServer_ServerInfo(t *testing.T) {
 	mock := NewMockApplicationServer()
 	mock.fingerprint = "abc123"
 	mock.identity = "abc123:9000"
-	mock.promiscuous = true
+	mock.gateway = true
 
 	if mock.GetFingerprint() != "abc123" {
 		t.Errorf("Expected fingerprint 'abc123', got '%s'", mock.GetFingerprint())
@@ -239,8 +239,8 @@ func TestMockApplicationServer_ServerInfo(t *testing.T) {
 	if mock.GetServerIdentity() != "abc123:9000" {
 		t.Errorf("Expected identity 'abc123:9000', got '%s'", mock.GetServerIdentity())
 	}
-	if !mock.IsPromiscuous() {
-		t.Error("Expected promiscuous to be true")
+	if !mock.IsGateway() {
+		t.Error("Expected gateway to be true")
 	}
 }
 
@@ -251,7 +251,7 @@ func TestSessionBuilder(t *testing.T) {
 		WithRole(AgentListener).
 		WithPeerRole(OperatorConnector).
 		WithApplicationServer(mock).
-		WithPromiscuous(true).
+		WithGateway(true).
 		Build()
 
 	if session.GetID() != 100 {
@@ -263,8 +263,8 @@ func TestSessionBuilder(t *testing.T) {
 	if session.GetPeerRole() != OperatorConnector {
 		t.Errorf("Expected peer role OperatorConnector, got %s", session.GetPeerRole())
 	}
-	if !session.GetIsPromiscuous() {
-		t.Error("Expected promiscuous to be true")
+	if !session.GetIsGateway() {
+		t.Error("Expected gateway to be true")
 	}
 }
 

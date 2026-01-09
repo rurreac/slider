@@ -42,7 +42,7 @@ type UnifiedSession struct {
 	LaunchDir      string // Launch path
 	Extra          string // For port info etc
 	IsConnector    bool
-	IsPromiscuous  bool
+	IsGateway  bool
 	ConnectionAddr string
 	Path           []int64
 }
@@ -103,7 +103,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 
 		// Get the current SFTP working directory if available
 		uSess.WorkingDir = sess.GetSftpWorkingDir()
-		uSess.IsPromiscuous = sess.GetIsPromiscuous()
+		uSess.IsGateway = sess.GetIsGateway()
 		unifiedMap[uSess.UnifiedID] = uSess
 	}
 
@@ -137,7 +137,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						SliderDir:      rs.SliderDir,
 						LaunchDir:      rs.LaunchDir,
 						IsConnector:    rs.IsConnector,
-						IsPromiscuous:  rs.IsPromiscuous,
+						IsGateway:  rs.IsGateway,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
 					}

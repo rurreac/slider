@@ -195,7 +195,7 @@ func NewServerToServerSession(
 
 	logger.InfoWith("Creating server-to-server session",
 		slog.F("session_id", id),
-		slog.F("role", "PROMISCUOUS"),
+		slog.F("role", "GATEWAY"),
 		slog.F("host_ip", hostIP))
 
 	// Create local interpreter for local execution
@@ -379,7 +379,7 @@ func (s *BidirectionalSession) Close() error {
 		_ = s.wsConn.Close()
 	}
 
-	// Stop endpoint instances (if server/promiscuous/listener)
+	// Stop endpoint instances (if server/gateway/listener)
 	if s.role.IsOperator() || s.role.IsGateway() || s.role.IsAgent() {
 		if s.socksInstance != nil && s.socksInstance.IsEnabled() {
 			_ = s.socksInstance.Stop()

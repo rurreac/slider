@@ -48,7 +48,7 @@ type Config struct {
 	CallerLog        bool
 	Headless         bool
 	HttpConsole      bool
-	Promiscuous      bool
+	Gateway          bool
 }
 
 // RunServer starts a server with the given configuration
@@ -110,7 +110,7 @@ func RunServer(cfg *Config) {
 		httpDirIndexPath:  cfg.HttpDirIndexPath,
 		httpConsoleOn:     cfg.HttpConsole,
 		customProto:       cfg.CustomProto,
-		promiscuous:       cfg.Promiscuous,
+		gateway:           cfg.Gateway,
 		serverInterpreter: i,
 	}
 

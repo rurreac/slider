@@ -41,7 +41,7 @@ type BidirectionalSession struct {
 	peerInterpreter  *interpreter.Interpreter // Remote system info received from peer
 	initTermSize     types.TermDimensions
 	isListener       bool // Whether this session is to/from a listener client
-	isPromiscuous    bool // Whether the peer node is in promiscuous mode
+	isGateway        bool // Whether the peer node is in gateway mode
 
 	// Channel tracking
 	channels      []ssh.Channel
@@ -73,7 +73,7 @@ type BidirectionalSession struct {
 	// Router handles application-specific channels (e.g., slider-connect)
 	router ApplicationRouter
 	// ApplicationServer provides access to server-level operations
-	// Only injected for promiscuous servers - presence enables multi-hop features
+	// Only injected for gateway servers - presence enables multi-hop features
 	applicationServer ApplicationServer
 	// RequestHandler handles application-specific SSH global requests (deprecated, kept for backward compatibility)
 	requestHandler ApplicationRequestHandler
@@ -93,7 +93,7 @@ type BidirectionalSession struct {
 	serverAddr string // For client role
 
 	// ========================================
-	// Remote Session Tracking (GatewayRole/AgentRole if promiscuous)
+	// Remote Session Tracking (GatewayRole/AgentRole if gateway)
 	// ========================================
 	remoteSessions      map[string]RemoteSession
 	remoteSessionsMutex sync.RWMutex
@@ -151,14 +151,14 @@ func (s *BidirectionalSession) SetIsListener(isListener bool) {
 	s.isListener = isListener
 }
 
-// GetIsPromiscuous returns whether the peer is in promiscuous mode
-func (s *BidirectionalSession) GetIsPromiscuous() bool {
-	return s.isPromiscuous
+// GetIsGateway returns whether the peer is in gateway mode
+func (s *BidirectionalSession) GetIsGateway() bool {
+	return s.isGateway
 }
 
-// SetIsPromiscuous sets whether the peer is in promiscuous mode
-func (s *BidirectionalSession) SetIsPromiscuous(isPromiscuous bool) {
-	s.isPromiscuous = isPromiscuous
+// SetIsGateway sets whether the peer is in gateway mode
+func (s *BidirectionalSession) SetIsGateway(isGateway bool) {
+	s.isGateway = isGateway
 }
 
 // GetConnection returns the SSH connection (abstracted)

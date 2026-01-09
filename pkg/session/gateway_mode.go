@@ -9,7 +9,7 @@ import (
 )
 
 // ========================================
-// Promiscuous Mode Methods
+// Gateway Mode Methods
 // ========================================
 
 // Methods specific to routing and multi-hop sessions
@@ -160,7 +160,7 @@ func (s *BidirectionalSession) GetRemoteSessions(visited []string) ([]RemoteSess
 }
 
 // HandleSessionsRequest responds to slider-sessions requests
-// This is called when another server asks this promiscuous session for its connected sessions
+// This is called when another server asks this gateway session for its connected sessions
 func (s *BidirectionalSession) HandleSessionsRequest(payload []byte) ([]RemoteSession, error) {
 	// Parse the request
 	var request GetRemoteSessionsRequest

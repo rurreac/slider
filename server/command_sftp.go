@@ -120,7 +120,7 @@ func (ctx *SftpCommandContext) getCwd(isRemote bool) string {
 func (ctx *SftpCommandContext) setCwd(path string, isRemote bool) {
 	if isRemote {
 		*ctx.remoteCwd = path
-		// Also persist the working directory to the session for promiscuous mode tracking
+		// Also persist the working directory to the session for gateway mode tracking
 		if ctx.session != nil {
 			ctx.session.SetSftpWorkingDir(path)
 		}
@@ -186,7 +186,7 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
-		// Read from remote interpreter reference if available (for promiscuous connections)
+		// Read from remote interpreter reference if available (for gateway connections)
 		// Otherwise read from session interpreter for direct connections
 		if ctx.remoteInterpreter != nil {
 			return strings.ToLower(ctx.remoteInterpreter.System)
@@ -202,7 +202,7 @@ func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 // getContextHomeDir returns the home directory for the given context (remote or local)
 func (ctx *SftpCommandContext) getContextHomeDir(isRemote bool) string {
 	if isRemote {
-		// Read from remote interpreter reference if available (for promiscuous connections)
+		// Read from remote interpreter reference if available (for gateway connections)
 		// Otherwise read from session interpreter for direct connections
 		if ctx.remoteInterpreter != nil {
 			return ctx.remoteInterpreter.HomeDir

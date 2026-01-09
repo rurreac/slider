@@ -73,8 +73,8 @@ func (s *server) buildRouter() http.Handler {
 
 	// Set accepted operations
 	acceptedOps := []string{conf.OperationOperator, conf.OperationAgent}
-	if !s.promiscuous {
-		// Non-promiscuous servers accept gateway (for connecting to listening clients)
+	if !s.gateway {
+		// Non-gateway servers accept gateway (for connecting to listening clients)
 		acceptedOps = append(acceptedOps, conf.OperationGateway)
 	}
 
@@ -125,7 +125,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	switch operationType := r.Header.Get("Sec-WebSocket-Operation"); operationType {
 	case conf.OperationAgent:
 		// Callback agent connecting to us
-		if s.promiscuous {
+		if s.gateway {
 			session.SetRole(pkgsession.GatewayListener)
 		} else {
 			session.SetRole(pkgsession.OperatorListener)
@@ -143,7 +143,7 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		session.SetRole(pkgsession.OperatorListener)
 		session.SetPeerRole(pkgsession.AgentConnector)
 	}
-	session.SetIsPromiscuous(false) // Inbound connections are never relays by default
+	session.SetIsGateway(false) // Inbound connections are never relays by default
 
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()
@@ -160,9 +160,9 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
+func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, gateway bool) {
 	// Check for self-connection attempts (any server type)
-	// This applies to any connection mode, but particularly important for promiscuous connections
+	// This applies to any connection mode, but particularly important for gateway connections
 	targetHost := clientUrl.Hostname()
 	targetPort := clientUrl.Port()
 
@@ -224,7 +224,7 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	}
 	// Operation reflects the connection mode
 	operation := conf.OperationGateway
-	if promiscuous {
+	if gateway {
 		operation = conf.OperationOperator
 	}
 
@@ -268,8 +268,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 
 	var session *pkgsession.BidirectionalSession
 
-	if promiscuous {
-		// Promiscuous mode: we're a server connecting TO another server as a client
+	if gateway {
+		// Gateway mode: we're a server connecting TO another server as a client
 		session = pkgsession.NewServerToServerSession(
 			s.Logger,
 			wsConn,
@@ -295,7 +295,7 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		session.SetPeerRole(pkgsession.AgentListener)
 	}
 
-	session.SetIsPromiscuous(promiscuous) // Outbound relay status based on initiator intent
+	session.SetIsGateway(gateway) // Outbound relay status based on initiator intent
 
 	// Set certificate info if we have one
 	if certID != 0 {
@@ -315,8 +315,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	session.AddNotifier(notifier)
 	session.SetSSHConfig(&sshConf)
 
-	if promiscuous {
-		// If connecting in promiscuous mode, we act as a client
+	if gateway {
+		// If connecting in gateway mode, we act as a client
 		s.NewSSHClient(session)
 	} else {
 		// Standard listener connection, we act as a server

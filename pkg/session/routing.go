@@ -20,7 +20,7 @@ import (
 // ========================================
 
 // HandleIncomingChannels processes new SSH channels
-// This works for ANY role - client, server, promiscuous, or listener
+// This works for ANY role - client, server, gateway, or listener
 func (s *BidirectionalSession) HandleIncomingChannels(newChannels <-chan ssh.NewChannel) {
 	for nc := range newChannels {
 		go func() { _ = s.RouteChannel(nc, nc.ChannelType()) }()
