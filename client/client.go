@@ -123,17 +123,6 @@ func (c *client) newSSHClient(sess *session.BidirectionalSession) {
 	// Update the existing session with the SSH client
 	sess.SetSSHClient(sshClient)
 
-	// Update endpoint instances with the SSH client connection
-	if sess.GetShellInstance() != nil {
-		sess.GetShellInstance().SetSSHConn(sshClient)
-	}
-	if sess.GetSocksInstance() != nil {
-		sess.GetSocksInstance().SetSSHConn(sshClient)
-	}
-	if sess.GetSSHInstance() != nil {
-		sess.GetSSHInstance().SetSSHConn(sshClient)
-	}
-
 	defer func() { _ = sess.Close() }()
 
 	c.Logger.InfoWith("Server connected",

@@ -50,46 +50,13 @@ func NewClientToServerSession(
 		KeepAliveChan: make(chan bool, 1),
 		Disconnect:    make(chan bool, 1),
 		active:        true,
-		// Initialize with default terminal size
+		// Initialize with default terminal size for potential incoming shell/exec requests
 		initTermSize: types.TermDimensions{
 			Width:  uint32(conf.DefaultTerminalWidth),
 			Height: uint32(conf.DefaultTerminalHeight),
 			X:      uint32(conf.DefaultTerminalWidth),
 			Y:      uint32(conf.DefaultTerminalHeight),
 		},
-	}
-
-	// Initialize endpoint instances so clients can handle exec/shell/sftp
-	// from servers (needed for multi-hop routing via slider-connect)
-	sess.shellInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.ShellEndpoint,
-		},
-	)
-
-	sess.socksInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.SocksEndpoint,
-		},
-	)
-
-	sess.sshInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.SshEndpoint,
-		},
-	)
-
-	// Set SSH client connection on instances if available
-	if sshClient != nil {
-		sess.shellInstance.SetSSHConn(sshClient)
-		sess.socksInstance.SetSSHConn(sshClient)
-		sess.sshInstance.SetSSHConn(sshClient)
 	}
 
 	return sess
