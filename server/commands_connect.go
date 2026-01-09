@@ -36,7 +36,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	cProto := connectFlags.StringP("proto", "p", conf.Proto, "Use custom proto")
 	cTlsCert := connectFlags.StringP("tls-cert", "c", "", "Use custom client TLS certificate")
 	cTlsKey := connectFlags.StringP("tls-key", "k", "", "Use custom client TLS key")
-	cPromiscuous := connectFlags.Bool("gateway", false, "Connect to another server in gateway mode")
+	cGateway := connectFlags.BoolP("gateway", "g", false, "Connect to another server in gateway mode")
 
 	connectFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
@@ -69,7 +69,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
 
-	go svr.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cPromiscuous)
+	go svr.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cGateway)
 
 	for {
 		// Priority check: always check notifier first
