@@ -221,12 +221,12 @@ graph TD
     Console[Server Console]
     GW1[Gateway Server A<br/>--gateway]
     GW2[Gateway Server B<br/>--gateway]
-    Client1[Regular Client<br/>agent/c]
-    Client2[Listener Client<br/>agent/l]
+    Client1[Regular Client]
+    Client2[Listener Client]
     
     Console -->|connect --gateway| GW1
     GW1 -->|connect --gateway| GW2
-    Client1 -.->|connects to| GW1
+    Client1 -.-> GW1
     GW2 -->|connect| Client2
     
     style Console fill:#e1f5ff
