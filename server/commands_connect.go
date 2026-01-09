@@ -14,7 +14,7 @@ const (
 	// Console Connect Command
 	connectCmd   = "connect"
 	connectDesc  = "Establishes a connection to a Client"
-	connectUsage = "Usage: connect [flags] <client_address:port>"
+	connectUsage = "Usage: connect [flags] <host_address:port>"
 )
 
 // ConnectCommand implements the 'connect' command
