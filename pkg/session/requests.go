@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"time"
 
 	"slider/pkg/conf"
@@ -97,14 +98,14 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleKeepAlive(req)
 
 	case "tcpip-forward":
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() || s.role.IsGateway() {
 			go s.handleTcpIpForward(req)
 		} else {
 			s.rejectRequest(req, "tcpip-forward not supported in this role")
 		}
 
 	case "cancel-tcpip-forward":
-		if s.role == ClientRole || s.role == PromiscuousRole {
+		if s.role.IsAgent() || s.role.IsGateway() {
 			s.handleCancelTcpIpForward(req)
 		} else {
 			s.rejectRequest(req, "cancel-tcpip-forward not supported in this role")
@@ -117,32 +118,28 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleClientInfo(req)
 
 	case "window-size":
-		// Server and Listener roles handle window-size requests
-		if s.role == ServerRole || s.role == ListenerRole {
-			s.handleWindowSize(req)
-		} else {
-			s.rejectRequest(req, "window-size not supported in this role")
-		}
+		// All connections where someone might want a terminal size
+		s.handleWindowSize(req)
 
 	case "slider-sessions":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderSessions(req)
 		} else {
 			s.rejectRequest(req, "slider-sessions not supported in this configuration")
 		}
 
 	case "slider-forward-request":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderForwardRequest(req)
 		} else {
 			s.rejectRequest(req, "slider-forward-request not supported in this configuration")
 		}
 
 	case "slider-event":
-		// Only promiscuous servers (with applicationServer injected) handle this
-		if s.role == ServerRole && s.applicationServer != nil {
+		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
+		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderEvent(req)
 		} else {
 			s.rejectRequest(req, "slider-event not supported in this configuration")
@@ -198,7 +195,7 @@ func (s *BidirectionalSession) handleKeepAlive(req *ssh.Request) {
 }
 
 // handleTcpIpForward handles tcpip-forward requests (reverse port forwarding)
-// This is used by ClientRole and PromiscuousRole to set up reverse port forwarding
+// This is used by AgentRole and GatewayRole to set up reverse port forwarding (target offering fwd)
 func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 	tcpIpForward := &types.CustomTcpIpFwdRequest{}
 	if uErr := json.Unmarshal(req.Payload, tcpIpForward); uErr != nil {
@@ -331,7 +328,7 @@ func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 }
 
 // handleCancelTcpIpForward handles cancel-tcpip-forward requests
-// This is used by ClientRole and PromiscuousRole to cancel reverse port forwarding
+// This is used by AgentRole and GatewayRole to cancel reverse port forwarding
 func (s *BidirectionalSession) handleCancelTcpIpForward(req *ssh.Request) {
 	ok := false
 	tcpIpForward := &types.TcpIpFwdRequest{}
@@ -368,25 +365,26 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 		return
 	}
 
-	// Store interpreter info
+	// Store session info from peer
 	s.SetInterpreter(ci.Interpreter)
 
-	// Reply with server interpreter for client identification (server roles only)
-	if s.role == ServerRole || s.role == ListenerRole {
-		if s.applicationServer != nil {
-			// Get server interpreter from application server
-			if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
-				interpreterPayload, jErr := json.Marshal(serverInfo)
-				if jErr != nil {
-					s.logger.DErrorWith("Error marshaling Server Info",
-						slog.F("session_id", s.sessionID),
-						slog.F("err", jErr))
-					_ = s.ReplyConnRequest(req, true, nil)
-				} else {
-					_ = s.ReplyConnRequest(req, true, interpreterPayload)
-				}
-				return
+	// Reply with server info for identification
+	if s.applicationServer != nil {
+		// Get server info from application server
+		if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
+			replyInfo := &conf.ClientInfo{
+				Interpreter: serverInfo,
 			}
+			interpreterPayload, jErr := json.Marshal(replyInfo)
+			if jErr != nil {
+				s.logger.DErrorWith("Error marshaling Server Info",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", jErr))
+				_ = s.ReplyConnRequest(req, true, nil)
+			} else {
+				_ = s.ReplyConnRequest(req, true, interpreterPayload)
+			}
+			return
 		}
 	}
 	_ = s.ReplyConnRequest(req, true, nil)
@@ -407,7 +405,8 @@ func (s *BidirectionalSession) handleWindowSize(req *ssh.Request) {
 	_ = s.ReplyConnRequest(req, true, payload)
 }
 
-// handleSliderSessions handles slider-sessions requests (promiscuous servers only)
+// handleSliderSessions handles slider-sessions requests (gateway servers only)
+// Gathers all local and remote sessions and returns them to the requester
 func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 	if s.applicationServer == nil {
 		s.logger.ErrorWith("Application server not set",
@@ -418,14 +417,138 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.HandleSessionsRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle slider-sessions request",
+	// Panic recovery
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.ErrorWith("Panic in handleSliderSessions", slog.F("panic", r))
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+		}
+	}()
+
+	var request GetRemoteSessionsRequest
+	if len(req.Payload) > 0 {
+		if err := json.Unmarshal(req.Payload, &request); err != nil {
+			s.logger.DErrorWith("Failed to unmarshal request",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			return
+		}
+	}
+
+	// Loop detection using server identity
+	currentIdentity := s.applicationServer.GetServerIdentity()
+	if slices.Contains(request.Visited, currentIdentity) {
+		s.logger.WarnWith("Loop/Self-connection detected in session listing",
+			slog.F("session_id", s.sessionID),
+			slog.F("identity", currentIdentity))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+	// Add self to visited
+	visitedChain := append(request.Visited, currentIdentity)
+
+	// Gather sessions
+	var sessions []RemoteSession
+	fingerprint := s.applicationServer.GetFingerprint()
+
+	// Local sessions from server registry
+	localSessions := s.applicationServer.GetAllSessions()
+	s.logger.DebugWith("Processing slider-sessions request",
+		slog.F("session_id", s.sessionID),
+		slog.F("total_sessions", len(localSessions)))
+
+	gatewayClients := make([]*BidirectionalSession, 0)
+	for _, sess := range localSessions {
+		// Skip the session that is asking for the list (the caller)
+		if sess.GetID() == s.sessionID {
+			continue
+		}
+
+		s.logger.DebugWith("Checking session for list",
+			slog.F("id", sess.GetID()),
+			slog.F("is_client", sess.GetInterpreter() != nil),
+			slog.F("is_gateway", sess.GetSSHClient() != nil))
+
+		// Identify user/host/system/arch/homeDir/workingDir
+		var user, system, arch, homeDir, workingDir, sliderDir, launchDir string
+		host := sess.GetHostIP()
+		if sess.GetInterpreter() != nil {
+			user = sess.GetInterpreter().User
+			host = sess.GetInterpreter().Hostname
+			system = sess.GetInterpreter().System
+			arch = sess.GetInterpreter().Arch
+			homeDir = sess.GetInterpreter().HomeDir
+			sliderDir = sess.GetInterpreter().SliderDir
+			launchDir = sess.GetInterpreter().LaunchDir
+		}
+
+		// Get the current SFTP working directory if available
+		workingDir = sess.GetSftpWorkingDir()
+
+		sessions = append(sessions, RemoteSession{
+			ID:                sess.GetID(),
+			ServerFingerprint: fingerprint,
+			User:              user,
+			Host:              host,
+			System:            system,
+			Role:              sess.GetPeerRole().String(),
+			Arch:              arch,
+			HomeDir:           homeDir,
+			WorkingDir:        workingDir,
+			SliderDir:         sliderDir,
+			LaunchDir:         launchDir,
+			IsConnector:       sess.GetRole().IsConnector(),
+			IsGateway:         sess.GetIsGateway(),
+			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
+		})
+
+		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
+			gatewayClients = append(gatewayClients, sess)
+		}
+	}
+
+	// Remote sessions (recursive)
+	for _, clientSess := range gatewayClients {
+		remoteSessions, err := clientSess.GetRemoteSessions(visitedChain)
+		if err != nil {
+			s.logger.WarnWith("Failed to fetch remote sessions",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", err))
+			continue
+		}
+		// Prepend clientSess.GetID() to Path
+		for i := range remoteSessions {
+			remoteSessions[i].Path = append([]int64{clientSess.GetID()}, remoteSessions[i].Path...)
+		}
+		sessions = append(sessions, remoteSessions...)
+	}
+
+	// Marshal and send response
+	payload, err := json.Marshal(sessions)
+	if err != nil {
+		s.logger.DErrorWith("Failed to marshal sessions response",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	if req.WantReply {
+		_ = req.Reply(true, payload)
 	}
 }
 
-// handleSliderForwardRequest handles slider-forward-request requests (promiscuous servers only)
+// handleSliderForwardRequest handles slider-forward-request requests (gateway servers only)
+// Routes forwarded requests through the mesh to their target session
 func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 	if s.applicationServer == nil {
 		s.logger.ErrorWith("Application server not set",
@@ -436,28 +559,136 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 		return
 	}
 
-	if err := s.applicationServer.HandleForwardRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle forward request",
+	var payload types.ForwardRequestPayload
+	if err := json.Unmarshal(req.Payload, &payload); err != nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Failed to unmarshal forward payload",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
+		return
+	}
+
+	target := payload.Target
+
+	// Parse path to find next hop
+	// Path format: [id1, id2, ...]
+	if len(target) == 0 {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Empty target path in forward request",
+			slog.F("session_id", s.sessionID))
+		return
+	}
+
+	nextID := int(target[0])
+
+	// Lookup Session via the application server's registry
+	nextHop, err := s.applicationServer.GetSession(nextID)
+	if err != nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Next hop session not found",
+			slog.F("session_id", s.sessionID),
+			slog.F("next_id", nextID),
+			slog.F("err", err))
+		return
+	}
+
+	s.logger.DebugWith("Forwarding Request",
+		slog.F("req_type", payload.ReqType),
+		slog.F("next_hop", nextID),
+		slog.F("remaining_path", target[1:]),
+	)
+
+	// Determine if Next Hop is Promiscuous (Intermediate) or Leaf
+	if nextHop.GetSSHClient() != nil && len(target) > 1 {
+		// GATEWAY / INTERMEDIATE
+		// Forward as slider-forward-request
+		remainingPath := target[1:]
+
+		newPayload := types.ForwardRequestPayload{
+			Target:  remainingPath,
+			ReqType: payload.ReqType,
+			Payload: payload.Payload,
+		}
+		newData, mErr := json.Marshal(newPayload)
+		if mErr != nil {
+			if req.WantReply {
+				_ = req.Reply(false, nil)
+			}
+			s.logger.DErrorWith("Failed to marshal new payload",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", mErr))
+			return
+		}
+
+		ok, reply, sErr := nextHop.GetSSHClient().SendRequest("slider-forward-request", req.WantReply, newData)
+		if sErr != nil {
+			s.logger.DErrorWith("Failed to send forward request",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", sErr))
+			return
+		}
+		if req.WantReply {
+			_ = req.Reply(ok, reply)
+		}
+		return
+	}
+
+	// End of path - Send request to target client via ServerConn
+	if nextHop.GetSSHServerConn() == nil {
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		s.logger.DErrorWith("Next hop session has no SSH connection",
+			slog.F("session_id", s.sessionID),
+			slog.F("next_id", nextID))
+		return
+	}
+
+	ok, reply, sErr := nextHop.GetSSHServerConn().SendRequest(payload.ReqType, req.WantReply, payload.Payload)
+	if sErr != nil {
+		s.logger.DErrorWith("Failed to send request to target",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", sErr))
+		return
+	}
+	if req.WantReply {
+		_ = req.Reply(ok, reply)
 	}
 }
 
-// handleSliderEvent handles slider-event requests (promiscuous servers only)
+// eventRequest defines the payload for slider-event request
+type eventRequest struct {
+	Type      string `json:"type"`       // e.g., "disconnect"
+	SessionID int64  `json:"session_id"` // Local ID that caused the event
+	Timestamp int64  `json:"timestamp"`
+}
+
+// handleSliderEvent handles slider-event requests (gateway servers only)
 func (s *BidirectionalSession) handleSliderEvent(req *ssh.Request) {
-	if s.applicationServer == nil {
-		s.logger.ErrorWith("Application server not set",
-			slog.F("session_id", s.sessionID))
+	var event eventRequest
+	if err := json.Unmarshal(req.Payload, &event); err != nil {
+		s.logger.DErrorWith("Failed to unmarshal event",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", err))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
 		}
 		return
 	}
 
-	if err := s.applicationServer.HandleEventRequest(req, s); err != nil {
-		s.logger.DErrorWith("Failed to handle slider-event request",
-			slog.F("session_id", s.sessionID),
-			slog.F("err", err))
+	s.logger.InfoWith("Received Upstream Event",
+		slog.F("type", event.Type),
+		slog.F("remote_session_id", event.SessionID),
+	)
+
+	if req.WantReply {
+		_ = req.Reply(true, nil)
 	}
 }
 
@@ -472,8 +703,8 @@ func (s *BidirectionalSession) handleShutdown(req *ssh.Request) {
 	}
 
 	// Close connections based on role
-	if s.role == ClientRole || s.role == PromiscuousRole {
-		// For upstream connections, close SSH client
+	if s.role.IsAgent() {
+		// For outbound agent connections, close SSH client
 		if s.sshClient != nil {
 			_ = s.sshClient.Close()
 		}

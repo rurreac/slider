@@ -18,7 +18,7 @@ var (
 	activeCount    int64 // Active session count
 )
 
-// NewClientToServerSession creates a new session for a client connecting to a server (ClientRole)
+// NewClientToServerSession creates a new session for a client connecting to a server (AgentRole)
 func NewClientToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -40,57 +40,23 @@ func NewClientToServerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ClientRole,
+		role:             AgentConnector,
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		serverAddr:       serverAddr,
-		channels:         make([]ssh.Channel, 0),
-		revPortFwdMap:    make(map[uint32]*RevPortControl),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
-		// Initialize with default terminal size
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
+		// Initialize with default terminal size for potential incoming shell/exec requests
 		initTermSize: types.TermDimensions{
 			Width:  uint32(conf.DefaultTerminalWidth),
 			Height: uint32(conf.DefaultTerminalHeight),
 			X:      uint32(conf.DefaultTerminalWidth),
 			Y:      uint32(conf.DefaultTerminalHeight),
 		},
-	}
-
-	// Initialize endpoint instances so clients can handle exec/shell/sftp
-	// from servers (needed for multi-hop routing via slider-connect)
-	sess.shellInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.ShellEndpoint,
-		},
-	)
-
-	sess.socksInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.SocksEndpoint,
-		},
-	)
-
-	sess.sshInstance = instance.New(
-		&instance.Config{
-			Logger:       logger,
-			SessionID:    id,
-			EndpointType: instance.SshEndpoint,
-		},
-	)
-
-	// Set SSH client connection on instances if available
-	if sshClient != nil {
-		sess.shellInstance.SetSSHConn(sshClient)
-		sess.socksInstance.SetSSHConn(sshClient)
-		sess.sshInstance.SetSSHConn(sshClient)
 	}
 
 	return sess
@@ -103,7 +69,7 @@ type ServerSessionOptions struct {
 	AuthOn               bool
 }
 
-// NewServerFromClientSession creates a new session for a server accepting a connection from a client (ServerRole)
+// NewServerFromClientSession creates a new session for a server accepting a connection from a client (OperatorRole/GatewayRole)
 func NewServerFromClientSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -127,17 +93,17 @@ func NewServerFromClientSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ServerRole,
+		role:             OperatorListener,
 		wsConn:           wsConn,
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances
@@ -181,7 +147,7 @@ func NewServerFromClientSession(
 	return sess
 }
 
-// NewServerToServerSession creates a new session for a server connecting to another server (PromiscuousRole)
+// NewServerToServerSession creates a new session for a server connecting to another server (OperatorRole)
 func NewServerToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -195,7 +161,7 @@ func NewServerToServerSession(
 
 	logger.InfoWith("Creating server-to-server session",
 		slog.F("session_id", id),
-		slog.F("role", "PROMISCUOUS"),
+		slog.F("role", "GATEWAY"),
 		slog.F("host_ip", hostIP))
 
 	// Create local interpreter for local execution
@@ -204,17 +170,16 @@ func NewServerToServerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             PromiscuousRole,
+		role:             OperatorConnector,
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		remoteSessions:   make(map[string]RemoteSession),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances
@@ -255,7 +220,7 @@ func NewServerToServerSession(
 	return sess
 }
 
-// NewServerToListenerSession creates a new session for a server connecting to a listening client (ListenerRole)
+// NewServerToListenerSession creates a new session for a server connecting to a listening client (OperatorRole)
 func NewServerToListenerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
@@ -270,7 +235,7 @@ func NewServerToListenerSession(
 
 	logger.InfoWith("Creating server-to-listener session",
 		slog.F("session_id", id),
-		slog.F("role", "LISTENER"),
+		slog.F("role", "OPERATOR"),
 		slog.F("host_ip", hostIP))
 
 	// Create local interpreter for local execution
@@ -279,17 +244,18 @@ func NewServerToListenerSession(
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
-		role:             ListenerRole,
+		role:             OperatorConnector,
+		isListener:       true,
 		wsConn:           wsConn,
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances
@@ -378,8 +344,8 @@ func (s *BidirectionalSession) Close() error {
 		_ = s.wsConn.Close()
 	}
 
-	// Stop endpoint instances (if server/promiscuous/listener)
-	if s.role == ServerRole || s.role == PromiscuousRole || s.role == ListenerRole {
+	// Stop endpoint instances (if server/gateway/listener)
+	if s.role.IsOperator() || s.role.IsGateway() || s.role.IsAgent() {
 		if s.socksInstance != nil && s.socksInstance.IsEnabled() {
 			_ = s.socksInstance.Stop()
 		}
@@ -391,8 +357,8 @@ func (s *BidirectionalSession) Close() error {
 		}
 	}
 
-	// Cancel port forwards (ClientRole)
-	if s.role == ClientRole {
+	// Cancel port forwards (AgentRole)
+	if s.role.IsAgent() {
 		s.fwdMutex.Lock()
 		for _, pfc := range s.revPortFwdMap {
 			if pfc.StopChan != nil {
@@ -418,21 +384,4 @@ func GetActiveCount() int64 {
 // GetTotalCount returns the total number of sessions created
 func GetTotalCount() int64 {
 	return atomic.LoadInt64(&sessionCounter)
-}
-
-// RegisterHandler registers a channel handler with the router
-func (r *Router) RegisterHandler(channelType string, handler HandlerFunc) {
-	r.handlers[channelType] = handler
-}
-
-// Route routes a channel to its handler
-func (r *Router) Route(nc ssh.NewChannel) error {
-	handler, exists := r.handlers[nc.ChannelType()]
-	if !exists {
-		_ = nc.Reject(ssh.UnknownChannelType, "unknown channel type")
-		r.logger.WarnWith("Unknown channel type for router",
-			slog.F("type", nc.ChannelType()))
-		return nil
-	}
-	return handler(nc)
 }

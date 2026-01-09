@@ -6,6 +6,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/instance"
 	"slider/pkg/remote"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -74,6 +75,9 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	// Resolve Unified Sessions
 	unifiedMap := svr.ResolveUnifiedSessions()
 	if val, ok := unifiedMap[int64(sessionID)]; ok {
+		if strings.HasPrefix(val.Role, "operator") {
+			return fmt.Errorf("ssh command not allowed against operator roles")
+		}
 		uSess = val
 		isRemote = uSess.OwnerID != 0
 	} else {

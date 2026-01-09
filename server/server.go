@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
+	"slider/pkg/remote"
+	"slider/pkg/sconn"
 	"slider/pkg/scrypt"
 	"slider/pkg/session"
 	"slider/pkg/slog"
@@ -56,7 +59,7 @@ type server struct {
 	httpDirIndex         bool
 	httpDirIndexPath     string
 	httpConsoleOn        bool
-	promiscuous          bool
+	gateway              bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	customProto          string
 	commandRegistry      *CommandRegistry
@@ -68,6 +71,97 @@ type RemoteSessionState struct {
 	SocksInstance *instance.Config
 	SSHInstance   *instance.Config
 	ShellInstance *instance.Config
+}
+
+func (s *server) NewSSHServer(biSession *session.BidirectionalSession) {
+	netConn := sconn.WsConnToNetConn(biSession.GetWebSocketConn())
+
+	s.DebugWith(
+		"Established WebSocket connection with client",
+		slog.F("session_id", biSession.GetID()),
+		slog.F("remote_addr", netConn.RemoteAddr().String()),
+	)
+
+	var sshServerConn *ssh.ServerConn
+	var newChan <-chan ssh.NewChannel
+	var reqChan <-chan *ssh.Request
+	var err error
+
+	sshConf := biSession.GetSSHConfig()
+	// Disable authentication for listener sessions
+	if biSession.GetIsListener() {
+		sshConf.NoClientAuth = true
+	}
+
+	sshServerConn, newChan, reqChan, err = ssh.NewServerConn(netConn, sshConf)
+	if err != nil {
+		s.DErrorWith("Failed to create SSH server", slog.F("err", err))
+		if biSession.GetNotifier() != nil {
+			biSession.GetNotifier() <- err
+		}
+		return
+	}
+	biSession.SetSSHServerConn(sshServerConn)
+
+	// Update endpoint instances with the SSH connection
+	if biSession.GetShellInstance() != nil {
+		biSession.GetShellInstance().SetSSHConn(sshServerConn)
+	}
+	if biSession.GetSocksInstance() != nil {
+		biSession.GetSocksInstance().SetSSHConn(sshServerConn)
+	}
+	if biSession.GetSSHInstance() != nil {
+		biSession.GetSSHInstance().SetSSHConn(sshServerConn)
+	}
+
+	// If authentication was enabled and not a listener session, save the client certificate info
+	if s.authOn && !biSession.GetIsListener() {
+		if certID, cErr := strconv.Atoi(sshServerConn.Permissions.Extensions["cert_id"]); cErr == nil {
+			biSession.SetCertInfo(
+				int64(certID),
+				sshServerConn.Permissions.Extensions["fingerprint"],
+			)
+		}
+
+	}
+
+	s.DebugWith(
+		"Upgraded Websocket transport to SSH Connection",
+		slog.F("session_id", biSession.GetID()),
+		slog.F("host", biSession.GetSSHServerConn().RemoteAddr().String()),
+		slog.F("client_version", biSession.GetSSHServerConn().ClientVersion()),
+	)
+
+	if biSession.GetNotifier() != nil {
+		biSession.GetNotifier() <- nil
+	}
+
+	// Handle Keep Alive
+	go biSession.KeepAlive(s.keepalive)
+
+	// Inject application server for all sessions to provide access to local interpreter and state
+	// Presence of these components enables proper local process execution and multi-hop features
+	biSession.SetApplicationServer(s)
+
+	if s.gateway {
+		// Create and configure application router for slider-connect channels
+		appRouter := remote.NewRouter(s.Logger)
+		appRouter.RegisterHandler("slider-connect", remote.HandleSliderConnect)
+		biSession.SetRouter(appRouter)
+	}
+
+	// Use centralized channel routing
+	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)
+	// Application-specific channels (slider-connect) are delegated to injected router
+	go biSession.HandleIncomingChannels(newChan)
+
+	// Use centralized request handling
+	// Session handles common protocol requests (keep-alive, tcpip-forward)
+	// Application-specific requests (slider-*, client-info, etc.) are delegated to injected handler
+	go biSession.HandleIncomingRequests(reqChan)
+
+	// Block until connection closes
+	_ = sshServerConn.Wait()
 }
 
 func (s *server) clientVerification(conn ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
@@ -113,8 +207,9 @@ func (s *server) GetSession(id int) (*session.BidirectionalSession, error) {
 	return sess, nil
 }
 
-// GetSessions returns all local sessions sorted by ID
-func (s *server) GetSessions() []*session.BidirectionalSession {
+// GetAllSessions returns all local sessions sorted by ID
+// Implements session.SessionRegistry interface
+func (s *server) GetAllSessions() []*session.BidirectionalSession {
 	s.sessionTrackMutex.Lock()
 	sessions := make([]*session.BidirectionalSession, 0, len(s.sessionTrack.Sessions))
 	for _, sess := range s.sessionTrack.Sessions {
@@ -131,9 +226,27 @@ func (s *server) GetSessions() []*session.BidirectionalSession {
 }
 
 // GetServerInterpreter returns the server's interpreter information
-// Implements session.ApplicationServer interface
+// Implements session.ServerInfo interface
 func (s *server) GetServerInterpreter() *interpreter.Interpreter {
 	return s.serverInterpreter
+}
+
+// IsGateway returns whether the server is in gateway mode
+// Implements session.ServerInfo interface
+func (s *server) IsGateway() bool {
+	return s.gateway
+}
+
+// GetServerIdentity returns a unique identifier for loop detection (fingerprint:port)
+// Implements session.ServerInfo interface
+func (s *server) GetServerIdentity() string {
+	return fmt.Sprintf("%s:%d", s.fingerprint, s.port)
+}
+
+// GetFingerprint returns the server's fingerprint for session stamping
+// Implements session.ServerInfo interface
+func (s *server) GetFingerprint() string {
+	return s.fingerprint
 }
 
 // dropWebSocketSession removes a session from tracking
@@ -160,7 +273,7 @@ func (s *server) GetKeepalive() int {
 }
 
 // isSelfConnection checks if the target host:port matches this server's listen address
-// This is used to prevent a promiscuous server from connecting to itself
+// This is used to prevent a gateway server from connecting to itself
 func (s *server) isSelfConnection(targetHost, targetPort string) bool {
 	// Parse target port
 	targetPortInt := 0

@@ -71,12 +71,11 @@ func (s *server) buildRouter() http.Handler {
 		})
 	}
 
-	// Determine accepted WebSocket operations
-	// Regular server: Only accepts clients
-	// Promiscuous server: Accepts clients and other promiscuous servers
-	acceptedOps := []string{listener.OperationClient}
-	if s.promiscuous {
-		acceptedOps = append(acceptedOps, listener.OperationPromiscuous)
+	// Set accepted operations
+	acceptedOps := []string{conf.OperationOperator, conf.OperationAgent}
+	if !s.gateway {
+		// Non-gateway servers accept gateway (for connecting to listening clients)
+		acceptedOps = append(acceptedOps, conf.OperationGateway)
 	}
 
 	// Wrap with WebSocket upgrade check for client connections
@@ -122,6 +121,30 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		opts,
 	)
 
+	// Determine role based on operation
+	switch operationType := r.Header.Get("Sec-WebSocket-Operation"); operationType {
+	case conf.OperationAgent:
+		// Callback agent connecting to us
+		if s.gateway {
+			session.SetRole(pkgsession.GatewayListener)
+		} else {
+			session.SetRole(pkgsession.OperatorListener)
+		}
+		session.SetPeerRole(pkgsession.AgentConnector)
+
+	case conf.OperationGateway, conf.OperationOperator:
+		// OperationGateway: Server connecting to listening client (client should expose shell)
+		// OperationOperator: Incoming management request (Someone wants to control US)
+		session.SetRole(pkgsession.AgentListener)
+		session.SetPeerRole(pkgsession.OperatorConnector)
+
+	default:
+		// Default fallback
+		session.SetRole(pkgsession.OperatorListener)
+		session.SetPeerRole(pkgsession.AgentConnector)
+	}
+	session.SetIsGateway(false) // Inbound connections are never relays by default
+
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()
 	s.sessionTrack.Sessions[session.GetID()] = session
@@ -137,9 +160,9 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.NewSSHServer(session)
 }
 
-func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, promiscuous bool) {
+func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, gateway bool) {
 	// Check for self-connection attempts (any server type)
-	// This applies to any connection mode, but particularly important for promiscuous connections
+	// This applies to any connection mode, but particularly important for gateway connections
 	targetHost := clientUrl.Hostname()
 	targetPort := clientUrl.Port()
 
@@ -199,10 +222,10 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		}
 
 	}
-	// Operation reflects the connection mode (whether using --promiscuous flag)
-	operation := listener.OperationServer
-	if promiscuous {
-		operation = listener.OperationPromiscuous
+	// Operation reflects the connection mode
+	operation := conf.OperationGateway
+	if gateway {
+		operation = conf.OperationOperator
 	}
 
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
@@ -245,8 +268,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 
 	var session *pkgsession.BidirectionalSession
 
-	if promiscuous {
-		// Promiscuous mode: we're a server connecting TO another server as a client
+	if gateway {
+		// Gateway mode: we're a server connecting TO another server as a client
 		session = pkgsession.NewServerToServerSession(
 			s.Logger,
 			wsConn,
@@ -255,6 +278,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
+		session.SetRole(pkgsession.OperatorConnector)
+		session.SetPeerRole(pkgsession.GatewayListener)
 	} else {
 		// Listener mode: we're a server connecting TO a client acting as a server
 		session = pkgsession.NewServerToListenerSession(
@@ -266,7 +291,11 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
+		session.SetRole(pkgsession.OperatorConnector)
+		session.SetPeerRole(pkgsession.AgentListener)
 	}
+
+	session.SetIsGateway(gateway) // Outbound relay status based on initiator intent
 
 	// Set certificate info if we have one
 	if certID != 0 {
@@ -286,8 +315,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	session.AddNotifier(notifier)
 	session.SetSSHConfig(&sshConf)
 
-	if promiscuous {
-		// If connecting in promiscuous mode, we act as a client
+	if gateway {
+		// If connecting in gateway mode, we act as a client
 		s.NewSSHClient(session)
 	} else {
 		// Standard listener connection, we act as a server

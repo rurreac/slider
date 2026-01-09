@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Proxy represents a remote connection proxy for promiscuous mode
+// Proxy represents a remote connection proxy for gateway mode
 type Proxy struct {
 	gateway    session.Session
 	targetPath []int64

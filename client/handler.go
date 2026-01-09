@@ -2,6 +2,7 @@ package client
 
 import (
 	"net/http"
+	"slider/pkg/conf"
 	"slider/pkg/listener"
 	"slider/pkg/slog"
 )
@@ -19,7 +20,7 @@ func (c *client) buildRouter() http.Handler {
 	})
 
 	// Accepted operations for reverse connections from servers
-	acceptedOps := []string{listener.OperationServer, listener.OperationPromiscuous}
+	acceptedOps := []string{conf.OperationGateway, conf.OperationOperator}
 
 	// Wrap with WebSocket upgrade check for server connections
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

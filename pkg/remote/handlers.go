@@ -50,8 +50,9 @@ func routeToNextHop(nc ssh.NewChannel, sess session.Session, srv session.Applica
 		return err
 	}
 
-	// 1. Next hop is a standard client session
-	if nextHopSession.GetSSHClient() == nil {
+	// Final destination reached (no more hops)
+	// Always use GetSSHConn() - the inbound connection where shell/exec handlers live
+	if len(remainingTarget) == 0 {
 		channelType := req.ChannelType
 
 		targetChan, reqs, err := nextHopSession.GetSSHConn().OpenChannel(channelType, req.Payload)
@@ -70,51 +71,34 @@ func routeToNextHop(nc ssh.NewChannel, sess session.Session, srv session.Applica
 		return nil
 	}
 
-	// 2. Next hop is a promiscuous client (Server)
-	if nextHopSession.GetSSHClient() != nil {
-		if len(remainingTarget) == 0 {
-			channelType := req.ChannelType
-
-			targetChan, reqs, err := nextHopSession.GetSSHClient().OpenChannel(channelType, req.Payload)
-			if err != nil {
-				_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("failed to open target channel: %v", err))
-				return err
-			}
-
-			localChan, localReqs, err := nc.Accept()
-			if err != nil {
-				_ = targetChan.Close()
-				return err
-			}
-
-			pipeChannels(localChan, targetChan, localReqs, reqs)
-			return nil
-		}
-
-		// Recursively forward
-		fwdReq := ConnectRequest{
-			Target:      remainingTarget,
-			ChannelType: req.ChannelType,
-			Payload:     req.Payload,
-		}
-		fwdPayload, _ := json.Marshal(fwdReq)
-
-		targetChan, reqs, err := nextHopSession.GetSSHClient().OpenChannel("slider-connect", fwdPayload)
-		if err != nil {
-			_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("failed to open next hop channel: %v", err))
-			return err
-		}
-
-		localChan, localReqs, err := nc.Accept()
-		if err != nil {
-			_ = targetChan.Close()
-			return err
-		}
-
-		pipeChannels(localChan, targetChan, localReqs, reqs)
-		return nil
+	// More hops remaining - forward through the next hop
+	// This requires the next hop to be a promiscuous session (has an outbound connection)
+	if nextHopSession.GetSSHClient() == nil {
+		_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("session %d is not a gateway, cannot forward", nextHopID))
+		return fmt.Errorf("session %d is not a gateway", nextHopID)
 	}
 
+	// Forward to the next hop
+	fwdReq := ConnectRequest{
+		Target:      remainingTarget,
+		ChannelType: req.ChannelType,
+		Payload:     req.Payload,
+	}
+	fwdPayload, _ := json.Marshal(fwdReq)
+
+	targetChan, reqs, err := nextHopSession.GetSSHClient().OpenChannel("slider-connect", fwdPayload)
+	if err != nil {
+		_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("failed to open next hop channel: %v", err))
+		return err
+	}
+
+	localChan, localReqs, err := nc.Accept()
+	if err != nil {
+		_ = targetChan.Close()
+		return err
+	}
+
+	pipeChannels(localChan, targetChan, localReqs, reqs)
 	return nil
 }
 

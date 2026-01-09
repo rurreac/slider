@@ -74,11 +74,11 @@ func replaceSlashes(s string, oldChar, newChar byte) string {
 	return string(bytes)
 }
 
-// SFTPPathForDisplay converts an SFTP path (always Unix-style) to display format
+// NormalizeToSystemPath converts an SFTP path (always Unix-style) to display format
 // based on the remote system type.
 // For Windows: /C:/Users/user → C:\Users\user
 // For Unix: /home/user → /home/user (unchanged)
-func SFTPPathForDisplay(sftpPath, system string) string {
+func NormalizeToSystemPath(sftpPath, system string) string {
 	if system != "windows" || sftpPath == "" {
 		return sftpPath
 	}
@@ -99,6 +99,31 @@ func SFTPPathForDisplay(sftpPath, system string) string {
 	// Default conversion for other absolute SFTP paths (e.g., from root-relative paths)
 	path := strings.ReplaceAll(sftpPath, "/", "\\")
 	return path
+}
+
+// NormalizeToSFTPPath converts a display-format path to SFTP format (Unix-style)
+// based on the system type.
+// For Windows: C:\Users\user → /C:/Users/user
+// For Unix: /home/user → /home/user (unchanged)
+func NormalizeToSFTPPath(displayPath, system string) string {
+	if system != "windows" || displayPath == "" {
+		return displayPath
+	}
+
+	// Check if the path is in raw Windows format (contains backslashes)
+	if strings.Contains(displayPath, "\\") {
+		// Convert native Windows path to SFTP format: C:\Users\user → /C:/Users/user
+		return "/" + strings.ReplaceAll(displayPath, "\\", "/")
+	}
+
+	// Handle case where Windows path uses forward slashes but isn't in SFTP format
+	// C:/Users/user → /C:/Users/user
+	if len(displayPath) >= 2 && displayPath[1] == ':' && !strings.HasPrefix(displayPath, "/") {
+		return "/" + displayPath
+	}
+
+	// Already in SFTP format or relative path
+	return displayPath
 }
 
 // UserInputToSFTPPath converts user input to SFTP format (Unix-style paths)

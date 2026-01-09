@@ -11,7 +11,6 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
-	"slider/pkg/session"
 
 	"github.com/pkg/sftp"
 	"github.com/spf13/pflag"
@@ -36,10 +35,14 @@ type UnifiedSession struct {
 	User           string
 	Host           string
 	System         string
+	Role           string
 	HomeDir        string
 	WorkingDir     string // Current SFTP working directory (if active)
+	SliderDir      string // Binary path
+	LaunchDir      string // Launch path
 	Extra          string // For port info etc
-	IsListener     bool
+	IsConnector    bool
+	IsGateway  bool
 	ConnectionAddr string
 	Path           []int64
 }
@@ -51,7 +54,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	maxID := int64(0)
 
 	// 1. Collect Local Sessions
-	localSessions := s.GetSessions()
+	localSessions := s.GetAllSessions()
 
 	for _, sess := range localSessions {
 		uSess := UnifiedSession{
@@ -67,35 +70,47 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 			maxID = sess.GetID()
 		}
 
-		if sess.GetSSHClient() != nil {
-			uSess.Type = "PROMISCUOUS/SERVER"
+		if sess.GetRouter() != nil || (sess.GetSSHClient() != nil && !sess.GetIsListener()) {
+			uSess.Type = "PROMISCUOUS"
+			if sess.GetSSHClient() != nil {
+				uSess.Type = "PROMISCUOUS/SERVER"
+			} else {
+				uSess.Type = "PROMISCUOUS/CLIENT"
+			}
 			uSess.User = "server"
 			uSess.Host = sess.GetWebSocketConn().RemoteAddr().String()
-			uSess.System = "unknown/unknown (P)"
+			uSess.System = "unknown/unknown"
 			uSess.HomeDir = "/"
 			if sess.GetInterpreter() != nil {
 				uSess.User = sess.GetInterpreter().User
 				uSess.Host = sess.GetInterpreter().Hostname
-				uSess.System = fmt.Sprintf("%s/%s (P)", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
+				uSess.System = fmt.Sprintf("%s/%s", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
 				uSess.HomeDir = sess.GetInterpreter().HomeDir
+				uSess.SliderDir = sess.GetInterpreter().SliderDir
+				uSess.LaunchDir = sess.GetInterpreter().LaunchDir
 			}
 		} else if sess.GetInterpreter() != nil {
 			uSess.User = sess.GetInterpreter().User
 			uSess.Host = sess.GetInterpreter().Hostname
 			uSess.System = fmt.Sprintf("%s/%s", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
 			uSess.HomeDir = sess.GetInterpreter().HomeDir
+			uSess.SliderDir = sess.GetInterpreter().SliderDir
+			uSess.LaunchDir = sess.GetInterpreter().LaunchDir
 			uSess.Type = "LOCAL"
 		}
 
+		uSess.Role = sess.GetPeerRole().String()
+
 		// Get the current SFTP working directory if available
 		uSess.WorkingDir = sess.GetSftpWorkingDir()
+		uSess.IsGateway = sess.GetIsGateway()
 		unifiedMap[uSess.UnifiedID] = uSess
 	}
 
 	// 2. Collect Remote Sessions
-	// Iterate only over Promiscuous Clients (Gateways)
+	// Iterate only over Gateways/Servers
 	for _, sess := range localSessions {
-		if sess.GetSSHClient() != nil {
+		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
 			// Fetch remotes
 			currentIdentity := fmt.Sprintf("%s:%d", s.fingerprint, s.port)
 			visited := []string{currentIdentity}
@@ -116,9 +131,13 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						User:           rs.User,
 						Host:           rs.Host,
 						System:         system,
+						Role:           rs.Role,
 						HomeDir:        rs.HomeDir,
 						WorkingDir:     rs.WorkingDir,
-						IsListener:     rs.IsListener,
+						SliderDir:      rs.SliderDir,
+						LaunchDir:      rs.LaunchDir,
+						IsConnector:    rs.IsConnector,
+						IsGateway:  rs.IsGateway,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
 					}
@@ -192,9 +211,9 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 			tw := new(tabwriter.Writer)
 			tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
-			// Added Owner column
-			_, _ = fmt.Fprintf(tw, "\n\tID\tOwner\tSystem\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t")
-			_, _ = fmt.Fprintf(tw, "\n\t--\t-----\t------\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
+			// Added Role column
+			_, _ = fmt.Fprintf(tw, "\n\tID\tOwner\tSystem\tRole\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t")
+			_, _ = fmt.Fprintf(tw, "\n\t--\t-----\t------\t----\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
 
 			for _, i := range keys {
 				uSess := unifiedMap[int64(i)]
@@ -235,7 +254,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 							certID = fmt.Sprintf("%d", certIDVal)
 						}
 						inOut = "<-"
-						if sess.GetRole() == session.ListenerRole {
+						if sess.GetRole().IsConnector() {
 							inOut = "->"
 						}
 						connection = sess.GetWebSocketConn().RemoteAddr().String()
@@ -244,7 +263,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					// Remote Session Logic
 					// Set IO and Connection from remote session info
 					inOut = "<-"
-					if uSess.IsListener {
+					if uSess.IsConnector {
 						inOut = "->"
 					}
 					connection = uSess.ConnectionAddr
@@ -301,10 +320,11 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					hostname = hostname[:15] + "..."
 				}
 
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 					uSess.UnifiedID,
 					ownerStr,
 					uSess.System,
+					uSess.Role,
 					uSess.User,
 					hostname,
 					inOut,
@@ -357,6 +377,10 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		uSess, ok := unifiedMap[int64(*sInteract)]
 		if !ok {
 			return fmt.Errorf("session %d not found", *sInteract)
+		}
+
+		if strings.HasPrefix(uSess.Role, "operator") {
+			return fmt.Errorf("interactive session not allowed against operator roles")
 		}
 
 		// ROUTE BASED ON LOCAL vs REMOTE
@@ -444,11 +468,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		remoteInterpreter := &interpreter.Interpreter{
-			User:     uSess.User,
-			Hostname: uSess.Host,
-			HomeDir:  homeDir,
-			System:   remoteSystem,
-			Arch:     remoteArch,
+			User:      uSess.User,
+			Hostname:  uSess.Host,
+			HomeDir:   homeDir,
+			System:    remoteSystem,
+			Arch:      remoteArch,
+			SliderDir: uSess.SliderDir,
+			LaunchDir: uSess.LaunchDir,
 		}
 
 		// Handle channel requests in background
@@ -479,6 +505,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 						remoteInterpreter.HomeDir = homeDir
 						remoteInterpreter.System = strings.ToLower(ci.Interpreter.System)
 						remoteInterpreter.Arch = ci.Interpreter.Arch
+						remoteInterpreter.SliderDir = ci.Interpreter.SliderDir
+						remoteInterpreter.LaunchDir = ci.Interpreter.LaunchDir
 					}
 					_ = gatewaySession.ReplyConnRequest(req, true, nil)
 				default:

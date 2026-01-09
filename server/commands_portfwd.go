@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -93,6 +94,9 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if *pSession > 0 {
 		if val, ok := unifiedMap[int64(*pSession)]; ok {
+			if strings.HasPrefix(val.Role, "operator") {
+				return fmt.Errorf("portfwd command not allowed against operator roles")
+			}
 			uSess = val
 			isRemote = uSess.OwnerID != 0
 		} else {
@@ -283,7 +287,7 @@ func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, a
 		case <-ticker.C:
 			_, sErr := sshInst.GetLocalPortMapping(port)
 			if sErr != nil {
-				fmt.Printf(".")
+				ui.FlatPrintf(".")
 				continue
 			}
 			ui.PrintSuccess("Local Port Forward Endpoint running on port: %d", port)
@@ -334,7 +338,7 @@ func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config,
 		case <-ticker.C:
 			_, sErr := sshInst.GetRemotePortMapping(port)
 			if sErr != nil {
-				fmt.Printf(".")
+				ui.FlatPrintf(".")
 				continue
 			}
 			ui.PrintSuccess("Remote Port Forward Endpoint running on port: %d", port)
