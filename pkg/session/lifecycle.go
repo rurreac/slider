@@ -46,11 +46,10 @@ func NewClientToServerSession(
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		serverAddr:       serverAddr,
-		channels:         make([]ssh.Channel, 0),
-		revPortFwdMap:    make(map[uint32]*RevPortControl),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 		// Initialize with default terminal size
 		initTermSize: types.TermDimensions{
 			Width:  uint32(conf.DefaultTerminalWidth),
@@ -134,10 +133,10 @@ func NewServerFromClientSession(
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances
@@ -210,11 +209,10 @@ func NewServerToServerSession(
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		remoteSessions:   make(map[string]RemoteSession),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances
@@ -287,10 +285,10 @@ func NewServerToListenerSession(
 		localInterpreter: localInterp,
 		peerInterpreter:  interp,
 		hostIP:           hostIP,
-		channels:         make([]ssh.Channel, 0),
-		KeepAliveChan:    make(chan bool, 1),
-		Disconnect:       make(chan bool, 1),
-		active:           true,
+
+		KeepAliveChan: make(chan bool, 1),
+		Disconnect:    make(chan bool, 1),
+		active:        true,
 	}
 
 	// Initialize endpoint instances

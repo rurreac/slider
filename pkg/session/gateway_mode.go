@@ -58,6 +58,12 @@ func (s *BidirectionalSession) GetRequestHandler() ApplicationRequestHandler {
 func (s *BidirectionalSession) AddRemoteSession(key string, rs RemoteSession) {
 	s.remoteSessionsMutex.Lock()
 	defer s.remoteSessionsMutex.Unlock()
+
+	// Lazy initialization
+	if s.remoteSessions == nil {
+		s.remoteSessions = make(map[string]RemoteSession)
+	}
+
 	s.remoteSessions[key] = rs
 
 	s.logger.DebugWith("Remote session added",

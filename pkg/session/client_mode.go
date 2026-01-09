@@ -28,6 +28,11 @@ func (s *BidirectionalSession) AddReversePortForward(
 	s.fwdMutex.Lock()
 	defer s.fwdMutex.Unlock()
 
+	// Lazy initialization
+	if s.revPortFwdMap == nil {
+		s.revPortFwdMap = make(map[uint32]*RevPortControl)
+	}
+
 	s.revPortFwdMap[port] = &RevPortControl{
 		Port:        port,
 		BindAddress: bindAddress,
@@ -71,6 +76,11 @@ func (s *BidirectionalSession) RemoveReversePortForward(port uint32) error {
 func (s *BidirectionalSession) GetReversePortForwards() map[uint32]*RevPortControl {
 	s.fwdMutex.RLock()
 	defer s.fwdMutex.RUnlock()
+
+	// Return empty map if not initialized
+	if s.revPortFwdMap == nil {
+		return make(map[uint32]*RevPortControl)
+	}
 
 	result := make(map[uint32]*RevPortControl)
 	for k, v := range s.revPortFwdMap {
