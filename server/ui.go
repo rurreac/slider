@@ -13,6 +13,7 @@ type UserInterface interface {
 	PrintDebug(format string, args ...any)
 	PrintlnGreyOut(format string, args ...any)
 	Printf(format string, args ...any)
+	FlatPrintf(format string, args ...any)
 	clearScreen()
 	CenterScreen()
 	Writer() io.Writer

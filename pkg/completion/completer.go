@@ -3,6 +3,7 @@ package completion
 import (
 	"context"
 	"os"
+	"slider/pkg/spath"
 )
 
 // PathCompleter provides path completion functionality
@@ -72,10 +73,10 @@ func parsePathInput(input, cwd, system, homeDir string) (dir, prefix string, exp
 	prefix = input[lastSepIdx+1:]
 
 	// Determine absolute directory
-	if isAbsPath(dirPart, system) {
+	if spath.IsAbs(system, dirPart) {
 		dir = dirPart
 	} else {
-		dir = joinPath(system, cwd, dirPart)
+		dir = spath.Join(system, []string{cwd, dirPart})
 	}
 
 	return dir, prefix, expandedInput
@@ -196,78 +197,6 @@ func findLast(s string, c rune) int {
 		}
 	}
 	return -1
-}
-
-func isAbsPath(path, system string) bool {
-	if system == "windows" {
-		// Check for drive letter (C:) or UNC path (\\)
-		if len(path) >= 2 && path[1] == ':' {
-			return true
-		}
-		if len(path) >= 2 && path[0] == '\\' && path[1] == '\\' {
-			return true
-		}
-		// Also handle forward slash absolute paths on Windows
-		if len(path) >= 2 && path[0] == '/' && path[1] != '/' {
-			return false // relative with forward slash
-		}
-		if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
-			return true // /C:/path style
-		}
-		return false
-	}
-	// Unix: absolute if starts with /
-	return len(path) > 0 && path[0] == '/'
-}
-
-func joinPath(system, base, rel string) string {
-	if system == "windows" {
-		// Normalize separators
-		base = normalizeWindowsPath(base)
-		rel = normalizeWindowsPath(rel)
-
-		if base == "" {
-			return rel
-		}
-		if rel == "" {
-			return base
-		}
-
-		// Remove trailing separator from base
-		if base[len(base)-1] == '\\' {
-			base = base[:len(base)-1]
-		}
-
-		return base + "\\" + rel
-	}
-
-	// Unix
-	if base == "" {
-		return rel
-	}
-	if rel == "" {
-		return base
-	}
-
-	// Remove trailing separator from base
-	if base[len(base)-1] == '/' {
-		base = base[:len(base)-1]
-	}
-
-	return base + "/" + rel
-}
-
-func normalizeWindowsPath(path string) string {
-	// Convert forward slashes to backslashes
-	result := make([]byte, len(path))
-	for i := 0; i < len(path); i++ {
-		if path[i] == '/' {
-			result[i] = '\\'
-		} else {
-			result[i] = path[i]
-		}
-	}
-	return string(result)
 }
 
 func toLower(b byte) byte {

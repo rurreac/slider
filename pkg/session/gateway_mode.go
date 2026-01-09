@@ -9,10 +9,10 @@ import (
 )
 
 // ========================================
-// Promiscuous Mode Methods
+// Gateway Mode Methods
 // ========================================
 
-// Methods specific to PromiscuousRole
+// Methods specific to routing and multi-hop sessions
 
 // SetRouter sets the channel router (can be *Router or *remote.Router)
 func (s *BidirectionalSession) SetRouter(router ApplicationRouter) {
@@ -54,10 +54,16 @@ func (s *BidirectionalSession) GetRequestHandler() ApplicationRequestHandler {
 	return s.requestHandler
 }
 
-// AddRemoteSession registers a remote session (PromiscuousRole only)
+// AddRemoteSession registers a remote session (Gateways only)
 func (s *BidirectionalSession) AddRemoteSession(key string, rs RemoteSession) {
 	s.remoteSessionsMutex.Lock()
 	defer s.remoteSessionsMutex.Unlock()
+
+	// Lazy initialization
+	if s.remoteSessions == nil {
+		s.remoteSessions = make(map[string]RemoteSession)
+	}
+
 	s.remoteSessions[key] = rs
 
 	s.logger.DebugWith("Remote session added",
@@ -122,8 +128,8 @@ type GetRemoteSessionsRequest struct {
 
 // GetRemoteSessions fetches sessions from connected servers (recursive)
 func (s *BidirectionalSession) GetRemoteSessions(visited []string) ([]RemoteSession, error) {
-	if s.role != PromiscuousRole {
-		return nil, fmt.Errorf("remote sessions only available in promiscuous mode")
+	if !s.role.IsGateway() && !s.role.IsOperator() {
+		return nil, fmt.Errorf("remote sessions only available in gateway/operator mode")
 	}
 
 	s.sessionMutex.Lock()
@@ -160,7 +166,7 @@ func (s *BidirectionalSession) GetRemoteSessions(visited []string) ([]RemoteSess
 }
 
 // HandleSessionsRequest responds to slider-sessions requests
-// This is called when another server asks this promiscuous session for its connected sessions
+// This is called when another server asks this gateway session for its connected sessions
 func (s *BidirectionalSession) HandleSessionsRequest(payload []byte) ([]RemoteSession, error) {
 	// Parse the request
 	var request GetRemoteSessionsRequest

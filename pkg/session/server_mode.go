@@ -17,12 +17,12 @@ import (
 // Server Mode Methods
 // ========================================
 
-// Methods specific to ServerRole, PromiscuousRole, and ListenerRole
+// Methods specific to OperatorRole, GatewayRole, and AgentRole (when acting as target)
 
 // EnableSocks starts the SOCKS endpoint instance
 func (s *BidirectionalSession) EnableSocks(port int, expose bool, notifier chan error) error {
-	if s.role == ClientRole {
-		return fmt.Errorf("SOCKS instance not available in client mode")
+	if s.role.IsAgent() {
+		return fmt.Errorf("SOCKS instance not available for targets")
 	}
 
 	if s.socksInstance == nil {
@@ -47,8 +47,8 @@ func (s *BidirectionalSession) EnableSocks(port int, expose bool, notifier chan 
 
 // EnableSSH starts the SSH endpoint instance
 func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan error) error {
-	if s.role == ClientRole {
-		return fmt.Errorf("SSH instance not available in client mode")
+	if s.role.IsAgent() {
+		return fmt.Errorf("SSH instance not available for targets")
 	}
 
 	if s.sshInstance == nil {
@@ -84,8 +84,8 @@ func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan er
 
 // EnableShell starts the Shell endpoint instance
 func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, interactiveOn bool, notifier chan error) error {
-	if s.role == ClientRole {
-		return fmt.Errorf("shell instance not available in client mode")
+	if s.role.IsAgent() {
+		return fmt.Errorf("shell instance not available for targets")
 	}
 
 	if s.shellInstance == nil {
@@ -130,7 +130,7 @@ func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, in
 	return nil
 }
 
-// GetSSHServerConn returns the SSH server connection (ServerRole/ListenerRole)
+// GetSSHServerConn returns the SSH server connection (Operator/Gateway/Agent as listener)
 func (s *BidirectionalSession) GetSSHServerConn() *ssh.ServerConn {
 	return s.sshServerConn
 }
@@ -334,7 +334,7 @@ func (s *BidirectionalSession) NewSftpClient() (*sftp.Client, error) {
 }
 
 // ========================================
-// SFTP State Management (ServerRole, PromiscuousRole)
+// SFTP State Management (OperatorRole, GatewayRole)
 // ========================================
 
 // SetSftpCommandRegistry sets the SFTP command registry
@@ -378,7 +378,7 @@ func (s *BidirectionalSession) GetSftpWorkingDir() string {
 }
 
 // ========================================
-// Endpoint Instance Access (ServerRole, PromiscuousRole, ListenerRole)
+// Endpoint Instance Access (OperatorRole, GatewayRole, AgentRole)
 // ========================================
 
 // GetSocksInstance returns the SOCKS endpoint instance

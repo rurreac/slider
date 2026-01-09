@@ -74,12 +74,18 @@ func (c *ExecuteCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	if *eSession > 0 {
 		if uSess, ok := unifiedMap[int64(*eSession)]; ok {
+			if strings.HasPrefix(uSess.Role, "operator") {
+				return fmt.Errorf("execute command not allowed against operator roles")
+			}
 			sessions = []UnifiedSession{uSess}
 		} else {
 			return fmt.Errorf("unknown session ID %d", *eSession)
 		}
 	} else if *eAll {
 		for _, uSess := range unifiedMap {
+			if strings.HasPrefix(uSess.Role, "operator") {
+				continue
+			}
 			sessions = append(sessions, uSess)
 		}
 	}

@@ -205,6 +205,37 @@ The flags `--listener-cert` and `--listener-key` allow us to provide your own ce
 
 If the flag `--listener-ca` is provided, the listener will also verify the client certificate against this CA certificate.
 
+##### `--gateway`:
+Enables the Gateway mode, which allows the server to act as server, client and relay, creating multi-hop routing capabilities.
+
+A server started with `--gateway` can:
+* Accept connections from regular clients.
+* Connect to other gateway servers or listener clients
+* Route commands and sessions through the mesh to reach remote systems
+
+A Server of any kind connecting to a Gateway Server will be operator of the target and its sessions, able to manage any other host down the mesh,
+never the other way around.
+
+```mermaid
+graph TD
+    Console[Server Console]
+    GW1[Gateway Server A<br/>--gateway]
+    GW2[Gateway Server B<br/>--gateway]
+    Client1[Regular Client]
+    Client2[Listener Client]
+    
+    Console -->|connect --gateway| GW1
+    GW1 -->|connect --gateway| GW2
+    Client1 -.-> GW1
+    GW2 -->|connect| Client2
+    
+    style Console fill:#e1f5ff
+    style GW1 fill:#fff4e6
+    style GW2 fill:#fff4e6
+    style Client1 fill:#f0f0f0
+    style Client2 fill:#f0f0f0
+```
+
 ### Console
 
 ```
@@ -296,26 +327,26 @@ runs its next keepalive check will shut down.
 ##### Connect
 ```
 Slider# connect -h
-Usage: connect [flags] <[client_address]:port>
+Usage: connect [flags] <[host_address]:port>
 
-  -i, --cert-id   Specify certID for SSH key authentication (default 0)  
-  -d, --dns       Use custom DNS resolver (default "")                   
-  -p, --proto     Use custom proto (default slider-v1)                   
-  -c, --tls-cert  Use custom client TLS certificate (default "")         
-  -k, --tls-key   Use custom client TLS key (default "")                 
+  -i, --cert-id    Specify certID for SSH key authentication (default 0)  
+  -d, --dns        Use custom DNS resolver (default "")                   
+  -p, --proto      Use custom proto (default slider-v1)                   
+  -c, --tls-cert   Use custom client TLS certificate (default "")         
+  -k, --tls-key    Use custom client TLS key (default "")                 
+  -g, --gateway    Connect to another server in gateway mode              
 
 Requires exactly 1 argument(s)
 ```
-Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener
+Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener or a Server in Gateway mode
 then we'll need to use the `connect` command.
 
 This command will try to open a Session in the background, and you will be notified whether the connection was
 successful or not. `connect` will hold until that confirmation is given, or otherwise considered timed out (10s).
 
-Due to their purpose, Servers will disable Client authentication on connections to a Listener even if the Server is 
-started with `--auth`.
+Servers will disable authentication on connections to a Listener even if the Server is started with `--auth` since authentication is handled on the target side.
 
-I needed, it is possible, to use a custom DNS to resolve the Client, instead of the default one.
+If needed, it is possible to use a custom DNS to resolve the target host instead of the default one.
 
 Since the Server is the one that initiates the connection to the Listener and the Listener is facing the network,
 authentication of Servers will happen on the Client side with `--fingerprint`. 
@@ -324,6 +355,12 @@ the `-i` flag to specify the certificate ID that corresponds to the fingerprint 
 
 Depending on configuration, a TLS Listener may require you to provide a valid certificate for client authentication. 
 In this case, you can provide a certificate and key (flags `-c`, `-k`) signed with the same CA.
+
+When connecting to another gateway server (for multi-hop routing), use the `--gateway` flag:
+
+```
+Slider# connect --gateway gateway-server.example.com:8080
+```
 
 ##### Execute
 ```

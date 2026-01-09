@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -106,6 +107,10 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("session %d not found", sessionID)
 	}
 
+	if strings.HasPrefix(uSess.Role, "operator") {
+		return fmt.Errorf("shell command not allowed against operator roles")
+	}
+
 	// REMOTE PROXY STRATEGY
 	if uSess.OwnerID != 0 {
 		// Handle kill flag for remote shells
@@ -200,7 +205,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 			case <-shellTicker.C:
 				port, sErr := sess.GetShellInstance().GetEndpointPort()
 				if port == 0 || sErr != nil {
-					fmt.Printf(".")
+					ui.FlatPrintf(".")
 					continue
 				}
 				ui.PrintSuccess("Shell Endpoint running on port: %d", port)
@@ -545,7 +550,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		case <-shellTicker.C:
 			actualPort, sErr := remoteShellInstance.GetEndpointPort()
 			if actualPort == 0 || sErr != nil {
-				fmt.Printf(".")
+				ui.FlatPrintf(".")
 				continue
 			}
 			ui.PrintSuccess("Shell Endpoint running on port: %d", actualPort)

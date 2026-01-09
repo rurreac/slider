@@ -8,46 +8,60 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Role defines the operational mode of a session
+// Role defines the security intent of a session
 type Role int
 
 const (
-	// ClientRole - Session initiated as SSH client (outgoing connection)
-	// Used when: Client connecting to server
-	ClientRole Role = iota
-
-	// ServerRole - Session initiated as SSH server (incoming connection)
-	// Used when: Server accepting connections from clients OR other servers
-	// Note: Server must be started with --promiscuous to accept server connections
-	//       Regular servers REJECT all server connections
-	ServerRole
-
-	// PromiscuousRole - Session initiated as SSH client from server's Console
-	// Used when: Server executes "connect --promiscuous <address>" from Console
-	// Note: Target must be a promiscuous server, source can be any server type
-	//       The --promiscuous flag indicates the TARGET is promiscuous, not the source
-	PromiscuousRole
-
-	// ListenerRole - Session in listener mode (client acting as server)
-	// Used when: Client started with --listener flag
-	// Note: Servers connect using "connect <address>" (no --promiscuous flag)
-	ListenerRole
+	// AgentConnector - Target (offers shell) that initiated the connection
+	AgentConnector Role = iota
+	// AgentListener - Target (offers shell) that accepted the connection
+	AgentListener
+	// OperatorConnector - Controller (uses shell) that initiated the connection
+	OperatorConnector
+	// OperatorListener - Controller (uses shell) that accepted the connection
+	OperatorListener
+	// GatewayConnector - Relay (routes traffic) that initiated the connection
+	GatewayConnector
+	// GatewayListener - Relay (routes traffic) that accepted the connection
+	GatewayListener
 )
 
 // String provides human-readable role names
 func (r Role) String() string {
 	switch r {
-	case ClientRole:
-		return "CLIENT"
-	case ServerRole:
-		return "SERVER"
-	case PromiscuousRole:
-		return "PROMISCUOUS"
-	case ListenerRole:
-		return "LISTENER"
+	case AgentConnector:
+		return "agent/c"
+	case AgentListener:
+		return "agent/l"
+	case OperatorConnector:
+		return "operator/c"
+	case OperatorListener:
+		return "operator/l"
+	case GatewayConnector:
+		return "gateway/c"
+	case GatewayListener:
+		return "gateway/l"
 	default:
-		return "UNKNOWN"
+		return "unknown"
 	}
+}
+
+// Role helper methods
+
+func (r Role) IsAgent() bool {
+	return r == AgentConnector || r == AgentListener
+}
+
+func (r Role) IsOperator() bool {
+	return r == OperatorConnector || r == OperatorListener
+}
+
+func (r Role) IsGateway() bool {
+	return r == GatewayConnector || r == GatewayListener
+}
+
+func (r Role) IsConnector() bool {
+	return r == AgentConnector || r == OperatorConnector || r == GatewayConnector
 }
 
 // RevPortControl tracks a reverse port forward
@@ -65,22 +79,16 @@ type RemoteSession struct {
 	Host              string
 	System            string
 	Arch              string
+	Role              string
 	HomeDir           string
 	WorkingDir        string // Current SFTP working directory (if active)
-	IsListener        bool
+	SliderDir         string // Binary path
+	LaunchDir         string // Launch path
+	IsConnector       bool
+	IsGateway         bool
 	ConnectionAddr    string
 	Path              []int64
 }
-
-// Router handles channel routing in promiscuous mode
-type Router struct {
-	handlers map[string]HandlerFunc
-	session  *BidirectionalSession
-	logger   *slog.Logger
-}
-
-// HandlerFunc is a function that handles an SSH channel
-type HandlerFunc func(ssh.NewChannel) error
 
 // certInfo stores certificate authentication information
 type certInfo struct {
@@ -92,20 +100,31 @@ type certInfo struct {
 // Interfaces for Application Extensions
 // ========================================
 
-// ApplicationServer provides server-level operations needed by application-specific
-// channel handlers (e.g., slider-connect). This allows session to delegate to
-// server logic without creating a circular dependency.
-type ApplicationServer interface {
+// SessionRegistry provides access to the server's session registry
+type SessionRegistry interface {
 	// GetSession retrieves a session by ID from the server's registry
 	GetSession(id int) (*BidirectionalSession, error)
+	// GetAllSessions returns all sessions from the server's registry
+	GetAllSessions() []*BidirectionalSession
+}
+
+// ServerInfo provides server-level metadata
+type ServerInfo interface {
 	// GetServerInterpreter returns the server's interpreter information
 	GetServerInterpreter() *interpreter.Interpreter
-	// HandleSessionsRequest handles slider-sessions requests (multi-hop listing)
-	HandleSessionsRequest(req *ssh.Request, sess *BidirectionalSession) error
-	// HandleForwardRequest handles slider-forward-request requests (multi-hop forwarding)
-	HandleForwardRequest(req *ssh.Request, sess *BidirectionalSession) error
-	// HandleEventRequest handles slider-event requests (event propagation)
-	HandleEventRequest(req *ssh.Request, sess *BidirectionalSession) error
+	// IsGateway returns whether the local server is in gateway mode
+	IsGateway() bool
+	// GetServerIdentity returns a unique identifier for loop detection (fingerprint:port)
+	GetServerIdentity() string
+	// GetFingerprint returns the server's fingerprint for session stamping
+	GetFingerprint() string
+}
+
+// ApplicationServer combines all server capabilities needed by sessions
+// This allows session to delegate to server logic without creating a circular dependency.
+type ApplicationServer interface {
+	SessionRegistry
+	ServerInfo
 }
 
 // Session interface for use by remote handlers

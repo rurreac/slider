@@ -120,7 +120,7 @@ func RunClient(cfg *Config) {
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Protocol_upgrade_mechanism
 	c.httpHeaders = http.Header{
 		"Sec-WebSocket-Protocol":  {cfg.CustomProto},
-		"Sec-WebSocket-Operation": {listener.OperationClient},
+		"Sec-WebSocket-Operation": {conf.OperationAgent},
 	}
 
 	if cfg.ListenerOn {

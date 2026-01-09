@@ -123,17 +123,6 @@ func (c *client) newSSHClient(sess *session.BidirectionalSession) {
 	// Update the existing session with the SSH client
 	sess.SetSSHClient(sshClient)
 
-	// Update endpoint instances with the SSH client connection
-	if sess.GetShellInstance() != nil {
-		sess.GetShellInstance().SetSSHConn(sshClient)
-	}
-	if sess.GetSocksInstance() != nil {
-		sess.GetSocksInstance().SetSSHConn(sshClient)
-	}
-	if sess.GetSSHInstance() != nil {
-		sess.GetSSHInstance().SetSSHConn(sshClient)
-	}
-
 	defer func() { _ = sess.Close() }()
 
 	c.Logger.InfoWith("Server connected",
@@ -168,6 +157,7 @@ func (c *client) newWebSocketSession(wsConn *websocket.Conn) *session.Bidirectio
 	// Create a session without SSH client (will be set later in newSSHClient)
 	serverAddr := wsConn.RemoteAddr().String()
 	sess := session.NewClientToServerSession(c.Logger, wsConn, nil, c.interpreter, serverAddr)
+	sess.SetIsListener(c.isListener)
 	sessionID := sess.GetID()
 	c.sessionTrack.Sessions[sessionID] = sess
 
@@ -253,13 +243,14 @@ func (c *client) sendClientInfo(sess *session.BidirectionalSession, ci *conf.Cli
 		return
 	}
 	if len(ciAnswerBytes) != 0 {
-		ciAnswer := &interpreter.Interpreter{}
-		if mErr := json.Unmarshal(ciAnswerBytes, ciAnswer); mErr == nil {
-			c.Logger.DebugWith("Server identification received",
-				slog.F("session_id", sess.GetID()),
-				slog.F("server_system", ciAnswer.System))
-			// Do not override client's shell with server's shell
-			// The client should use its own native shell
+		var ciAnswer conf.ClientInfo
+		if mErr := json.Unmarshal(ciAnswerBytes, &ciAnswer); mErr == nil {
+			if ciAnswer.Interpreter != nil {
+				sess.SetInterpreter(ciAnswer.Interpreter)
+				c.Logger.DebugWith("Server identification received",
+					slog.F("session_id", sess.GetID()),
+					slog.F("server_system", ciAnswer.Interpreter.System))
+			}
 		}
 	}
 }

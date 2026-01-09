@@ -63,7 +63,7 @@ func (rpc *RemotePathCompleter) Complete(input string, cwd string, system string
 			matchName := strings.TrimSuffix(match, "/")
 
 			// Convert to Windows display format
-			matchName = spath.SFTPPathForDisplay(matchName, system)
+			matchName = spath.NormalizeToSystemPath(matchName, system)
 
 			if isDir {
 				matchName += "\\"
@@ -76,7 +76,7 @@ func (rpc *RemotePathCompleter) Complete(input string, cwd string, system string
 		// Convert common prefix
 		isDir := strings.HasSuffix(result.CommonPrefix, "/")
 		commonName := strings.TrimSuffix(result.CommonPrefix, "/")
-		commonName = spath.SFTPPathForDisplay(commonName, system)
+		commonName = spath.NormalizeToSystemPath(commonName, system)
 		if isDir {
 			commonName += "\\"
 		}
