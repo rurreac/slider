@@ -95,11 +95,6 @@ func newTestSession(id int64) *testSessionBuilder {
 	}
 }
 
-func (b *testSessionBuilder) withRole(role session.Role) *testSessionBuilder {
-	b.role = role
-	return b
-}
-
 func (b *testSessionBuilder) withInterpreter(interp *interpreter.Interpreter) *testSessionBuilder {
 	b.interpreter = interp
 	return b
