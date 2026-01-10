@@ -27,16 +27,12 @@ func (c *SftpStatCommand) Usage() string            { return statUsage }
 func (c *SftpStatCommand) IsRemote() bool           { return true }
 func (c *SftpStatCommand) IsRemoteCompletion() bool { return true }
 
-func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpStatCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	statFlags := pflag.NewFlagSet(statCmd, pflag.ContinueOnError)
 	statFlags.SetOutput(ui.Writer())
@@ -59,8 +55,8 @@ func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	path := statFlags.Args()[0]
-	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
-		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.RemoteSystem(), path) {
+		path = spath.Join(sftpCtx.RemoteSystem(), []string{sftpCtx.GetRemoteCwd(), path})
 	}
 
 	// Get file info
@@ -111,7 +107,7 @@ func (c *SftpStatCommand) Run(ctx *ExecutionContext, args []string) error {
 	_, _ = fmt.Fprintf(tw, "\tModified:\t%s\n", fi.ModTime().Format("Jan 02, 2006 15:04:05 MST"))
 
 	// Try to get extended information
-	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && sftpCtx.remoteSystem != "windows" {
+	if sftpStat, ok := fi.Sys().(*sftp.FileStat); ok && sftpCtx.RemoteSystem() != "windows" {
 		_, _ = fmt.Fprintf(tw, "\tOwner UID:\t%d\n", sftpStat.UID)
 		_, _ = fmt.Fprintf(tw, "\tGroup GID:\t%d\n", sftpStat.GID)
 	}

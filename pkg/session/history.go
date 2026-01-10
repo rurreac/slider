@@ -1,4 +1,4 @@
-package server
+package session
 
 import (
 	"fmt"
@@ -34,14 +34,13 @@ func (h *CustomHistory) Add(entry string) {
 		return
 	}
 
-	// Skip duplicate of the most recent entry
+	// Skip duplicate of the most recent entry - no lock needed for read
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
 	if len(h.entries) > 0 && h.entries[0] == entry {
 		return
 	}
-
-	// Lock the history for concurrent access
-	h.mu.Lock()
-	defer h.mu.Unlock()
 
 	// Add the new entry at the beginning (most recent first)
 	h.entries = append([]string{entry}, h.entries...)
@@ -53,10 +52,14 @@ func (h *CustomHistory) Add(entry string) {
 }
 
 func (h *CustomHistory) Len() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	return len(h.entries)
 }
 
 func (h *CustomHistory) At(idx int) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if idx < 0 || idx >= len(h.entries) {
 		panic(fmt.Sprintf("history index out of range: %d", idx))
 	}

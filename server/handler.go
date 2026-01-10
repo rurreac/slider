@@ -13,7 +13,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/listener"
 	"slider/pkg/scrypt"
-	pkgsession "slider/pkg/session"
+	"slider/pkg/session"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strings"
@@ -105,13 +105,13 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Create server session for incoming client connection
 	remoteAddr := wsConn.RemoteAddr().String()
-	opts := &pkgsession.ServerSessionOptions{
+	opts := &session.ServerSessionOptions{
 		CertificateAuthority: s.CertificateAuthority,
 		ServerKey:            s.serverKey,
 		AuthOn:               s.authOn,
 	}
 
-	session := pkgsession.NewServerFromClientSession(
+	biSession := session.NewServerFromClientSession(
 		s.Logger,
 		wsConn,
 		nil,        // sshServerConn will be set by NewSSHServer
@@ -126,38 +126,38 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	case conf.OperationAgent:
 		// Callback agent connecting to us
 		if s.gateway {
-			session.SetRole(pkgsession.GatewayListener)
+			biSession.SetRole(session.GatewayListener)
 		} else {
-			session.SetRole(pkgsession.OperatorListener)
+			biSession.SetRole(session.OperatorListener)
 		}
-		session.SetPeerRole(pkgsession.AgentConnector)
+		biSession.SetPeerRole(session.AgentConnector)
 
 	case conf.OperationGateway, conf.OperationOperator:
 		// OperationGateway: Server connecting to listening client (client should expose shell)
 		// OperationOperator: Incoming management request (Someone wants to control US)
-		session.SetRole(pkgsession.AgentListener)
-		session.SetPeerRole(pkgsession.OperatorConnector)
+		biSession.SetRole(session.AgentListener)
+		biSession.SetPeerRole(session.OperatorConnector)
 
 	default:
 		// Default fallback
-		session.SetRole(pkgsession.OperatorListener)
-		session.SetPeerRole(pkgsession.AgentConnector)
+		biSession.SetRole(session.OperatorListener)
+		biSession.SetPeerRole(session.AgentConnector)
 	}
-	session.SetIsGateway(false) // Inbound connections are never relays by default
+	biSession.SetIsGateway(false) // Inbound connections are never relays by default
 
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()
-	s.sessionTrack.Sessions[session.GetID()] = session
-	s.sessionTrack.SessionCount = session.GetID()
+	s.sessionTrack.Sessions[biSession.GetID()] = biSession
+	s.sessionTrack.SessionCount = biSession.GetID()
 	s.sessionTrack.SessionActive++
 	s.sessionTrackMutex.Unlock()
 
 	defer func() {
-		s.dropWebSocketSession(session)
-		s.NotifyUpstreamDisconnect(session.GetID())
+		s.dropWebSocketSession(biSession)
+		s.NotifyUpstreamDisconnect(biSession.GetID())
 	}()
 
-	s.NewSSHServer(session)
+	s.NewSSHServer(biSession)
 }
 
 func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, gateway bool) {
@@ -260,17 +260,17 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 
 	// Create session with the appropriate role based on connection mode
 	remoteAddr := wsConn.RemoteAddr().String()
-	opts := &pkgsession.ServerSessionOptions{
+	opts := &session.ServerSessionOptions{
 		CertificateAuthority: s.CertificateAuthority,
 		ServerKey:            s.serverKey,
 		AuthOn:               s.authOn,
 	}
 
-	var session *pkgsession.BidirectionalSession
+	var biSession *session.BidirectionalSession
 
 	if gateway {
 		// Gateway mode: we're a server connecting TO another server as a client
-		session = pkgsession.NewServerToServerSession(
+		biSession = session.NewServerToServerSession(
 			s.Logger,
 			wsConn,
 			nil, // sshClient will be set by NewSSHClient
@@ -278,11 +278,11 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
-		session.SetRole(pkgsession.OperatorConnector)
-		session.SetPeerRole(pkgsession.GatewayListener)
+		biSession.SetRole(session.OperatorConnector)
+		biSession.SetPeerRole(session.GatewayListener)
 	} else {
 		// Listener mode: we're a server connecting TO a client acting as a server
-		session = pkgsession.NewServerToListenerSession(
+		biSession = session.NewServerToListenerSession(
 			s.Logger,
 			wsConn,
 			nil,      // sshServerConn will be set by NewSSHServer
@@ -291,36 +291,36 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 			remoteAddr,
 			opts,
 		)
-		session.SetRole(pkgsession.OperatorConnector)
-		session.SetPeerRole(pkgsession.AgentListener)
+		biSession.SetRole(session.OperatorConnector)
+		biSession.SetPeerRole(session.AgentListener)
 	}
 
-	session.SetIsGateway(gateway) // Outbound relay status based on initiator intent
+	biSession.SetIsGateway(gateway) // Outbound relay status based on initiator intent
 
 	// Set certificate info if we have one
 	if certID != 0 {
 		keyPair, _ := s.getCert(certID)
-		session.SetCertInfo(certID, keyPair.FingerPrint)
+		biSession.SetCertInfo(certID, keyPair.FingerPrint)
 	}
 
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()
-	s.sessionTrack.Sessions[session.GetID()] = session
-	s.sessionTrack.SessionCount = session.GetID()
+	s.sessionTrack.Sessions[biSession.GetID()] = biSession
+	s.sessionTrack.SessionCount = biSession.GetID()
 	s.sessionTrack.SessionActive++
 	s.sessionTrackMutex.Unlock()
 
-	defer s.dropWebSocketSession(session)
+	defer s.dropWebSocketSession(biSession)
 
-	session.AddNotifier(notifier)
-	session.SetSSHConfig(&sshConf)
+	biSession.AddNotifier(notifier)
+	biSession.SetSSHConfig(&sshConf)
 
 	if gateway {
 		// If connecting in gateway mode, we act as a client
-		s.NewSSHClient(session)
+		s.NewSSHClient(biSession)
 	} else {
 		// Standard listener connection, we act as a server
-		s.NewSSHServer(session)
+		s.NewSSHServer(biSession)
 	}
 
 }
@@ -402,7 +402,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Setup Console
-	webTermHistory := DefaultHistory
+	webTermHistory := session.DefaultHistory
 	webConsole, err := s.newWebConsole(ptyTTY, webTermHistory)
 	if err != nil {
 		s.ErrorWith("Failed to create WebConsole",
@@ -533,7 +533,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (s *server) newWebConsole(ptyTTY *os.File, history *CustomHistory) (*Console, error) {
+func (s *server) newWebConsole(ptyTTY *os.File, history *session.CustomHistory) (*Console, error) {
 	if _, err := term.MakeRaw(int(ptyTTY.Fd())); err != nil {
 		return nil, err
 	}

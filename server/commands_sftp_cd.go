@@ -42,16 +42,12 @@ func (c *SftpCdCommand) IsRemote() bool {
 
 func (c *SftpCdCommand) IsRemoteCompletion() bool { return c.isRemote }
 
-func (c *SftpCdCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpCdCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	// No args - go to home directory
 	var newPath string
