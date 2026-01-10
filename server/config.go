@@ -92,7 +92,7 @@ func RunServer(cfg *Config) {
 		sshConf:        sshConf,
 		console: Console{
 			FirstRun: true,
-			History:  DefaultHistory,
+			History:  session.DefaultHistory,
 		},
 		certTrack: &scrypt.CertTrack{
 			Certs: make(map[int64]*scrypt.KeyPair),

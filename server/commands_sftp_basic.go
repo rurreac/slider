@@ -15,20 +15,16 @@ func (c *SftpHelpCommand) Description() string      { return helpDesc }
 func (c *SftpHelpCommand) Usage() string            { return helpCmd }
 func (c *SftpHelpCommand) IsRemote() bool           { return false }
 func (c *SftpHelpCommand) IsRemoteCompletion() bool { return false }
-func (c *SftpHelpCommand) Run(ctx *ExecutionContext, _ []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
+func (c *SftpHelpCommand) Run(execCtx *ExecutionContext, _ []string) error {
+	ui := execCtx.UI()
 
 	tw := new(tabwriter.Writer)
 	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintf(tw, "\n\tCommand\tDescription\t")
 	_, _ = fmt.Fprintf(tw, "\n\t-------\t-----------\t\n")
 
-	// Get primary commands with their aliases
-	primaryCommands := session.GetSftpCommandRegistry().(*CommandRegistry).GetPrimaryCommands()
+	// Get primary commands with their aliases from the registry directly in execCtx
+	primaryCommands := execCtx.sftpRegistry.GetPrimaryCommands()
 
 	// Create a sorted list of primary command names
 	var cmdNames []string
@@ -38,7 +34,7 @@ func (c *SftpHelpCommand) Run(ctx *ExecutionContext, _ []string) error {
 	sort.Strings(cmdNames)
 
 	for _, cmdName := range cmdNames {
-		if cmd, ok := session.GetSftpCommandRegistry().(*CommandRegistry).Get(cmdName); ok {
+		if cmd, ok := execCtx.sftpRegistry.Get(cmdName); ok {
 			aliases := primaryCommands[cmdName]
 			aliasStr := strings.Join(aliases, ", ")
 			_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", aliasStr, cmd.Description())

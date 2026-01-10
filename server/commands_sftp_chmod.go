@@ -26,16 +26,12 @@ func (c *SftpChmodCommand) Usage() string            { return chmodUsage }
 func (c *SftpChmodCommand) IsRemote() bool           { return true }
 func (c *SftpChmodCommand) IsRemoteCompletion() bool { return true }
 
-func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpChmodCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	chmodFlags := pflag.NewFlagSet(chmodCmd, pflag.ContinueOnError)
 	chmodFlags.SetOutput(ui.Writer())
@@ -62,8 +58,8 @@ func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
 	path := chmodFlags.Args()[1]
 
 	// Handle relative path
-	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
-		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.RemoteSystem(), path) {
+		path = spath.Join(sftpCtx.RemoteSystem(), []string{sftpCtx.GetRemoteCwd(), path})
 	}
 
 	// Parse mode
@@ -85,13 +81,13 @@ func (c *SftpChmodCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Check if file exists
-	_, err = sftpCtx.sftpCli.Stat(path)
-	if err != nil {
-		return fmt.Errorf("file or directory \"%s\" not found: %w", path, err)
+	_, statErr := sftpCtx.sftpCli.Stat(path)
+	if statErr != nil {
+		return fmt.Errorf("file or directory \"%s\" not found: %w", path, statErr)
 	}
 
 	// Change permissions
-	err = sftpCtx.sftpCli.Chmod(path, mode)
+	err := sftpCtx.sftpCli.Chmod(path, mode)
 	if err != nil {
 		return fmt.Errorf("failed to change \"%s\" permissions: %w", path, err)
 	}

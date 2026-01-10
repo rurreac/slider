@@ -20,31 +20,26 @@ func (c *SftpSysInfoCommand) Usage() string            { return sysInfoCmd }
 func (c *SftpSysInfoCommand) IsRemote() bool           { return true }
 func (c *SftpSysInfoCommand) IsRemoteCompletion() bool { return false }
 
-func (c *SftpSysInfoCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *SftpSysInfoCommand) Run(execCtx *ExecutionContext, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("sysinfo command does not accept arguments")
 	}
 
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
 
 	interpreter := sftpCtx.remoteInterpreter
 	if interpreter == nil {
-		interpreter = session.GetInterpreter()
+		interpreter = sftpCtx.session.GetInterpreter()
 	}
 
 	if interpreter == nil {
 		return fmt.Errorf("failed to resolve interpreter information")
 	}
 
-	ui := ctx.UI()
+	ui := execCtx.UI()
 	tw := new(tabwriter.Writer)
 	tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 
@@ -56,7 +51,7 @@ func (c *SftpSysInfoCommand) Run(ctx *ExecutionContext, args []string) error {
 	_, _ = fmt.Fprintf(tw, "\tBinary Path\t%s\t\n", interpreter.SliderDir)
 	_, _ = fmt.Fprintf(tw, "\tLaunch Path\t%s\t\n", interpreter.LaunchDir)
 	_, _ = fmt.Fprintf(tw, "\tHome Directory\t%s\t\n", spath.NormalizeToSystemPath(interpreter.HomeDir, interpreter.System))
-	_, _ = fmt.Fprintf(tw, "\tWorking Directory\t%s\t\n", spath.NormalizeToSystemPath(*sftpCtx.remoteCwd, interpreter.System))
+	_, _ = fmt.Fprintf(tw, "\tWorking Directory\t%s\t\n", spath.NormalizeToSystemPath(sftpCtx.GetRemoteCwd(), interpreter.System))
 	_, _ = fmt.Fprintln(tw)
 
 	return tw.Flush()

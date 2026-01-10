@@ -79,12 +79,8 @@ type BidirectionalSession struct {
 	requestHandler ApplicationRequestHandler
 
 	// SFTP State (OperatorRole, GatewayRole)
-	// Note: CustomHistory, CommandRegistry, and SftpCommandContext are defined in server package
-	// They will be added when we integrate with the server code
-	sftpHistory         interface{} // *server.CustomHistory
-	sftpCommandRegistry interface{} // *server.CommandRegistry
-	sftpContext         interface{} // *server.SftpCommandContext
-	sftpWorkingDir      string
+	sftpHistory    *CustomHistory // Save history within the session
+	sftpWorkingDir string         // Save Working dir for the next run
 
 	// Server-specific metadata
 	hostIP     string
@@ -161,8 +157,8 @@ func (s *BidirectionalSession) SetIsGateway(isGateway bool) {
 	s.isGateway = isGateway
 }
 
-// GetConnection returns the SSH connection (abstracted)
-func (s *BidirectionalSession) GetConnection() ssh.Conn {
+// GetSSHConn returns the SSH connection (abstracted)
+func (s *BidirectionalSession) GetSSHConn() ssh.Conn {
 	if s.sshClient != nil {
 		return s.sshClient.Conn
 	}
@@ -189,11 +185,6 @@ func (s *BidirectionalSession) GetLocalInterpreter() *interpreter.Interpreter {
 	return s.localInterpreter
 }
 
-// GetSSHConn returns the SSH connection (interface method for compatibility)
-func (s *BidirectionalSession) GetSSHConn() ssh.Conn {
-	return s.GetConnection()
-}
-
 // SetInitTermSize sets the initial terminal size
 func (s *BidirectionalSession) SetInitTermSize(size types.TermDimensions) {
 	s.sessionMutex.Lock()
@@ -206,11 +197,6 @@ func (s *BidirectionalSession) GetInitTermSize() types.TermDimensions {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
 	return s.initTermSize
-}
-
-// AddSessionChannel adds a channel to the session (interface method for compatibility)
-func (s *BidirectionalSession) AddSessionChannel(ch ssh.Channel) {
-	s.AddChannel(ch)
 }
 
 // IsPtyOn returns whether PTY is enabled on the peer system

@@ -134,9 +134,7 @@ type Session interface {
 	GetLogger() *slog.Logger
 	GetSSHConn() ssh.Conn
 	GetSSHClient() *ssh.Client
-	GetConnection() ssh.Conn // Alias for GetSSHConn for backward compatibility
 	AddChannel(ch ssh.Channel)
-	AddSessionChannel(ch ssh.Channel) // Alias for AddChannel for backward compatibility
 	GetInterpreter() *interpreter.Interpreter
 	HandleForwardedTcpIpChannel(nc ssh.NewChannel)
 	SetInitTermSize(types.TermDimensions)
@@ -160,6 +158,6 @@ type ApplicationRouter interface {
 // This interface allows session to delegate application-specific requests without circular dependencies
 type ApplicationRequestHandler interface {
 	// HandleRequest processes an application-specific SSH global request
-	// It receives the request and the session, and should return true if handled
+	// It receives the request and the session, should return true if handled
 	HandleRequest(req *ssh.Request, sess Session) bool
 }

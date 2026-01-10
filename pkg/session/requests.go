@@ -305,7 +305,7 @@ func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 			}
 
 			// Start a "forwarded-tcpip" channel, circling back to the remote
-			channel, reqs, oErr := s.GetConnection().OpenChannel("forwarded-tcpip", customMsgBytes)
+			channel, reqs, oErr := s.GetSSHConn().OpenChannel("forwarded-tcpip", customMsgBytes)
 			if oErr != nil {
 				s.logger.DebugWith("Failed to open forwarded-tcpip channel",
 					slog.F("session_id", s.sessionID),

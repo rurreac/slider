@@ -41,17 +41,12 @@ func (c *SftpPwdCommand) IsRemote() bool {
 
 func (c *SftpPwdCommand) IsRemoteCompletion() bool { return c.isRemote }
 
-func (c *SftpPwdCommand) Run(ctx *ExecutionContext, args []string) error {
+func (c *SftpPwdCommand) Run(execCtx *ExecutionContext, args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("too many arguments")
 	}
 
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
@@ -65,6 +60,6 @@ func (c *SftpPwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		displayPath = spath.NormalizeToSystemPath(cwd, system)
 	}
 
-	ctx.UI().Printf("%s\n\n", displayPath)
+	execCtx.UI().Printf("%s\n\n", displayPath)
 	return nil
 }

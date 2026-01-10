@@ -19,38 +19,16 @@ import (
 type SftpCommandContext struct {
 	sftpCli           *sftp.Client
 	session           *session.BidirectionalSession
-	localSystem       string
-	localHomeDir      string
 	localCwd          *string
-	remoteSystem      string
-	remoteHomeDir     string
 	remoteCwd         *string
+	localInterpreter  *interpreter.Interpreter // Reference to local interpreter
 	remoteInterpreter *interpreter.Interpreter // Reference to remote interpreter for dynamic updates
+	targetID          int64                    // The logical session ID (UnifiedID) for this context
 }
 
-// initSftpRegistry initializes the SFTP command registry with optional remote interpreter
-func (s *server) initSftpRegistry(sess *session.BidirectionalSession, sftpClient *sftp.Client, remoteCwd, localCwd *string, remoteInterpreter *interpreter.Interpreter) {
+// initSftpRegistry initializes the SFTP command registry and returns it
+func (s *server) initSftpRegistry(sess *session.BidirectionalSession) *CommandRegistry {
 	registry := NewCommandRegistry()
-	sess.SetSftpCommandRegistry(registry)
-
-	// Use provided interpreter or fall back to session's interpreter
-	targetInterpreter := remoteInterpreter
-	if targetInterpreter == nil {
-		targetInterpreter = sess.GetInterpreter()
-	}
-
-	ctx := &SftpCommandContext{
-		sftpCli:           sftpClient,
-		session:           sess,
-		localSystem:       s.serverInterpreter.System,
-		localHomeDir:      s.serverInterpreter.HomeDir,
-		localCwd:          localCwd,
-		remoteSystem:      targetInterpreter.System,
-		remoteHomeDir:     targetInterpreter.HomeDir,
-		remoteCwd:         remoteCwd,
-		remoteInterpreter: remoteInterpreter, // Store reference for dynamic updates
-	}
-	sess.SetSftpContext(ctx)
 
 	// Register basic commands
 	registry.Register(&SftpHelpCommand{})
@@ -108,6 +86,11 @@ func (s *server) initSftpRegistry(sess *session.BidirectionalSession, sftpClient
 	// Register put command
 	registry.Register(&SftpPutCommand{})
 	registry.RegisterAlias("upload", putCmd)
+
+	// Register execute command
+	registry.Register(&SftpExecuteCommand{})
+
+	return registry
 }
 
 func (ctx *SftpCommandContext) getCwd(isRemote bool) string {
@@ -116,6 +99,10 @@ func (ctx *SftpCommandContext) getCwd(isRemote bool) string {
 	}
 	return *ctx.localCwd
 }
+
+func (ctx *SftpCommandContext) GetRemoteCwd() string { return ctx.getCwd(true) }
+func (ctx *SftpCommandContext) GetLocalCwd() string  { return ctx.getCwd(false) }
+func (ctx *SftpCommandContext) GetTargetID() int64   { return ctx.targetID }
 
 func (ctx *SftpCommandContext) setCwd(path string, isRemote bool) {
 	if isRemote {
@@ -186,34 +173,23 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
-		// Read from remote interpreter reference if available (for gateway connections)
-		// Otherwise read from session interpreter for direct connections
-		if ctx.remoteInterpreter != nil {
-			return strings.ToLower(ctx.remoteInterpreter.System)
-		}
-		if ctx.session != nil && ctx.session.GetInterpreter() != nil {
-			return strings.ToLower(ctx.session.GetInterpreter().System)
-		}
-		return ctx.remoteSystem
+		return strings.ToLower(ctx.remoteInterpreter.System)
 	}
-	return ctx.localSystem
+	return strings.ToLower(ctx.localInterpreter.System)
 }
 
 // getContextHomeDir returns the home directory for the given context (remote or local)
 func (ctx *SftpCommandContext) getContextHomeDir(isRemote bool) string {
 	if isRemote {
-		// Read from remote interpreter reference if available (for gateway connections)
-		// Otherwise read from session interpreter for direct connections
-		if ctx.remoteInterpreter != nil {
-			return ctx.remoteInterpreter.HomeDir
-		}
-		if ctx.session != nil && ctx.session.GetInterpreter() != nil {
-			return ctx.session.GetInterpreter().HomeDir
-		}
-		return ctx.remoteHomeDir
+		return ctx.remoteInterpreter.HomeDir
 	}
-	return ctx.localHomeDir
+	return ctx.localInterpreter.HomeDir
 }
+
+func (ctx *SftpCommandContext) RemoteSystem() string { return ctx.getContextSystem(true) }
+func (ctx *SftpCommandContext) LocalSystem() string  { return ctx.getContextSystem(false) }
+func (ctx *SftpCommandContext) RemoteHome() string   { return ctx.getContextHomeDir(true) }
+func (ctx *SftpCommandContext) LocalHome() string    { return ctx.getContextHomeDir(false) }
 
 // getFileIdInfo returns the UID and GID of a file or 0 0 if not available
 func (ctx *SftpCommandContext) getFileIdInfo(entry os.FileInfo, isRemote bool) (int, int) {
@@ -245,10 +221,11 @@ func (ctx *SftpCommandContext) walkRemoteDir(remotePath, relPath string, callbac
 	}
 
 	for _, entry := range entries {
-		entryPath := spath.Join(ctx.remoteSystem, []string{remotePath, entry.Name()})
+		remoteSystem := ctx.RemoteSystem()
+		entryPath := spath.Join(remoteSystem, []string{remotePath, entry.Name()})
 		entryRelPath := entry.Name()
 		if relPath != "" {
-			entryRelPath = spath.Join(ctx.remoteSystem, []string{relPath, entry.Name()})
+			entryRelPath = spath.Join(remoteSystem, []string{relPath, entry.Name()})
 		}
 
 		if entry.IsDir() {
