@@ -26,16 +26,12 @@ func (c *SftpPutCommand) Usage() string            { return putUsage }
 func (c *SftpPutCommand) IsRemote() bool           { return true }
 func (c *SftpPutCommand) IsRemoteCompletion() bool { return false }
 
-func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpPutCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	putFlags := pflag.NewFlagSet(putCmd, pflag.ContinueOnError)
 	putFlags.SetOutput(ui.Writer())
@@ -62,8 +58,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 
 	localPath := putFlags.Args()[0]
 
-	if !spath.IsAbs(sftpCtx.localSystem, localPath) {
-		localPath = spath.Join(sftpCtx.localSystem, []string{*sftpCtx.localCwd, localPath})
+	if !spath.IsAbs(sftpCtx.LocalSystem(), localPath) {
+		localPath = spath.Join(sftpCtx.LocalSystem(), []string{sftpCtx.GetLocalCwd(), localPath})
 	}
 
 	// Get local file info to check if it exists
@@ -73,11 +69,11 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Get basename of the local path for remote destination
-	baseName := spath.Base(sftpCtx.localSystem, localPath)
+	baseName := spath.Base(sftpCtx.LocalSystem(), localPath)
 	// Ensure paths correspond to the target system
-	baseName = spath.FromToSlash(sftpCtx.remoteSystem, baseName)
+	baseName = spath.FromToSlash(sftpCtx.RemoteSystem(), baseName)
 	// Construct the remote path using the basename and current remote directory
-	remotePath := spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, baseName})
+	remotePath := spath.Join(sftpCtx.RemoteSystem(), []string{sftpCtx.GetRemoteCwd(), baseName})
 
 	// Handle differently based on whether it's a directory or file
 	if localFileInfo.IsDir() {
@@ -126,8 +122,8 @@ func (c *SftpPutCommand) Run(ctx *ExecutionContext, args []string) error {
 				remoteFullPath = remotePath
 			} else {
 				// Use appropriate path for the remote OS
-				remoteRelPath = spath.FromToSlash(sftpCtx.remoteSystem, remoteRelPath)
-				remoteFullPath = spath.Join(sftpCtx.remoteSystem, []string{remotePath, remoteRelPath})
+				remoteRelPath = spath.FromToSlash(sftpCtx.RemoteSystem(), remoteRelPath)
+				remoteFullPath = spath.Join(sftpCtx.RemoteSystem(), []string{remotePath, remoteRelPath})
 			}
 
 			if isDir {

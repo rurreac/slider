@@ -56,16 +56,12 @@ func (c *SftpLsCommand) IsRemote() bool {
 
 func (c *SftpLsCommand) IsRemoteCompletion() bool { return c.isRemote }
 
-func (c *SftpLsCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpLsCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	lsFlags := pflag.NewFlagSet(c.Name(), pflag.ContinueOnError)
 	lsFlags.SetOutput(ui.Writer())

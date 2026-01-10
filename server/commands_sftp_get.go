@@ -27,16 +27,12 @@ func (c *SftpGetCommand) Usage() string            { return getUsage }
 func (c *SftpGetCommand) IsRemote() bool           { return true }
 func (c *SftpGetCommand) IsRemoteCompletion() bool { return true }
 
-func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpGetCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	getFlags := pflag.NewFlagSet(getCmd, pflag.ContinueOnError)
 	getFlags.SetOutput(ui.Writer())
@@ -62,10 +58,10 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	remotePath := getFlags.Args()[0]
-	localPath := *sftpCtx.localCwd
+	localPath := sftpCtx.GetLocalCwd()
 
-	if !spath.IsAbs(sftpCtx.remoteSystem, remotePath) {
-		remotePath = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, remotePath})
+	if !spath.IsAbs(sftpCtx.RemoteSystem(), remotePath) {
+		remotePath = spath.Join(sftpCtx.RemoteSystem(), []string{sftpCtx.GetRemoteCwd(), remotePath})
 	}
 
 	// Get file info to check if it exists
@@ -111,7 +107,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 		downloadedSize := int64(0)
 
 		// Create the target directory for the download
-		targetDir := spath.Join(sftpCtx.localSystem, []string{localPath, spath.Base(sftpCtx.remoteSystem, remotePath)})
+		targetDir := spath.Join(sftpCtx.LocalSystem(), []string{localPath, spath.Base(sftpCtx.RemoteSystem(), remotePath)})
 		if err := ensureLocalDir(targetDir); err != nil {
 			return fmt.Errorf("failed to create target directory: %w", err)
 		}
@@ -121,7 +117,7 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			if localRelPath == "" {
 				localFullPath = targetDir
 			} else {
-				localRelPath = spath.FromToSlash(sftpCtx.localSystem, localRelPath)
+				localRelPath = spath.FromToSlash(sftpCtx.LocalSystem(), localRelPath)
 				localFullPath = filepath.Join(targetDir, localRelPath)
 			}
 
@@ -182,9 +178,9 @@ func (c *SftpGetCommand) Run(ctx *ExecutionContext, args []string) error {
 			localPath,
 			// Format path to local format
 			spath.FromToSlash(
-				sftpCtx.localSystem,
+				sftpCtx.LocalSystem(),
 				// Basedir from remote format
-				spath.Base(sftpCtx.remoteSystem, remotePath)))
+				spath.Base(sftpCtx.RemoteSystem(), remotePath)))
 
 		ui.Printf("Downloading file %s to %s (%.2f KB)\n", remotePath, localFilePath, float64(rpFi.Size())/1024.0)
 

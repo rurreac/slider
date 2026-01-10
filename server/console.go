@@ -10,6 +10,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
+	"slider/pkg/session"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"strconv"
@@ -22,7 +23,7 @@ type Console struct {
 	Term       *term.Terminal
 	InitState  *term.State
 	FirstRun   bool
-	History    *CustomHistory
+	History    *session.CustomHistory
 	ReadWriter io.ReadWriter
 	ResizeChan chan types.TermDimensions
 }

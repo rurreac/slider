@@ -42,7 +42,7 @@ type UnifiedSession struct {
 	LaunchDir      string // Launch path
 	Extra          string // For port info etc
 	IsConnector    bool
-	IsGateway  bool
+	IsGateway      bool
 	ConnectionAddr string
 	Path           []int64
 }
@@ -137,7 +137,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						SliderDir:      rs.SliderDir,
 						LaunchDir:      rs.LaunchDir,
 						IsConnector:    rs.IsConnector,
-						IsGateway:  rs.IsGateway,
+						IsGateway:      rs.IsGateway,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
 					}
@@ -542,7 +542,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			Session:           gatewaySession,
 			SftpClient:        sftpCli,
 			RemoteInterpreter: remoteInterpreter,
-			DisplaySessionID:  uSess.UnifiedID,
+			targetSessionID:   uSess.UnifiedID,
 			LatestDir:         uSess.WorkingDir,
 		})
 		console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)

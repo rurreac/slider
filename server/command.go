@@ -18,9 +18,11 @@ var (
 
 // ExecutionContext provides execution environment for commands
 type ExecutionContext struct {
-	server  *server
-	session *session.BidirectionalSession // nil for non-session commands
-	ui      UserInterface
+	server       *server
+	session      *session.BidirectionalSession // nil for non-session commands
+	ui           UserInterface
+	sftpCtx      *SftpCommandContext // nil for non-sftp commands
+	sftpRegistry *CommandRegistry    // nil for non-sftp commands
 }
 
 // Server returns the server instance

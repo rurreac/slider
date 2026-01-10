@@ -24,16 +24,12 @@ func (c *SftpRmCommand) Usage() string            { return rmUsage }
 func (c *SftpRmCommand) IsRemote() bool           { return true }
 func (c *SftpRmCommand) IsRemoteCompletion() bool { return true }
 
-func (c *SftpRmCommand) Run(ctx *ExecutionContext, args []string) error {
-	session, err := ctx.RequireSession()
-	if err != nil {
-		return err
-	}
-	ui := ctx.UI()
-	sftpCtx := session.GetSftpContext().(*SftpCommandContext)
+func (c *SftpRmCommand) Run(execCtx *ExecutionContext, args []string) error {
+	sftpCtx := execCtx.sftpCtx
 	if sftpCtx == nil {
 		return fmt.Errorf("SFTP context not initialized")
 	}
+	ui := execCtx.UI()
 
 	rmFlags := pflag.NewFlagSet(rmCmd, pflag.ContinueOnError)
 	rmFlags.SetOutput(ui.Writer())
@@ -58,8 +54,8 @@ func (c *SftpRmCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	path := rmFlags.Args()[0]
-	if !spath.IsAbs(sftpCtx.remoteSystem, path) {
-		path = spath.Join(sftpCtx.remoteSystem, []string{*sftpCtx.remoteCwd, path})
+	if !spath.IsAbs(sftpCtx.RemoteSystem(), path) {
+		path = spath.Join(sftpCtx.RemoteSystem(), []string{sftpCtx.GetRemoteCwd(), path})
 	}
 
 	// Check if path exists

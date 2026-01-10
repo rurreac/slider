@@ -13,6 +13,7 @@ import (
 	"slider/pkg/conf"
 	"slider/pkg/listener"
 	"slider/pkg/scrypt"
+	"slider/pkg/session"
 	pkgsession "slider/pkg/session"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -402,7 +403,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Setup Console
-	webTermHistory := DefaultHistory
+	webTermHistory := session.DefaultHistory
 	webConsole, err := s.newWebConsole(ptyTTY, webTermHistory)
 	if err != nil {
 		s.ErrorWith("Failed to create WebConsole",
@@ -533,7 +534,7 @@ func (s *server) handleWebSocketConsole(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (s *server) newWebConsole(ptyTTY *os.File, history *CustomHistory) (*Console, error) {
+func (s *server) newWebConsole(ptyTTY *os.File, history *session.CustomHistory) (*Console, error) {
 	if _, err := term.MakeRaw(int(ptyTTY.Fd())); err != nil {
 		return nil, err
 	}

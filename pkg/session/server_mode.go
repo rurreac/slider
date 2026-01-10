@@ -337,33 +337,13 @@ func (s *BidirectionalSession) NewSftpClient() (*sftp.Client, error) {
 // SFTP State Management (OperatorRole, GatewayRole)
 // ========================================
 
-// SetSftpCommandRegistry sets the SFTP command registry
-func (s *BidirectionalSession) SetSftpCommandRegistry(registry interface{}) {
-	s.sftpCommandRegistry = registry
-}
-
-// GetSftpCommandRegistry returns the SFTP command registry
-func (s *BidirectionalSession) GetSftpCommandRegistry() interface{} {
-	return s.sftpCommandRegistry
-}
-
-// SetSftpContext sets the SFTP context
-func (s *BidirectionalSession) SetSftpContext(ctx interface{}) {
-	s.sftpContext = ctx
-}
-
-// GetSftpContext returns the SFTP context
-func (s *BidirectionalSession) GetSftpContext() interface{} {
-	return s.sftpContext
-}
-
 // SetSftpHistory sets the SFTP history
-func (s *BidirectionalSession) SetSftpHistory(history interface{}) {
+func (s *BidirectionalSession) SetSftpHistory(history *CustomHistory) {
 	s.sftpHistory = history
 }
 
 // GetSftpHistory returns the SFTP history
-func (s *BidirectionalSession) GetSftpHistory() interface{} {
+func (s *BidirectionalSession) GetSftpHistory() *CustomHistory {
 	return s.sftpHistory
 }
 
