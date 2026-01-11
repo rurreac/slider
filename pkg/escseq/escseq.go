@@ -9,15 +9,15 @@ const KeyEscape = 27
 
 var (
 	// Terminal Escape Sequences
-	resetColor  = []byte{KeyEscape, '[', '0', 'm'}
-	eraseLine   = []byte{KeyEscape, '[', '2', 'K'}
-	eraseScreen = []byte{KeyEscape, '[', '2', 'J'}
-	cursorClear = []byte{KeyEscape, '[', '0', 'J'}
-	cursorHome  = []byte{KeyEscape, '[', '2', 'H'}
-	cursorUp    = []byte{KeyEscape, '[', '1', 'A'}
-	cursorSave  = []byte{KeyEscape, '[', '6', 'n'}
-	blink       = []byte{KeyEscape, '[', '5', 'm'}
-	resetBlink  = []byte{KeyEscape, '[', '2', '5', 'm'}
+	resetColor    = []byte{KeyEscape, '[', '0', 'm'}
+	eraseLine     = []byte{KeyEscape, '[', '2', 'K'}
+	eraseScreen   = []byte{KeyEscape, '[', '2', 'J'}
+	cursorClear   = []byte{KeyEscape, '[', '0', 'J'}
+	cursorHome    = []byte{KeyEscape, '[', '2', 'H'}
+	cursorUp      = []byte{KeyEscape, '[', '1', 'A'}
+	cursorRequest = []byte{KeyEscape, '[', '6', 'n'}
+	blink         = []byte{KeyEscape, '[', '5', 'm'}
+	resetBlink    = []byte{KeyEscape, '[', '2', '5', 'm'}
 	// Colors
 	greenBold        = []byte{KeyEscape, '[', '1', ';', '3', '2', 'm'}
 	greyBold         = []byte{KeyEscape, '[', '1', ';', '9', '0', 'm'}
@@ -71,7 +71,7 @@ func ClearScreen() string {
 // CenterScreen is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
 func CenterScreen(rw io.ReadWriter) string {
 	// Ask the terminal for the cursor position (DSR)
-	_, _ = rw.Write(cursorSave)
+	_, _ = rw.Write(cursorRequest)
 
 	// Read the response from Stdin (Format: \x1b[Y;XR)
 	var row, col int
