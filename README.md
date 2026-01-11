@@ -289,32 +289,35 @@ robust way to handle transfers, shells, etc...
 Running an interactive session provides its own sets of commands:
 
 ```
-  Command           Description                                          
-  -------           -----------                                          
-  cd, chdir         Change remote directory                              
-  chmod             Change file permissions                              
-  execute           Runs a command remotely and returns the output       
-  exit              Exits Console and terminates the Server              
-  get, download     Download file or directory                           
-  help              Shows this output                                    
-  lcd               Change local directory                               
-  lls, ldir, llist  List local directory contents                        
-  lmkdir            Create local directory                               
-  lpwd, lgetwd      Show current local directory                         
-  ls, dir, list     List remote directory contents                       
-  mkdir             Create remote directory                              
-  mv, rename, move  Rename or move a file or directory                   
-  put, upload       Upload file or directory                             
-  pwd, getwd        Show current remote directory                        
-  rm, del, delete   Remove file or directory                             
-  shell             Binds to a client Shell  
-  stat, info        Show detailed file information                       
-  !command          Execute "command" in local shell (non-interactive) 
+  Command           Description
+  -------           -----------
+  cd, chdir         Change remote directory
+  execute           Runs a command remotely from the current directory
+  exit              Exits Console and terminates the Server
+  get, download     Download file or directory from remote
+  help              Shows this output
+  lcd               Change local directory
+  lls, ldir, llist  List local directory contents
+  lmkdir            Create local directory
+  lpwd, lgetwd      Print local working directory
+  ls, dir, list     List remote directory contents
+  mkdir             Create remote directory
+  mv, rename, move  Move or rename remote file/directory
+  put, upload       Upload file or directory to remote
+  pwd, getwd        Print remote working directory
+  rm, del, delete   Remove remote file or directory
+  stat, info        Display remote file information
+  sysinfo           Display system information
+  execute           Execute command on remote system
+  shell             Enter interactive shell
+  !command          Execute "command" in local shell (non-interactive)
 ```
 
 A note on the interactive `shell` command:
 * If the Client host is running *nix OS or a Windows version with ConPTY (introduced in late 2018) the spawned Shell will be
-  fully interactive as well.
+  fully interactive if this is not supported by the target OS, the shell won't be executed to avoid uncertain behavior and 
+  you will be suggested to use the `ssh` command instead.
+
 
 A note between killing a Session and disconnecting from a Session: 
 * Disconnect closes the Session at the Server side, it would be equivalent to terminating the Server. 
@@ -361,35 +364,6 @@ When connecting to another gateway server (for multi-hop routing), use the `--ga
 ```
 Slider# connect --gateway gateway-server.example.com:8080
 ```
-
-##### Execute
-```
-Slider# execute -h
-Usage: execute [flags] [command]
-
-  -s, --session  Run command passed as an argument on a session id (default 0)      
-  -a, --all      Run command passed as an argument on all sessions (default false)  
-
-Requires at least 1 argument(s)
-
-One flag required from each group:
-
-  -s/--session, -a/--all  
-
-Mutually exclusive flags:
-
-  -s/--session, -a/--all 
-```
-If you want to run a single OS command on a client rather than interacting with the session itself you can use Console
-`execute` command.
-
-Considerations on `execute`:
-* Allows you to pass redirections or pipes to the Client as part of the command as well.
-* Doesn't run in fully interactive mode.
-* Standard input is not sent to the Client.
-* It is possible to terminate the execution by pressing CTR^C.
-
-If you need something more interactive or don't want to keep the console busy, consider using `ssh` or `shell` commands.
 
 ##### SOCKS
 ```
