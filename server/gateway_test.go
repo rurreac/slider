@@ -34,7 +34,7 @@ func newTestServer() *testServer {
 	}
 }
 
-// GetSession implements session.SessionRegistry
+// GetSession implements session.Registry
 func (s *testServer) GetSession(id int) (*session.BidirectionalSession, error) {
 	sess, ok := s.sessions[int64(id)]
 	if !ok {
@@ -43,7 +43,7 @@ func (s *testServer) GetSession(id int) (*session.BidirectionalSession, error) {
 	return sess, nil
 }
 
-// GetAllSessions implements session.SessionRegistry
+// GetAllSessions implements session.Registry
 func (s *testServer) GetAllSessions() []*session.BidirectionalSession {
 	result := make([]*session.BidirectionalSession, 0, len(s.sessions))
 	for _, sess := range s.sessions {

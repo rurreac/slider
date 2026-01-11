@@ -202,6 +202,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 				}
 				ui.PrintError("Error: %v", execErr)
 			}
+			continue
 		} else if command == "exit" {
 			return
 		}
