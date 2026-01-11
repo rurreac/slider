@@ -48,15 +48,13 @@ type winPty struct {
 func (p *winPty) Read(b []byte) (n int, err error) {
 	n, err = p.con.Read(b)
 	if n > 0 && p.cleaner != nil {
+		// This is a hack to prevent the initial clear sequences from being sent to the terminal
+		// and may go away in the future if a better solution is found or an annomalous behaviour
+		// is detected.
+		// Most terminal sequences are sent at initialization and won't be sent again.
+		// Our issue presents itself because of the way we spawn the process.
 		cleaned := p.cleaner.Process(b[:n])
 		if len(cleaned) == 0 {
-			// All data was stripped or buffered.
-			// We can't return n=0 without error if we want to be complaint with io.Reader in some contexts,
-			// but here we just want to suppress output.
-			// However, standard io.Reader behavior: "Implementations of Read are discouraged from returning a zero byte count with a nil error"
-			// But for a PTY wrapper, it might be fine, OR we should loop and read more?
-			// The caller might spin.
-			// Ideally we return 0, nil.
 			copy(b, []byte{})
 			return 0, nil
 		}

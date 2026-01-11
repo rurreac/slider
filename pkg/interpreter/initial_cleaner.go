@@ -1,6 +1,7 @@
 package interpreter
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -13,10 +14,22 @@ import (
 // It aggressively strips sequences like Clear Screen, Cursor Home, and private modes
 // that are typically emitted by ConPTY/cmd.exe, even if they appear mid-stream.
 type InitialScreenClearer struct {
-	buffer         []byte
-	maxStripBytes  int
-	hasSeenContent bool
-	debugWriter    io.Writer
+	buffer           []byte
+	maxStripBytes    int
+	hasSeenContent   bool
+	homeCount        int
+	disableFiltering bool
+	lastWasClear     bool
+	debugWriter      io.Writer
+}
+
+func (isc *InitialScreenClearer) EnableLogging(path string) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	isc.debugWriter = f
+	return nil
 }
 
 // NewInitialScreenClearer creates a new cleaner.
@@ -25,16 +38,6 @@ func NewInitialScreenClearer() *InitialScreenClearer {
 		buffer:        make([]byte, 0, 1024),
 		maxStripBytes: 4096,
 	}
-}
-
-// EnableLogging enables debug logging to the specified file path.
-func (isc *InitialScreenClearer) EnableLogging(path string) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	isc.debugWriter = f
-	return nil
 }
 
 func (isc *InitialScreenClearer) log(format string, args ...interface{}) {
@@ -83,53 +86,74 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 	bufLen := len(isc.buffer)
 
 	for offset < bufLen {
+		// Optimization: If filtering is disabled, pass through everything remaining
+		if isc.disableFiltering {
+			output = append(output, isc.buffer[offset:]...)
+			isc.buffer = isc.buffer[:0]
+			return output
+		}
+
 		if isc.buffer[offset] == '\x1b' {
 			if bufLen-offset < 2 {
 				goto WaitMore
 			}
 
-			// CSI: ESC [
-			if isc.buffer[offset+1] == '[' {
+			switch isc.buffer[offset+1] {
+			case '[': // CSI: ESC [
 				j := offset + 2
 				for j < bufLen {
 					b := isc.buffer[j]
 					if b >= 0x40 && b <= 0x7E {
 						// Final byte of CSI
 						cmd := b
+						params := isc.buffer[offset+2 : j]
 
-						// Blacklist of commands to ALWAYS strip during execution
+						// Blacklist of commands to ALWAYS strip during execution (initially)
 						shouldStrip := false
-						replaceWithDoubleNewline := false
 						replaceWithSingleNewline := false
 
-						switch cmd {
-						case 'H', 'f': // Cursor Positioning (redraws) - e.g. [4;1H
-							shouldStrip = true
-							// ConPTY uses this to jump lines.
-							// Using \r\n\r\n gives better separation (preserves "blank lines" often implied by absolute jumps).
-							if isc.hasSeenContent {
-								replaceWithDoubleNewline = true
+						// Heuristic: Stop filtering after 2nd occurrences of Clear or Home
+						if !isc.disableFiltering {
+							switch cmd {
+							case 'H', 'f': // Cursor Positioning
+								isHome := len(params) == 0 ||
+									bytes.Equal(params, []byte("1")) ||
+									bytes.Equal(params, []byte("1;1")) ||
+									bytes.Equal(params, []byte("1;")) ||
+									bytes.Equal(params, []byte(";1")) ||
+									bytes.Equal(params, []byte(";"))
+
+								if isHome {
+									if !isc.lastWasClear {
+										isc.homeCount++
+									}
+								}
+								isc.lastWasClear = false
+
+								if isc.homeCount >= 3 {
+									isc.disableFiltering = true
+								} else {
+									shouldStrip = true
+									if isc.hasSeenContent {
+										replaceWithSingleNewline = true
+									}
+								}
+							case 'J': // Erase Display
+								shouldStrip = true
+								isc.lastWasClear = true
+								if isc.hasSeenContent {
+									replaceWithSingleNewline = true
+								}
+							case 'h', 'l':
+								if bytes.Contains(params, []byte("?1049")) {
+									isc.disableFiltering = true
+									if isc.debugWriter != nil {
+										isc.log("Alt Buffer detected, disabling filtering.")
+									}
+								} else {
+									shouldStrip = true
+								}
 							}
-						case 'J': // Erase Display
-							shouldStrip = true
-							// Clear screen usually acts as a page separator, so single newline is often enough.
-							if isc.hasSeenContent {
-								replaceWithSingleNewline = true
-							}
-						// Case 'K' (Erase Line) is debatable.
-						case 'K':
-							shouldStrip = true
-						case 'S', 'T': // Scroll
-							shouldStrip = true
-						case 's', 'u': // Save/Restore Cursor
-							shouldStrip = true
-						case 'h', 'l': // Set/Reset Mode (e.g. ?25l Hide Cursor, ?9001h)
-							shouldStrip = true
-						// case 'm': // Colors - Keep colors.
-						case 'c', 'n': // Device Attributes/Status
-							shouldStrip = true
-						case 'g': // Tab Clear
-							shouldStrip = true
 						}
 
 						if shouldStrip {
@@ -138,18 +162,15 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 								seq := isc.buffer[offset : j+1]
 								isc.log("Stripping CSI: %q", seq)
 							}
-							if replaceWithDoubleNewline {
-								output = append(output, []byte("\r\n\r\n")...)
-							} else if replaceWithSingleNewline {
+							if replaceWithSingleNewline {
 								output = append(output, []byte("\r\n")...)
 							}
 							offset = j + 1
 							goto NextLoop
 						} else {
-							// Keep allowed CSI (e.g. Colors [m, Unknowns)
-							// Do NOT set hasSeenContent = true here.
-							// Non-printing sequences (like colors) shouldn't trigger "content seen"
-							// which would cause subsequent cursor moves to inject newlines.
+							// Keep allowed CSI (e.g. Colors [m, Unknowns, or if filtering disabled)
+							// Do NOT set hasSeenContent = true here if it's a non-printing sequence.
+							// But if filtering is disabled, we just pass everything.
 							chunk := isc.buffer[offset : j+1]
 							output = append(output, chunk...)
 							offset = j + 1
@@ -159,17 +180,25 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 					} else if b >= 0x20 && b <= 0x3F {
 						j++
 					} else {
-						// Invalid CSI structure
-						output = append(output, isc.buffer[offset])
-						isc.hasSeenContent = true
-						offset++
+						// Invalid CSI structure or control character during params
+						if isc.debugWriter != nil {
+							isc.log("Terminating CSI early due to char %d at %d", b, j)
+						}
+						offset = j // Keep this byte for next loop
 						goto NextLoop
 					}
 				}
+				if len(isc.buffer)-offset > 256 {
+					if isc.debugWriter != nil {
+						isc.log("CSI sequence too long, flushing buffer.")
+					}
+					output = append(output, isc.buffer[offset:]...)
+					isc.buffer = isc.buffer[:0]
+					return output
+				}
 				goto WaitMore
 
-				// OSC: ESC ]
-			} else if isc.buffer[offset+1] == ']' {
+			case ']': // OSC: ESC ]
 				j := offset + 2
 				for j < bufLen {
 					if isc.buffer[j] == 0x07 { // BEL
@@ -196,29 +225,33 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 					}
 					j++
 				}
+				if len(isc.buffer)-offset > 512 {
+					if isc.debugWriter != nil {
+						isc.log("OSC sequence too long, flushing buffer.")
+					}
+					output = append(output, isc.buffer[offset:]...)
+					isc.buffer = isc.buffer[:0]
+					return output
+				}
 				goto WaitMore
 
-			} else {
-				// Other ESC sequence
-				if isc.buffer[offset+1] == 'M' {
-					if isc.debugWriter != nil {
-						isc.log("Stripping ESC M (Reverse Index)")
-					}
-					offset += 2
-					goto NextLoop
+			case 'M': // Other ESC sequence: Reverse Index
+				if isc.debugWriter != nil {
+					isc.log("Stripping ESC M (Reverse Index)")
 				}
+				offset += 2
+				goto NextLoop
 
-				if isc.buffer[offset+1] == 'E' {
-					// ESC E = Next Line.
-					if isc.debugWriter != nil {
-						isc.log("Normalizing ESC E -> \\r\\n")
-					}
-					output = append(output, []byte("\r\n")...)
-					isc.hasSeenContent = true
-					offset += 2
-					goto NextLoop
+			case 'E': // Next Line
+				if isc.debugWriter != nil {
+					isc.log("Normalizing ESC E -> \\r\\n")
 				}
+				output = append(output, []byte("\r\n")...)
+				isc.hasSeenContent = true
+				offset += 2
+				goto NextLoop
 
+			default:
 				// Otherwise treat as content
 				output = append(output, isc.buffer[offset])
 				isc.hasSeenContent = true
@@ -232,16 +265,17 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 			if !isc.hasSeenContent {
 				if b == '\r' || b == '\n' || b == ' ' || b == '\t' {
 					// Skip initial whitespace
-					if isc.debugWriter != nil {
-						// isc.log("Skipping initial whitespace: %02x", b) // verbose
-					}
 					offset++
 					continue
+				}
+				if isc.debugWriter != nil {
+					isc.log("Initial stripping stopped due to content char: %d (%q)", b, b)
 				}
 			}
 
 			output = append(output, b)
 			isc.hasSeenContent = true
+			isc.lastWasClear = false
 			offset++
 		}
 
@@ -249,10 +283,16 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 	}
 
 	isc.buffer = isc.buffer[:0]
+	if isc.debugWriter != nil {
+		isc.log("Returning output len=%d", len(output))
+	}
 	return output
 
 WaitMore:
 	remaining := isc.buffer[offset:]
+	if isc.debugWriter != nil {
+		isc.log("WaitMore: buffering %d bytes", len(remaining))
+	}
 	newBuf := make([]byte, len(remaining))
 	copy(newBuf, remaining)
 	isc.buffer = newBuf
