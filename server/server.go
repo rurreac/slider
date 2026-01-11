@@ -208,7 +208,7 @@ func (s *server) GetSession(id int) (*session.BidirectionalSession, error) {
 }
 
 // GetAllSessions returns all local sessions sorted by ID
-// Implements session.SessionRegistry interface
+// Implements session.Registry interface
 func (s *server) GetAllSessions() []*session.BidirectionalSession {
 	s.sessionTrackMutex.Lock()
 	sessions := make([]*session.BidirectionalSession, 0, len(s.sessionTrack.Sessions))

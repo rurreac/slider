@@ -6,8 +6,6 @@ import (
 
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // ========================================
@@ -19,7 +17,7 @@ type MockApplicationServer struct {
 	sessions    []*BidirectionalSession
 	fingerprint string
 	identity    string
-	gateway bool
+	gateway     bool
 	interpreter *interpreter.Interpreter
 
 	// Track method calls for assertions
@@ -33,11 +31,11 @@ func NewMockApplicationServer() *MockApplicationServer {
 		sessions:    make([]*BidirectionalSession, 0),
 		fingerprint: "test-fingerprint",
 		identity:    "test-fingerprint:8080",
-		gateway: true,
+		gateway:     true,
 	}
 }
 
-// GetSession implements SessionRegistry
+// GetSession implements Registry
 func (m *MockApplicationServer) GetSession(id int) (*BidirectionalSession, error) {
 	m.GetSessionCalls = append(m.GetSessionCalls, id)
 	for _, sess := range m.sessions {
@@ -48,7 +46,7 @@ func (m *MockApplicationServer) GetSession(id int) (*BidirectionalSession, error
 	return nil, errors.New("session not found")
 }
 
-// GetAllSessions implements SessionRegistry
+// GetAllSessions implements Registry
 func (m *MockApplicationServer) GetAllSessions() []*BidirectionalSession {
 	m.GetAllSessionsCalls++
 	return m.sessions
@@ -77,42 +75,6 @@ func (m *MockApplicationServer) GetFingerprint() string {
 // AddSession adds a session to the mock
 func (m *MockApplicationServer) AddSession(sess *BidirectionalSession) {
 	m.sessions = append(m.sessions, sess)
-}
-
-// ========================================
-// Mock SSH Request for Testing
-// ========================================
-
-// MockSSHRequest wraps ssh.Request data for testing
-type MockSSHRequest struct {
-	Type      string
-	WantReply bool
-	Payload   []byte
-
-	// Track replies
-	Replied     bool
-	ReplyOK     bool
-	ReplyData   []byte
-	ReplyCalled int
-}
-
-// Reply mocks the ssh.Request.Reply method
-func (r *MockSSHRequest) Reply(ok bool, data []byte) error {
-	r.Replied = true
-	r.ReplyOK = ok
-	r.ReplyData = data
-	r.ReplyCalled++
-	return nil
-}
-
-// ToSSHRequest converts to a real ssh.Request for handler testing
-// Note: This is a limited conversion - only Payload and WantReply are usable
-func (r *MockSSHRequest) ToSSHRequest() *ssh.Request {
-	return &ssh.Request{
-		Type:      r.Type,
-		WantReply: r.WantReply,
-		Payload:   r.Payload,
-	}
 }
 
 // ========================================
