@@ -6,8 +6,6 @@ import (
 
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
-
-	"golang.org/x/crypto/ssh"
 )
 
 // ========================================
@@ -77,42 +75,6 @@ func (m *MockApplicationServer) GetFingerprint() string {
 // AddSession adds a session to the mock
 func (m *MockApplicationServer) AddSession(sess *BidirectionalSession) {
 	m.sessions = append(m.sessions, sess)
-}
-
-// ========================================
-// Mock SSH Request for Testing
-// ========================================
-
-// MockSSHRequest wraps ssh.Request data for testing
-type MockSSHRequest struct {
-	Type      string
-	WantReply bool
-	Payload   []byte
-
-	// Track replies
-	Replied     bool
-	ReplyOK     bool
-	ReplyData   []byte
-	ReplyCalled int
-}
-
-// Reply mocks the ssh.Request.Reply method
-func (r *MockSSHRequest) Reply(ok bool, data []byte) error {
-	r.Replied = true
-	r.ReplyOK = ok
-	r.ReplyData = data
-	r.ReplyCalled++
-	return nil
-}
-
-// ToSSHRequest converts to a real ssh.Request for handler testing
-// Note: This is a limited conversion - only Payload and WantReply are usable
-func (r *MockSSHRequest) ToSSHRequest() *ssh.Request {
-	return &ssh.Request{
-		Type:      r.Type,
-		WantReply: r.WantReply,
-		Payload:   r.Payload,
-	}
 }
 
 // ========================================
