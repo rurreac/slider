@@ -91,7 +91,6 @@ func (s *server) initRegistry() {
 	s.commandRegistry.Register(&BgCommand{})
 	s.commandRegistry.Register(&ExitCommand{})
 	s.commandRegistry.Register(&HelpCommand{})
-	s.commandRegistry.Register(&ExecuteCommand{})
 	s.commandRegistry.Register(&SessionsCommand{})
 	s.commandRegistry.Register(&SocksCommand{})
 	s.commandRegistry.Register(&SSHCommand{})
