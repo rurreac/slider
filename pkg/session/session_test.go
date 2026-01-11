@@ -19,7 +19,7 @@ type MockApplicationServer struct {
 	sessions    []*BidirectionalSession
 	fingerprint string
 	identity    string
-	gateway bool
+	gateway     bool
 	interpreter *interpreter.Interpreter
 
 	// Track method calls for assertions
@@ -33,11 +33,11 @@ func NewMockApplicationServer() *MockApplicationServer {
 		sessions:    make([]*BidirectionalSession, 0),
 		fingerprint: "test-fingerprint",
 		identity:    "test-fingerprint:8080",
-		gateway: true,
+		gateway:     true,
 	}
 }
 
-// GetSession implements SessionRegistry
+// GetSession implements Registry
 func (m *MockApplicationServer) GetSession(id int) (*BidirectionalSession, error) {
 	m.GetSessionCalls = append(m.GetSessionCalls, id)
 	for _, sess := range m.sessions {
@@ -48,7 +48,7 @@ func (m *MockApplicationServer) GetSession(id int) (*BidirectionalSession, error
 	return nil, errors.New("session not found")
 }
 
-// GetAllSessions implements SessionRegistry
+// GetAllSessions implements Registry
 func (m *MockApplicationServer) GetAllSessions() []*BidirectionalSession {
 	m.GetAllSessionsCalls++
 	return m.sessions

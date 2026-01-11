@@ -100,8 +100,8 @@ type certInfo struct {
 // Interfaces for Application Extensions
 // ========================================
 
-// SessionRegistry provides access to the server's session registry
-type SessionRegistry interface {
+// Registry provides access to the server's session registry
+type Registry interface {
 	// GetSession retrieves a session by ID from the server's registry
 	GetSession(id int) (*BidirectionalSession, error)
 	// GetAllSessions returns all sessions from the server's registry
@@ -123,7 +123,7 @@ type ServerInfo interface {
 // ApplicationServer combines all server capabilities needed by sessions
 // This allows session to delegate to server logic without creating a circular dependency.
 type ApplicationServer interface {
-	SessionRegistry
+	Registry
 	ServerInfo
 }
 
