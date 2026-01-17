@@ -124,3 +124,21 @@ ifeq ($(UPX_AVAILABLE),yes)
 	@echo "Compressing with UPX..."
 	$(UPX_CMD) $(BUILD_DIR)/slider-linux-arm64 || echo "UPX compression failed, using uncompressed binary"
 endif
+
+# GitHub Release
+.PHONY: github-release
+github-release:
+	@if [ -z "$(GITHUB_TOKEN)" ]; then \
+		echo "Error: GITHUB_TOKEN environment variable is not set."; \
+		echo "Please export your GitHub Personal Access Token:"; \
+		echo "export GITHUB_TOKEN=\"your_token_here\""; \
+		exit 1; \
+	fi
+	@echo "Running GoReleaser..."
+	export GOVERSION=$(shell go version | awk '{print $$3}') && goreleaser release --clean --config .github/goreleaser.yml
+
+# Dry Run Release (Snapshot)
+.PHONY: dry-release
+dry-release:
+	@echo "Running Dry Run Release (Snapshot)..."
+	export GOVERSION=$(shell go version | awk '{print $$3}') && goreleaser release --clean --config .github/goreleaser.yml --skip=publish --snapshot
