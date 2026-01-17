@@ -2,6 +2,7 @@ version: 2
 before:
   hooks:
     - go mod tidy
+dist: build
 builds:
   # You can have multiple builds defined as a yaml list
   - id: combined
@@ -15,7 +16,7 @@ builds:
     # Templates: allowed
     ldflags:
       - -s -w
-      - -X slider/pkg/conf.version={{.Version}}
+      - -X slider/pkg/conf.Version={{.Version}}
       - -X slider/pkg/conf.binOS={{.Os}}
       - -X slider/pkg/conf.binArch={{.Arch}}
       - -X slider/pkg/conf.commit={{.Commit}}
