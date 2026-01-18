@@ -172,11 +172,11 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, operation string) {
+func (s *server) newConnector(targetUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, operation string) {
 	// Check for self-connection attempts (any server type)
 	// This applies to any connection mode, but particularly important for gateway connections
-	targetHost := clientUrl.Hostname()
-	targetPort := clientUrl.Port()
+	targetHost := targetUrl.Hostname()
+	targetPort := targetUrl.Port()
 
 	// Resolve custom DNS first if specified (for accurate self-connection detection)
 	resolvedHost := targetHost
@@ -194,14 +194,14 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	if s.isSelfConnection(resolvedHost, targetPort) {
 		err := fmt.Errorf("cannot connect to self (target=%s:%s, server=%s:%d)", targetHost, targetPort, s.host, s.port)
 		s.WarnWith("Self-connection attempt blocked",
-			slog.F("target", clientUrl.String()),
+			slog.F("target", targetUrl.String()),
 			slog.F("server_host", s.host),
 			slog.F("server_port", s.port))
 		notifier <- err
 		return
 	}
 
-	wsURL, wErr := listener.FormatToWS(clientUrl)
+	wsURL, wErr := listener.FormatToWS(targetUrl)
 	if wErr != nil {
 		s.ErrorWith("Failed to convert client URL to WebSocket URL", slog.F("err", wErr))
 		notifier <- wErr
@@ -210,13 +210,13 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 
 	wsURLStr := wsURL.String()
 	if customDNS != "" {
-		ip, dErr := conf.CustomResolver(customDNS, clientUrl.Hostname())
+		ip, dErr := conf.CustomResolver(customDNS, targetUrl.Hostname())
 		if dErr != nil {
-			s.ErrorWith("Failed to resolve host:", slog.F("host", clientUrl.Hostname()), slog.F("err", dErr))
+			s.ErrorWith("Failed to resolve host:", slog.F("host", targetUrl.Hostname()), slog.F("err", dErr))
 			notifier <- dErr
 			return
 		}
-		wsURLStr = strings.Replace(wsURL.String(), clientUrl.Hostname(), ip, 1)
+		wsURLStr = strings.Replace(wsURL.String(), targetUrl.Hostname(), ip, 1)
 		s.DebugWith("Connecting to client", slog.F("url", wsURL), slog.F("resolved_ip", ip))
 	}
 
