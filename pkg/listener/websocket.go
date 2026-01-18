@@ -27,17 +27,19 @@ var DefaultWebSocketUpgrader = &websocket.Upgrader{
 }
 
 func FormatToWS(u *url.URL) (*url.URL, error) {
-	switch u.Scheme {
+	// Create a copy of the URL to avoid modifying the original
+	newU := *u
+	switch newU.Scheme {
 	case "http":
-		u.Scheme = "ws"
+		newU.Scheme = "ws"
 	case "https":
-		u.Scheme = "wss"
+		newU.Scheme = "wss"
 	case "":
-		u.Scheme = "ws"
+		newU.Scheme = "ws"
 	default:
-		return u, fmt.Errorf("unknown client url scheme \"%s\"", u.Scheme)
+		return u, fmt.Errorf("unknown client url scheme \"%s\"", newU.Scheme)
 	}
-	return u, nil
+	return &newU, nil
 }
 
 func ResolveURL(rawURL string) (*url.URL, error) {

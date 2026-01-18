@@ -236,6 +236,20 @@ graph TD
     style Client2 fill:#f0f0f0
 ```
 
+##### `--callback`:
+Callback receives a server address as argument and attempts to connect to it, allowing a gateway server to initiate a connection to another server while giving the other server control. This might be useful when the gateway is behind a firewall or NAT and cannot be reached directly.
+
+If the callback connection is unsuccessful, the gateway will proceed to its normal operation. 
+It is possible to attempt the connection again by using the `connect --callback` command from the console.
+
+To start a gateway server that automatically connects back to another server on launch run:
+```bash
+./slider server --gateway --callback server.example.com:8080
+```
+
+##### `--callback-retry`:
+When combined with `--callback`, enables automatic retry of the callback connection if it fails or disconnects. The gateway will retry connecting according to the `--keepalive` interval (default: 60s).
+
 ### Console
 
 ```
@@ -332,12 +346,13 @@ runs its next keepalive check will shut down.
 Slider# connect -h
 Usage: connect [flags] <[host_address]:port>
 
-  -i, --cert-id    Specify certID for SSH key authentication (default 0)  
-  -d, --dns        Use custom DNS resolver (default "")                   
-  -p, --proto      Use custom proto (default slider-v1)                   
-  -c, --tls-cert   Use custom client TLS certificate (default "")         
-  -k, --tls-key    Use custom client TLS key (default "")                 
-  -g, --gateway    Connect to another server in gateway mode              
+  -b, --callback          Connect to server and offer control
+  -i, --cert-id int       Specify certID for SSH key authentication
+  -d, --dns string        Use custom DNS resolver
+  -g, --gateway           Connect to another server in gateway mode
+  -p, --proto string      Use custom proto (default "slider-v1")
+  -t, --tls-cert string   Use custom client TLS certificate
+  -k, --tls-key string    Use custom client TLS key
 
 Requires exactly 1 argument(s)
 ```
@@ -363,6 +378,12 @@ When connecting to another gateway server (for multi-hop routing), use the `--ga
 
 ```
 Slider# connect --gateway gateway-server.example.com:8080
+```
+
+When connecting as a callback (gateway server wanting to be controlled by another server), use the `--callback` flag:
+
+```
+Slider# connect --callback regular-server.example.com:8080
 ```
 
 ##### SOCKS

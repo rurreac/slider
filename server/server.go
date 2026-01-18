@@ -139,8 +139,8 @@ func (s *server) NewSSHServer(biSession *session.BidirectionalSession) {
 	// Handle Keep Alive
 	go biSession.KeepAlive(s.keepalive)
 
-	// Inject application server for all sessions to provide access to local interpreter and state
-	// Presence of these components enables proper local process execution and multi-hop features
+	// Inject application server BEFORE starting request handlers
+	// This ensures handleClientInfo has access to server interpreter for reply
 	biSession.SetApplicationServer(s)
 
 	if s.gateway {

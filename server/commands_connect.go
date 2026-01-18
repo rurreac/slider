@@ -34,9 +34,13 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	cCert := connectFlags.Int64P("cert-id", "i", 0, "Specify certID for SSH key authentication")
 	cDNS := connectFlags.StringP("dns", "d", "", "Use custom DNS resolver")
 	cProto := connectFlags.StringP("proto", "p", conf.Proto, "Use custom proto")
-	cTlsCert := connectFlags.StringP("tls-cert", "c", "", "Use custom client TLS certificate")
+	cTlsCert := connectFlags.StringP("tls-cert", "t", "", "Use custom client TLS certificate")
 	cTlsKey := connectFlags.StringP("tls-key", "k", "", "Use custom client TLS key")
 	cGateway := connectFlags.BoolP("gateway", "g", false, "Connect to another server in gateway mode")
+	var cCallback *bool
+	if svr.gateway {
+		cCallback = connectFlags.BoolP("callback", "b", false, "Connect to server and offer control")
+	}
 
 	connectFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
@@ -62,6 +66,14 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("failed to resolve URL: %w", uErr)
 	}
 
+	// Determine operation type
+	operation := conf.OperationGateway
+	if *cGateway {
+		operation = conf.OperationOperator
+	} else if cCallback != nil && *cCallback {
+		operation = conf.OperationCallback
+	}
+
 	ui.PrintInfo("Establishing Connection to %s (Timeout: %s)", cu.String(), conf.Timeout)
 
 	notifier := make(chan error, 1)
@@ -69,7 +81,7 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
 
-	go svr.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, *cGateway)
+	go svr.newConnector(cu, notifier, *cCert, *cDNS, *cProto, *cTlsCert, *cTlsKey, operation)
 
 	for {
 		// Priority check: always check notifier first
