@@ -49,6 +49,8 @@ type Config struct {
 	Headless         bool
 	HttpConsole      bool
 	Gateway          bool
+	CallbackURL      string
+	CallbackRetry    bool
 }
 
 // RunServer starts a server with the given configuration
@@ -270,7 +272,55 @@ func RunServer(cfg *Config) {
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
 			s.FatalWith("Listener error", slog.F("err", sErr))
 		}
+
 	}()
+
+	// Handle startup callback if configured
+	if cfg.CallbackURL != "" {
+		if !cfg.Gateway {
+			s.Fatalf("--callback requires --gateway mode")
+		}
+		go func() {
+			// Small delay to ensure server is ready
+			time.Sleep(100 * time.Millisecond)
+
+			cu, err := listener.ResolveURL(cfg.CallbackURL)
+			if err != nil {
+				s.ErrorWith("Failed to resolve callback URL",
+					slog.F("url", cfg.CallbackURL),
+					slog.F("err", err))
+				return
+			}
+
+			// Retry loop for callback connection
+			for {
+				s.InfoWith("Initiating callback connection", slog.F("target", cu.String()))
+				notifier := make(chan error, 1)
+
+				// Start connection (blocks until disconnection or failure)
+				s.newConnector(cu, notifier, 0, "", s.customProto, "", "", conf.OperationCallback)
+
+				// Connection attempt finished (either failed immediately or disconnected)
+				cErr := <-notifier
+				if cErr != nil {
+					s.ErrorWith("Callback connection failed",
+						slog.F("target", cu.String()),
+						slog.F("err", cErr))
+				} else {
+					s.InfoWith("Callback connection disconnected", slog.F("target", cu.String()))
+				}
+
+				// Exit if retry not enabled
+				if !cfg.CallbackRetry {
+					break
+				}
+
+				// Wait before retry
+				s.DebugWith("Waiting before callback retry", slog.F("interval", s.keepalive))
+				time.Sleep(s.keepalive)
+			}
+		}()
+	}
 
 	// Capture Interrupt Signal to toggle log output and activate Console
 	if cfg.Headless {

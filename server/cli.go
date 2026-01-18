@@ -38,6 +38,8 @@ func NewCommand() *cobra.Command {
 		headless         bool
 		httpConsole      bool
 		gateway          bool
+		callbackURL      string
+		callbackRetry    bool
 	)
 
 	cmd := &cobra.Command{
@@ -79,6 +81,8 @@ its integrated Console by pressing CTR^C at any time.`,
 				Headless:         headless,
 				HttpConsole:      httpConsole,
 				Gateway:          gateway,
+				CallbackURL:      callbackURL,
+				CallbackRetry:    callbackRetry,
 			}
 
 			// Call the RunServer function
@@ -110,6 +114,8 @@ its integrated Console by pressing CTR^C at any time.`,
 	cmd.Flags().BoolVar(&headless, "headless", false, "Disables the internal console (CTR^C) and enables the Websocket Console")
 	cmd.Flags().BoolVar(&httpConsole, "http-console", false, "Enables /console HTTP endpoint")
 	cmd.Flags().BoolVar(&gateway, "gateway", false, "Enables Gateway mode (allows server chaining)")
+	cmd.Flags().StringVar(&callbackURL, "callback", "", "Connect to server on startup and offer control (requires --gateway)")
+	cmd.Flags().BoolVar(&callbackRetry, "callback-retry", false, "Retry callback connection indefinitely")
 	cmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
 	if conf.Version == "development" {
 		cmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
