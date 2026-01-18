@@ -49,6 +49,7 @@ type Config struct {
 	Headless         bool
 	HttpConsole      bool
 	Gateway          bool
+	CallbackURL      string
 }
 
 // RunServer starts a server with the given configuration
@@ -270,7 +271,33 @@ func RunServer(cfg *Config) {
 		if sErr := http.ListenAndServe(serverAddr.String(), handler); sErr != nil {
 			s.FatalWith("Listener error", slog.F("err", sErr))
 		}
+
 	}()
+
+	// Handle startup callback if configured
+	if cfg.CallbackURL != "" {
+		if !cfg.Gateway {
+			s.Fatalf("--callback requires --gateway mode")
+		}
+		go func() {
+			// Small delay to ensure server is ready
+			time.Sleep(100 * time.Millisecond)
+			cu, err := listener.ResolveURL(cfg.CallbackURL)
+			if err != nil {
+				s.ErrorWith("Failed to resolve callback URL", slog.F("url", cfg.CallbackURL), slog.F("err", err))
+				return
+			}
+			s.InfoWith("Initiating callback connection", slog.F("target", cu.String()))
+			notifier := make(chan error, 1)
+			s.newConnector(cu, notifier, 0, "", s.customProto, "", "", conf.OperationCallback)
+			// Wait for connection result
+			if cErr := <-notifier; cErr != nil {
+				s.ErrorWith("Callback connection failed", slog.F("target", cu.String()), slog.F("err", cErr))
+			} else {
+				s.InfoWith("Callback connection established", slog.F("target", cu.String()))
+			}
+		}()
+	}
 
 	// Capture Interrupt Signal to toggle log output and activate Console
 	if cfg.Headless {

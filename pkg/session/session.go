@@ -39,6 +39,7 @@ type BidirectionalSession struct {
 	// ========================================
 	localInterpreter *interpreter.Interpreter // Host system info for local process execution
 	peerInterpreter  *interpreter.Interpreter // Remote system info received from peer
+	peerIdentity     string                   // Peer server identity (fingerprint:port) for loop detection
 	initTermSize     types.TermDimensions
 	isListener       bool // Whether this session is to/from a listener client
 	isGateway        bool // Whether the peer node is in gateway mode
@@ -183,6 +184,16 @@ func (s *BidirectionalSession) GetInterpreter() *interpreter.Interpreter {
 // GetLocalInterpreter returns the host (local) interpreter info
 func (s *BidirectionalSession) GetLocalInterpreter() *interpreter.Interpreter {
 	return s.localInterpreter
+}
+
+// GetPeerIdentity returns the peer server's identity (fingerprint:port)
+func (s *BidirectionalSession) GetPeerIdentity() string {
+	return s.peerIdentity
+}
+
+// SetPeerIdentity sets the peer server's identity (fingerprint:port)
+func (s *BidirectionalSession) SetPeerIdentity(identity string) {
+	s.peerIdentity = identity
 }
 
 // SetInitTermSize sets the initial terminal size

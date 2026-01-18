@@ -72,10 +72,10 @@ func (s *server) buildRouter() http.Handler {
 	}
 
 	// Set accepted operations
-	acceptedOps := []string{conf.OperationOperator, conf.OperationAgent}
-	if !s.gateway {
-		// Non-gateway servers accept gateway (for connecting to listening clients)
-		acceptedOps = append(acceptedOps, conf.OperationGateway)
+	acceptedOps := []string{conf.OperationAgent, conf.OperationCallback}
+	if s.gateway {
+		// Gateway servers can be controlled via OperationOperator
+		acceptedOps = append(acceptedOps, conf.OperationOperator)
 	}
 
 	// Wrap with WebSocket upgrade check for client connections
@@ -132,6 +132,11 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		biSession.SetPeerRole(session.AgentConnector)
 
+	case conf.OperationCallback:
+		// Gateway server connecting to us wanting US to control THEM
+		biSession.SetRole(session.OperatorListener)
+		biSession.SetPeerRole(session.AgentConnector)
+
 	case conf.OperationGateway, conf.OperationOperator:
 		// OperationGateway: Server connecting to listening client (client should expose shell)
 		// OperationOperator: Incoming management request (Someone wants to control US)
@@ -157,10 +162,17 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.NotifyUpstreamDisconnect(biSession.GetID())
 	}()
 
-	s.NewSSHServer(biSession)
+	if r.Header.Get("Sec-WebSocket-Operation") == conf.OperationCallback {
+		// For callback connections, we (the receiver) act as the SSH Client (Controller)
+		// while the gateway (initiator) acts as the SSH Server (Controlled)
+		s.NewSSHClient(biSession)
+	} else {
+		// Standard behavior: we act as the SSH Server for agents/clients
+		s.NewSSHServer(biSession)
+	}
 }
 
-func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, gateway bool) {
+func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID int64, customDNS string, customProto string, tlsCertPath string, tlsKeyPath string, operation string) {
 	// Check for self-connection attempts (any server type)
 	// This applies to any connection mode, but particularly important for gateway connections
 	targetHost := clientUrl.Hostname()
@@ -222,11 +234,6 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		}
 
 	}
-	// Operation reflects the connection mode
-	operation := conf.OperationGateway
-	if gateway {
-		operation = conf.OperationOperator
-	}
 
 	wsConn, _, err := wsConfig.DialContext(context.Background(), wsURLStr, http.Header{
 		"Sec-WebSocket-Protocol":  {customProto},
@@ -268,8 +275,9 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 
 	var biSession *session.BidirectionalSession
 
-	if gateway {
-		// Gateway mode: we're a server connecting TO another server as a client
+	switch operation {
+	case conf.OperationOperator:
+		// Gateway mode: we're a server connecting TO another server as a client (we control them)
 		biSession = session.NewServerToServerSession(
 			s.Logger,
 			wsConn,
@@ -280,8 +288,25 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		)
 		biSession.SetRole(session.OperatorConnector)
 		biSession.SetPeerRole(session.GatewayListener)
-	} else {
-		// Listener mode: we're a server connecting TO a client acting as a server
+		biSession.SetIsGateway(true)
+
+	case conf.OperationCallback:
+		// Callback mode: we connect but THEY control US (expose our shell)
+		biSession = session.NewServerToListenerSession(
+			s.Logger,
+			wsConn,
+			nil,      // sshServerConn will be set by NewSSHServer
+			&sshConf, // SSH server config
+			nil,      // interpreter will be detected later
+			remoteAddr,
+			opts,
+		)
+		biSession.SetRole(session.AgentConnector)
+		biSession.SetPeerRole(session.OperatorListener)
+		biSession.SetIsGateway(false)
+
+	default: // conf.OperationGateway
+		// Listener mode: we're a server connecting TO a client acting as a server (we control them)
 		biSession = session.NewServerToListenerSession(
 			s.Logger,
 			wsConn,
@@ -293,9 +318,8 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 		)
 		biSession.SetRole(session.OperatorConnector)
 		biSession.SetPeerRole(session.AgentListener)
+		biSession.SetIsGateway(false)
 	}
-
-	biSession.SetIsGateway(gateway) // Outbound relay status based on initiator intent
 
 	// Set certificate info if we have one
 	if certID != 0 {
@@ -315,11 +339,15 @@ func (s *server) newConnector(clientUrl *url.URL, notifier chan error, certID in
 	biSession.AddNotifier(notifier)
 	biSession.SetSSHConfig(&sshConf)
 
-	if gateway {
-		// If connecting in gateway mode, we act as a client
+	switch operation {
+	case conf.OperationOperator:
+		// Gateway mode: we act as SSH client (control the remote server)
 		s.NewSSHClient(biSession)
-	} else {
-		// Standard listener connection, we act as a server
+	case conf.OperationCallback:
+		// Callback mode: we act as SSH server (expose our shell to be controlled)
+		s.NewSSHServer(biSession)
+	default:
+		// Standard listener connection: we act as SSH server
 		s.NewSSHServer(biSession)
 	}
 

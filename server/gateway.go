@@ -56,6 +56,7 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 	if iErr == nil {
 		clientInfo := &conf.ClientInfo{
 			Interpreter: interp,
+			Identity:    s.GetServerIdentity(), // Include our identity (fingerprint:port)
 		}
 		payload, _ := json.Marshal(clientInfo)
 		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", biSession.GetID()))
@@ -66,6 +67,10 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 			if mErr := json.Unmarshal(reply, &ciAnswer); mErr == nil {
 				if ciAnswer.Interpreter != nil {
 					biSession.SetInterpreter(ciAnswer.Interpreter)
+				}
+				// Store peer's identity if provided
+				if ciAnswer.Identity != "" {
+					biSession.SetPeerIdentity(ciAnswer.Identity)
 				}
 			}
 		}
@@ -114,6 +119,21 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 
 	if biSession.GetNotifier() != nil {
 		biSession.GetNotifier() <- nil
+	}
+
+	// For callback connections (role check), verify no duplicate exists
+	// This must happen BEFORE client.Wait() blocks
+	if biSession.GetRole() == session.OperatorListener && biSession.GetPeerRole() == session.AgentConnector {
+		// This is a callback connection - check for duplicates
+		if err := s.checkDuplicateCallback(biSession); err != nil {
+			s.WarnWith("Duplicate callback connection detected, closing",
+				slog.F("session_id", biSession.GetID()),
+				slog.F("peer_identity", biSession.GetPeerIdentity()),
+				slog.F("err", err))
+			// Close the connection before blocking
+			_ = client.Close()
+			return
+		}
 	}
 
 	// Block until connection closes

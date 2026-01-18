@@ -367,6 +367,10 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 
 	// Store session info from peer
 	s.SetInterpreter(ci.Interpreter)
+	// Store peer's identity if provided
+	if ci.Identity != "" {
+		s.SetPeerIdentity(ci.Identity)
+	}
 
 	// Reply with server info for identification
 	if s.applicationServer != nil {
@@ -374,6 +378,7 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 		if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
 			replyInfo := &conf.ClientInfo{
 				Interpreter: serverInfo,
+				Identity:    s.applicationServer.GetServerIdentity(), // Include our identity
 			}
 			interpreterPayload, jErr := json.Marshal(replyInfo)
 			if jErr != nil {
