@@ -381,9 +381,9 @@ func parsePort(input string) (int, error) {
 	return remotePort, nil
 }
 
-func parseForwarding(input string) (*types.CustomTcpIpChannelMsg, error) {
-	var remoteAddr, localAddr string
-	var remotePort, localPort int
+func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, error) {
+	var aAddr, bAddr string
+	var aPort, bPort int
 	msg := &types.CustomTcpIpChannelMsg{}
 
 	portFwd := strings.Split(input, ":")
@@ -391,38 +391,61 @@ func parseForwarding(input string) (*types.CustomTcpIpChannelMsg, error) {
 	var iErr error
 	switch len(portFwd) {
 	case 1:
-		localAddr = "localhost"
-		remoteAddr = "localhost"
-		localPort, iErr = parsePort(portFwd[0])
+		aAddr = "localhost"
+		bAddr = aAddr
+		aPort, iErr = parsePort(portFwd[0])
 		if iErr != nil {
 			return msg, iErr
 		}
-		remotePort = localPort
+		bPort = aPort
+	case 2:
+		aAddr = "localhost"
+		if reverse {
+			aAddr = "0.0.0.0"
+		}
+		aPort, iErr = parsePort(portFwd[0])
+		if iErr != nil {
+			return msg, iErr
+		}
+		bAddr = aAddr
+		bPort, iErr = parsePort(portFwd[1])
+		if iErr != nil {
+			return msg, iErr
+		}
 	case 3:
-		remoteAddr = "0.0.0.0"
-		remotePort, iErr = parsePort(portFwd[0])
+		aAddr = "localhost"
+		if reverse {
+			aAddr = "0.0.0.0"
+		}
+		aPort, iErr = parsePort(portFwd[0])
 		if iErr != nil {
 			return msg, iErr
 		}
-		localAddr = portFwd[1]
-		if localAddr == "" {
-			localAddr = "localhost"
+		bAddr = portFwd[1]
+		if bAddr == "" {
+			bAddr = "localhost"
 		}
-		localPort, iErr = parsePort(portFwd[2])
+		bPort, iErr = parsePort(portFwd[2])
 		if iErr != nil {
 			return msg, iErr
 		}
 	case 4:
-		remoteAddr = portFwd[0]
-		remotePort, iErr = parsePort(portFwd[1])
+		aAddr = portFwd[0]
+		if aAddr == "" {
+			aAddr = "localhost"
+			if reverse {
+				aAddr = "0.0.0.0"
+			}
+		}
+		aPort, iErr = parsePort(portFwd[1])
 		if iErr != nil {
 			return msg, iErr
 		}
-		localAddr = portFwd[2]
-		if localAddr == "" {
-			localAddr = "localhost"
+		bAddr = portFwd[2]
+		if bAddr == "" {
+			bAddr = "localhost"
 		}
-		localPort, iErr = parsePort(portFwd[3])
+		bPort, iErr = parsePort(portFwd[3])
 		if iErr != nil {
 			return msg, iErr
 		}
@@ -433,10 +456,10 @@ func parseForwarding(input string) (*types.CustomTcpIpChannelMsg, error) {
 
 	msg.IsSshConn = false
 	msg.TcpIpChannelMsg = &types.TcpIpChannelMsg{
-		DstHost: localAddr,
-		DstPort: uint32(localPort),
-		SrcHost: remoteAddr,
-		SrcPort: uint32(remotePort),
+		SrcHost: aAddr,
+		SrcPort: uint32(aPort),
+		DstHost: bAddr,
+		DstPort: uint32(bPort),
 	}
 
 	return msg, nil

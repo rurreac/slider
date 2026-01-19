@@ -19,8 +19,8 @@ import (
 const (
 	// Console Port Forwarding Command
 	portFwdCmd   = "portfwd"
-	portFwdDesc  = "Creates a port forwarding tunnel to / from a client"
-	portFwdUsage = "Usage: portfwd [flags] <[local_addr]:local_port:[remote_addr]:remote_port>"
+	portFwdDesc  = "Creates a port forwarding tunnel"
+	portFwdUsage = "Usage: portfwd [flags] <[a_addr]:a_port:[b_addr]:b_port>"
 )
 
 // PortFwdCommand implements the 'portfwd' command
@@ -137,6 +137,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// Flags Processing
+	var fwdInstance *instance.Config
 	if !isRemote {
 		// Local Strategy
 		if *pSession <= 0 {
@@ -147,11 +148,9 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("local session %d not found", uSess.ActualID)
 		}
 
-		if *pLocal {
-			return handleLocalForward(svr, ui, bidirSession.GetSSHInstance(), portFwdFlags.Args()[0], *pRemove)
-		}
-		if *pReverse {
-			return handleReverseForward(svr, ui, bidirSession.GetSSHInstance(), portFwdFlags.Args()[0], *pRemove)
+		fwdInstance = bidirSession.GetSSHInstance()
+		if fwdInstance == nil {
+			return fmt.Errorf("ssh instance not found for session %d", uSess.ActualID)
 		}
 	} else {
 		// Remote Strategy
@@ -187,12 +186,17 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 			svr.remoteSessionsMutex.Unlock()
 		}
 
-		if *pLocal {
-			return handleLocalForward(svr, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
+		fwdInstance = state.SSHInstance
+		if fwdInstance == nil {
+			return fmt.Errorf("ssh instance not found for session %d", uSess.UnifiedID)
 		}
-		if *pReverse {
-			return handleReverseForward(svr, ui, state.SSHInstance, portFwdFlags.Args()[0], *pRemove)
-		}
+	}
+
+	if *pLocal {
+		return handleLocalForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove)
+	}
+	if *pReverse {
+		return handleReverseForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove)
 	}
 
 	return nil
@@ -209,8 +213,8 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	count += len(reverseMappings)
 	if len(reverseMappings) > 0 {
 		_, _ = fmt.Fprintln(tw)
-		_, _ = fmt.Fprintf(tw, "\tID\tForward Address\tForward Port\tRemote Address\tRemote Port\n")
-		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t------------\t--------------\t-----------\n")
+		_, _ = fmt.Fprintf(tw, "\tID\tForward Address\tForward Port\tAllowed Address\tRemote Port\n")
+		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t------------\t---------------\t-----------\n")
 		for _, mapping := range reverseMappings {
 			address := mapping.DstHost
 			port := fmt.Sprintf("%d", int(mapping.DstPort))
@@ -260,7 +264,7 @@ func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, a
 		return nil
 	}
 	fwdItem := arg
-	msg, pErr := parseForwarding(fwdItem)
+	msg, pErr := parseForwarding(fwdItem, false)
 	if pErr != nil {
 		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
 	}
@@ -312,7 +316,7 @@ func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config,
 		return nil
 	}
 	fwdItem := arg
-	msg, pErr := parseForwarding(fwdItem)
+	msg, pErr := parseForwarding(fwdItem, true)
 	if pErr != nil {
 		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
 	}
