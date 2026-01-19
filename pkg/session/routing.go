@@ -6,12 +6,12 @@ import (
 	"net"
 	"strconv"
 
+	"slider/pkg/instance/socks"
 	"slider/pkg/sconn"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
 
-	"github.com/armon/go-socks5"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -223,14 +223,8 @@ func (s *BidirectionalSession) HandleSocks(nc ssh.NewChannel) error {
 	socksConn := sconn.SSHChannelToNetConn(socksChan)
 	defer func() { _ = socksConn.Close() }()
 
-	// Set up configuration for the SOCKS5 server
-	socksConf := &socks5.Config{
-		// Disable logging
-		Logger: slog.NewDummyLog(),
-	}
-
 	// Create a new SOCKS5 server
-	server, err := socks5.New(socksConf)
+	server, err := socks.NewServer()
 	if err != nil {
 		s.logger.ErrorWith("Failed to create SOCKS5 server",
 			slog.F("session_id", s.sessionID),

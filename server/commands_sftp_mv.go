@@ -34,8 +34,8 @@ func (c *SftpMvCommand) Run(execCtx *ExecutionContext, args []string) error {
 	mvFlags.SetOutput(ui.Writer())
 
 	mvFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", mvDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", mvUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", mvDesc)
 		mvFlags.PrintDefaults()
 	}
 

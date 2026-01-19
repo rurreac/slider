@@ -67,8 +67,8 @@ func (c *SftpLsCommand) Run(execCtx *ExecutionContext, args []string) error {
 	lsFlags.SetOutput(ui.Writer())
 
 	lsFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", c.Description())
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", c.Usage())
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", c.Description())
 		lsFlags.PrintDefaults()
 	}
 

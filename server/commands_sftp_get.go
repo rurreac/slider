@@ -40,9 +40,10 @@ func (c *SftpGetCommand) Run(execCtx *ExecutionContext, args []string) error {
 	recursive := getFlags.BoolP("recursive", "r", false, "Download directories recursively")
 
 	getFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", getDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", getUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", getDesc)
 		getFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := getFlags.Parse(args); pErr != nil {

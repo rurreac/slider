@@ -1,9 +1,14 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
 
+	"slider/pkg/sio"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -90,13 +95,64 @@ func (s *BidirectionalSession) GetReversePortForwards() map[uint32]*RevPortContr
 }
 
 // HandleForwardedTcpIpChannel handles incoming forwarded-tcpip channels
-// This is required by the remote.Session interface
+// Called when a reverse port forward connection arrives
 func (s *BidirectionalSession) HandleForwardedTcpIpChannel(nc ssh.NewChannel) {
-	s.logger.WarnWith("Received unexpected forwarded-tcpip channel",
+	// Parse the channel data to get connection info
+	var tcpIpMsg types.TcpIpChannelMsg
+	customMsg := &types.CustomTcpIpChannelMsg{}
+
+	// Assume CustomTcpIpChannelMsg message format first, otherwise fallback to SSH wire format
+	if jErr := json.Unmarshal(nc.ExtraData(), customMsg); jErr == nil && customMsg.TcpIpChannelMsg != nil {
+		// CustomTcpIpChannelMsg format - internally handled reverse port forward
+		tcpIpMsg = *customMsg.TcpIpChannelMsg
+	} else {
+		// SSH wire format - reverse port forward from external ssh connection
+		if uErr := ssh.Unmarshal(nc.ExtraData(), &tcpIpMsg); uErr != nil {
+			s.logger.ErrorWith("Failed to unmarshal forwarded-tcpip data",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", uErr))
+			_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode forwarded-tcpip data")
+			return
+		}
+	}
+
+	s.logger.DebugWith("Forwarded-tcpip channel request",
 		slog.F("session_id", s.sessionID),
-		slog.F("role", s.role.String()),
-		slog.F("channel_type", nc.ChannelType()))
-	_ = nc.Reject(ssh.Prohibited, "forwarded-tcpip not supported in this session mode")
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort),
+		slog.F("src_host", tcpIpMsg.SrcHost),
+		slog.F("src_port", tcpIpMsg.SrcPort))
+
+	// Accept the channel
+	channel, requests, aErr := nc.Accept()
+	if aErr != nil {
+		s.logger.ErrorWith("Failed to accept forwarded-tcpip channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", aErr))
+		return
+	}
+	defer func() { _ = channel.Close() }()
+	go ssh.DiscardRequests(requests)
+
+	// Dial the local destination
+	host := net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort)))
+	conn, cErr := net.Dial("tcp", host)
+	if cErr != nil {
+		s.logger.ErrorWith("Failed to connect to local destination",
+			slog.F("session_id", s.sessionID),
+			slog.F("host", host),
+			slog.F("err", cErr))
+		return
+	}
+	defer func() { _ = conn.Close() }()
+
+	// Pipe the SSH channel to the local connection
+	_, _ = sio.PipeWithCancel(channel, conn)
+
+	s.logger.DebugWith("Completed forwarded-tcpip channel",
+		slog.F("session_id", s.sessionID),
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort))
 }
 
 // SetSSHClient sets the SSH client connection (AgentRole/OperatorRole)

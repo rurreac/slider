@@ -39,9 +39,10 @@ func (c *SftpPutCommand) Run(execCtx *ExecutionContext, args []string) error {
 	recursive := putFlags.BoolP("recursive", "r", false, "Upload directories recursively")
 
 	putFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", putDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", putUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", putDesc)
 		putFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := putFlags.Parse(args); pErr != nil {

@@ -37,9 +37,10 @@ func (c *SftpRmCommand) Run(execCtx *ExecutionContext, args []string) error {
 	recursive := rmFlags.BoolP("recursive", "r", false, "Remove directory and their contents recursively")
 
 	rmFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", rmDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", rmUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", rmDesc)
 		rmFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := rmFlags.Parse(args); pErr != nil {
