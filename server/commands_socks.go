@@ -35,11 +35,11 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	socksFlags := pflag.NewFlagSet(socksCmd, pflag.ContinueOnError)
 	socksFlags.SetOutput(ui.Writer())
 
-	sSession := socksFlags.IntP("session", "s", 0, "Run a Socks5 server over an SSH Channel on a Session ID")
-	sPort := socksFlags.IntP("port", "p", 0, "Use this port number as local Listener, otherwise randomly selected")
-	sKill := socksFlags.IntP("kill", "k", 0, "Kill Socks5 server by port number")
+	sSession := socksFlags.IntP("session", "s", 0, "Target session-based SOCKS5 server")
+	sPort := socksFlags.IntP("port", "p", 0, "Port number (for server creation)")
+	sKill := socksFlags.BoolP("kill", "k", false, "Kill SOCKS5 server (requires -l or -s)")
 	sExpose := socksFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
-	sLocal := socksFlags.BoolP("local", "l", false, "Create a local SOCKS5 server (without a session)")
+	sLocal := socksFlags.BoolP("local", "l", false, "Target local SOCKS5 server")
 
 	socksFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", socksUsage)
@@ -54,28 +54,42 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 		return fmt.Errorf("flag error: %w", pErr)
 	}
 
+	// Reject positional arguments
+	if len(socksFlags.Args()) > 0 {
+		return fmt.Errorf("socks command does not accept positional arguments")
+	}
+
 	// Listing mode - no flags provided
 	if !socksFlags.Changed("session") && !socksFlags.Changed("kill") && !socksFlags.Changed("local") {
 		return listSocksSessions(svr, ui)
 	}
 
-	// Validate mutual exclusion
+	// Kill operation validation
+	if socksFlags.Changed("kill") {
+		if !socksFlags.Changed("local") && !socksFlags.Changed("session") {
+			return fmt.Errorf("--kill requires either --local or --session to specify target")
+		}
+		if socksFlags.Changed("local") && socksFlags.Changed("session") {
+			return fmt.Errorf("--kill cannot target both --local and --session")
+		}
+		if socksFlags.Changed("expose") {
+			return fmt.Errorf("--kill and --expose cannot be used together")
+		}
+	}
+
+	// Create operation validation
 	if socksFlags.Changed("session") && socksFlags.Changed("local") {
 		return fmt.Errorf("flags --session and --local cannot be used together")
 	}
-	if socksFlags.Changed("kill") && socksFlags.Changed("session") {
-		return fmt.Errorf("flags --kill and --session cannot be used together")
-	}
-	if socksFlags.Changed("kill") && socksFlags.Changed("local") {
-		return fmt.Errorf("flags --kill and --local cannot be used together")
-	}
-	if socksFlags.Changed("kill") && socksFlags.Changed("expose") {
-		return fmt.Errorf("flags --kill and --expose cannot be used together")
-	}
 
-	// Kill operation
-	if *sKill > 0 {
-		return killLocalSocksServer(svr, ui)
+	// Kill operations
+	if *sKill {
+		if *sLocal {
+			return killLocalSocksServer(svr, ui)
+		}
+		if *sSession > 0 {
+			return killSessionSocksServer(svr, ui, *sSession)
+		}
 	}
 
 	// Local SOCKS server creation
@@ -95,20 +109,32 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 func listSocksSessions(svr *server, ui UserInterface) error {
 	totalSocks := 0
 
-	// List session-based SOCKS servers (local sessions)
+	// Session-based SOCKS servers (local sessions)
 	sessionList := svr.GetAllSessions()
-	if len(sessionList)+svr.localSocks.port > 0 {
+
+	// Get total socks active
+	for _, sess := range sessionList {
+		if sess.GetSocksInstance() != nil && sess.GetSocksInstance().IsEnabled() {
+			totalSocks++
+		}
+	}
+	svr.localSocks.mu.Lock()
+	if svr.localSocks.port != 0 {
+		totalSocks++
+	}
+	svr.localSocks.mu.Unlock()
+
+	if totalSocks > 0 {
 		tw := new(tabwriter.Writer)
 		tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 
-		_, _ = fmt.Fprintf(tw, "\n\tType\tID/Port\tLocal Port\t")
-		_, _ = fmt.Fprintf(tw, "\n\t----\t-------\t----------\t\n")
+		_, _ = fmt.Fprintf(tw, "\n\tType\tID\tPort\t")
+		_, _ = fmt.Fprintf(tw, "\n\t----\t--\t----\t\n")
 
 		// Check for local SOCKS server
 		svr.localSocks.mu.Lock()
 		if svr.localSocks.port != 0 {
 			_, _ = fmt.Fprintf(tw, "\tLOCAL\t--\t%d\t\n", svr.localSocks.port)
-			totalSocks++
 		}
 		svr.localSocks.mu.Unlock()
 
@@ -120,7 +146,6 @@ func listSocksSessions(svr *server, ui UserInterface) error {
 					port = 0
 				}
 				_, _ = fmt.Fprintf(tw, "\tSESSION\t%d\t%d\t\n", sess.GetID(), port)
-				totalSocks++
 			}
 		}
 
@@ -210,6 +235,64 @@ func createLocalSocksServer(svr *server, ui UserInterface, port int, expose bool
 		svr.localSocks.mu.Unlock()
 	}()
 
+	return nil
+}
+
+// killSessionSocksServer kills a SOCKS server for a specific session
+func killSessionSocksServer(svr *server, ui UserInterface, sessionID int) error {
+	var uSess UnifiedSession
+	var isRemote bool
+
+	// Resolve Unified Sessions
+	unifiedMap := svr.ResolveUnifiedSessions()
+	if val, ok := unifiedMap[int64(sessionID)]; ok {
+		if strings.HasPrefix(val.Role, "operator") {
+			return fmt.Errorf("socks command not allowed against operator roles")
+		}
+		uSess = val
+		isRemote = uSess.OwnerID != 0
+	} else {
+		return fmt.Errorf("unknown session ID %d", sessionID)
+	}
+
+	if !isRemote {
+		// Local Strategy - kill local session SOCKS
+		session, err := svr.GetSession(int(uSess.ActualID))
+		if err != nil {
+			return fmt.Errorf("local session %d not found", uSess.ActualID)
+		}
+
+		if !session.GetSocksInstance().IsEnabled() {
+			return fmt.Errorf("session %d does not have an active SOCKS server", sessionID)
+		}
+
+		if dErr := session.GetSocksInstance().Stop(); dErr != nil {
+			return fmt.Errorf("failed to disable SOCKS: %w", dErr)
+		}
+
+		ui.PrintSuccess("SOCKS server stopped for session %d", sessionID)
+		return nil
+	}
+
+	// Remote Strategy - kill remote session SOCKS
+	socksKey := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
+	svr.remoteSessionsMutex.Lock()
+	state, ok := svr.remoteSessions[socksKey]
+	svr.remoteSessionsMutex.Unlock()
+
+	if !ok || state.SocksInstance == nil || !state.SocksInstance.IsEnabled() {
+		return fmt.Errorf("session %d does not have an active SOCKS server", sessionID)
+	}
+
+	if dErr := state.SocksInstance.Stop(); dErr != nil {
+		return fmt.Errorf("failed to stop SOCKS: %w", dErr)
+	}
+
+	svr.remoteSessionsMutex.Lock()
+	delete(svr.remoteSessions, socksKey)
+	svr.remoteSessionsMutex.Unlock()
+
+	ui.PrintSuccess("SOCKS server stopped for session %d", sessionID)
 	return nil
 }
 
