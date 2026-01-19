@@ -37,8 +37,8 @@ func (c *SftpChmodCommand) Run(execCtx *ExecutionContext, args []string) error {
 	chmodFlags.SetOutput(ui.Writer())
 
 	chmodFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", chmodDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", chmodUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", chmodDesc)
 		chmodFlags.PrintDefaults()
 	}
 

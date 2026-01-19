@@ -56,6 +56,9 @@ type ForwardRequestPayload struct {
 type CustomTcpIpFwdRequest struct {
 	IsSshConn bool
 	*TcpIpFwdRequest
+	// Forward destination fields (used by Slider console forwards, not SSH forwards)
+	FwdHost string `json:"fwd_host,omitempty"`
+	FwdPort uint32 `json:"fwd_port,omitempty"`
 }
 
 // TermDimensions is the custom structure of a message

@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"slider/pkg/instance"
+	"slider/pkg/instance/socks"
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
 	"slider/pkg/sconn"
@@ -65,6 +66,14 @@ type server struct {
 	commandRegistry      *CommandRegistry
 	remoteSessions       map[string]*RemoteSessionState
 	remoteSessionsMutex  sync.Mutex
+	localSocks           LocalSocksServer // Local SOCKS server state
+}
+
+// LocalSocksServer tracks a standalone local SOCKS5 server with embedded mutex
+type LocalSocksServer struct {
+	mu     sync.Mutex
+	server *socks.LocalServer
+	port   int
 }
 
 type RemoteSessionState struct {

@@ -60,9 +60,10 @@ func (c *SftpMkdirCommand) Run(execCtx *ExecutionContext, args []string) error {
 	parents := mkdirFlags.BoolP("parents", "p", false, "Create parent directories as needed")
 
 	mkdirFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", c.Description())
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", c.Usage())
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", c.Description())
 		mkdirFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := mkdirFlags.Parse(args); pErr != nil {

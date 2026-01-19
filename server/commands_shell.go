@@ -59,9 +59,10 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	sExpose := shellFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	shellFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", shellDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", shellUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", shellDesc)
 		shellFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := shellFlags.Parse(args); pErr != nil {
@@ -69,6 +70,11 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 			return nil
 		}
 		return pErr
+	}
+
+	// Reject positional arguments
+	if len(shellFlags.Args()) > 0 {
+		return fmt.Errorf("shell command does not accept positional arguments")
 	}
 
 	// Validate one required

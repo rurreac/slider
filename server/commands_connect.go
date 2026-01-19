@@ -43,9 +43,10 @@ func (c *ConnectCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	connectFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", connectDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", connectUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", connectDesc)
 		connectFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := connectFlags.Parse(args); pErr != nil {

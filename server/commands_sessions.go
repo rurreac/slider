@@ -212,14 +212,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			tw := new(tabwriter.Writer)
 			tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 			// Added Role column
-			_, _ = fmt.Fprintf(tw, "\n\tID\tOwner\tSystem\tRole\tUser\tHost\tIO\tConnection\tSocks\tSSH/SFTP\tShell/TLS\tCertID\t")
-			_, _ = fmt.Fprintf(tw, "\n\t--\t-----\t------\t----\t----\t----\t--\t----------\t-----\t--------\t---------\t------\t\n")
+			_, _ = fmt.Fprintf(tw, "\n\tID\tOwner\tSystem\tRole\tUser\tHost\tIO\tConnection\tSSH/SFTP\tShell/TLS\tCertID\t")
+			_, _ = fmt.Fprintf(tw, "\n\t--\t-----\t------\t----\t----\t----\t--\t----------\t--------\t---------\t------\t\n")
 
 			for _, i := range keys {
 				uSess := unifiedMap[int64(i)]
 
 				// Defaults for Remote
-				socksPort := "--"
 				sshPort := "--"
 				shellPort := "--"
 				shellTLS := "--"
@@ -230,11 +229,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				// If Local, fetch detailed info from actual session
 				if uSess.OwnerID == 0 {
 					if sess, ok := svr.sessionTrack.Sessions[uSess.ActualID]; ok {
-						if sess.GetSocksInstance().IsEnabled() {
-							if port, pErr := sess.GetSocksInstance().GetEndpointPort(); pErr == nil {
-								socksPort = fmt.Sprintf("%d", port)
-							}
-						}
 						if sess.GetSSHInstance().IsEnabled() {
 							if port, pErr := sess.GetSSHInstance().GetEndpointPort(); pErr == nil {
 								sshPort = fmt.Sprintf("%d", port)
@@ -267,18 +261,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 						inOut = "->"
 					}
 					connection = uSess.ConnectionAddr
-
-					// Check for SOCKS
-					socksKey := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
-					svr.remoteSessionsMutex.Lock()
-					if state, ok := svr.remoteSessions[socksKey]; ok {
-						if state.SocksInstance != nil && state.SocksInstance.IsEnabled() {
-							if port, pErr := state.SocksInstance.GetEndpointPort(); pErr == nil {
-								socksPort = fmt.Sprintf("%d", port)
-							}
-						}
-					}
-					svr.remoteSessionsMutex.Unlock()
 
 					// Check for SSH
 					sshKey := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
@@ -320,7 +302,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					hostname = hostname[:15] + "..."
 				}
 
-				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
+				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 					uSess.UnifiedID,
 					ownerStr,
 					uSess.System,
@@ -329,7 +311,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					hostname,
 					inOut,
 					connection,
-					socksPort,
 					sshPort,
 					fmt.Sprintf("%s/%s", shellPort, shellTLS),
 					certID,

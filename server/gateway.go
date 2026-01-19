@@ -122,7 +122,6 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 	}
 
 	// For callback connections (role check), verify no duplicate exists
-	// This must happen BEFORE client.Wait() blocks
 	if biSession.GetRole() == session.OperatorListener && biSession.GetPeerRole() == session.AgentConnector {
 		// This is a callback connection - check for duplicates
 		if err := s.checkDuplicateCallback(biSession); err != nil {
