@@ -389,17 +389,16 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 	portFwd := strings.Split(input, ":")
 
 	var iErr error
+	aAddr = "localhost"
+	bAddr = aAddr
 	switch len(portFwd) {
 	case 1:
-		aAddr = "localhost"
-		bAddr = aAddr
 		aPort, iErr = parsePort(portFwd[0])
 		if iErr != nil {
 			return msg, iErr
 		}
 		bPort = aPort
 	case 2:
-		aAddr = "localhost"
 		if reverse {
 			aAddr = "0.0.0.0"
 		}
@@ -407,13 +406,11 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 		if iErr != nil {
 			return msg, iErr
 		}
-		bAddr = aAddr
 		bPort, iErr = parsePort(portFwd[1])
 		if iErr != nil {
 			return msg, iErr
 		}
 	case 3:
-		aAddr = "localhost"
 		if reverse {
 			aAddr = "0.0.0.0"
 		}
