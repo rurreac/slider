@@ -274,6 +274,12 @@ func (isc *InitialScreenClearer) Process(data []byte) []byte {
 			}
 
 			output = append(output, b)
+			if b == '>' || b == '.' || b == '/' || b == '\\' {
+				isc.disableFiltering = true
+				if isc.debugWriter != nil {
+					isc.log("Prompt detected (%c), disabling filtering.", b)
+				}
+			}
 			isc.hasSeenContent = true
 			isc.lastWasClear = false
 			offset++

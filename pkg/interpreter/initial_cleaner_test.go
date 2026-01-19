@@ -154,6 +154,33 @@ func TestInitialScreenClearer(t *testing.T) {
 			// Note: ?1049h itself IS passed in current logic (shouldStrip=false).
 			expected: []byte("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[HContent"),
 		},
+		{
+			name: "Prompt Trigger Dot",
+			chunks: [][]byte{
+				[]byte("Loading..."),
+				[]byte("\x1b[2JContent"),
+			},
+			// "Loading." triggers disableFiltering. So 2J is PASSED RAW.
+			expected: []byte("Loading...\x1b[2JContent"),
+		},
+		{
+			name: "Prompt Trigger Slash",
+			chunks: [][]byte{
+				[]byte("/usr/bin/"),
+				[]byte("\x1b[2JContent"),
+			},
+			// "/" triggers disableFiltering.
+			expected: []byte("/usr/bin/\x1b[2JContent"),
+		},
+		{
+			name: "Prompt Trigger Backslash",
+			chunks: [][]byte{
+				[]byte("C:\\Users\\"),
+				[]byte("\x1b[2JContent"),
+			},
+			// "\" triggers disableFiltering.
+			expected: []byte("C:\\Users\\\x1b[2JContent"),
+		},
 	}
 
 	for _, tt := range tests {
@@ -218,14 +245,14 @@ func TestWindowsVerification(t *testing.T) {
 			inputStream: [][]byte{
 				[]byte("\x1b[2J\x1b[H"), // Init Clear - Stripped (homeCount=0)
 				[]byte("Loading..."),
-				[]byte("\x1b[H"), // homeCount=1 (replaced by newline because seen content)
+				[]byte("\x1b[H"), // Passed RAW because "Loading." triggered disableFiltering
 				[]byte("Redrawing..."),
-				[]byte("\x1b[H"), // homeCount=2 (replaced by newline)
+				[]byte("\x1b[H"), // Passed RAW
 				[]byte("More..."),
-				[]byte("\x1b[H"), // homeCount=3 (triggers pass-through)
+				[]byte("\x1b[H"), // Passed RAW
 				[]byte("Dashboard Updated"),
 			},
-			exactExpect: []byte("Loading...\r\nRedrawing...\r\nMore...\x1b[HDashboard Updated"),
+			exactExpect: []byte("Loading...\x1b[HRedrawing...\x1b[HMore...\x1b[HDashboard Updated"),
 		},
 		{
 			name: "Batch Command with Mid-stream Clear",
