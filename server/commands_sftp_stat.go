@@ -38,8 +38,8 @@ func (c *SftpStatCommand) Run(execCtx *ExecutionContext, args []string) error {
 	statFlags.SetOutput(ui.Writer())
 
 	statFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", statDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", statUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", statDesc)
 		statFlags.PrintDefaults()
 	}
 

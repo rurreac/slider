@@ -43,9 +43,10 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	pRemove := portFwdFlags.BoolP("remove", "r", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
 
 	portFwdFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", portFwdDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", portFwdUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", portFwdDesc)
 		portFwdFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := portFwdFlags.Parse(args); pErr != nil {

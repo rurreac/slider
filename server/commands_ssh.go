@@ -39,9 +39,10 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	sExpose := sshFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
 
 	sshFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", sshDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", sshUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", sshDesc)
 		sshFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := sshFlags.Parse(args); pErr != nil {

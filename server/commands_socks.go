@@ -42,9 +42,10 @@ func (c *SocksCommand) Run(ctx *ExecutionContext, args []string) error {
 	sLocal := socksFlags.BoolP("local", "l", false, "Target local SOCKS5 server")
 
 	socksFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", socksDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", socksUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", socksDesc)
 		socksFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := socksFlags.Parse(args); pErr != nil {

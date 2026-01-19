@@ -37,9 +37,10 @@ func (c *CertsCommand) Run(ctx *ExecutionContext, args []string) error {
 	cCA := certsFlags.BoolP("dump-ca", "c", false, "Dump CA Certificate and key")
 
 	certsFlags.Usage = func() {
+		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", certsDesc)
 		_, _ = fmt.Fprintf(ui.Writer(), "Usage: %s\n\n", certsUsage)
-		_, _ = fmt.Fprintf(ui.Writer(), "%s\n\n", certsDesc)
 		certsFlags.PrintDefaults()
+		_, _ = fmt.Fprintf(ui.Writer(), "\n")
 	}
 
 	if pErr := certsFlags.Parse(args); pErr != nil {
