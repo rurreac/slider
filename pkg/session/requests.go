@@ -286,11 +286,21 @@ func (s *BidirectionalSession) handleTcpIpForward(req *ssh.Request) {
 
 		go func() {
 			srcAddr := conn.RemoteAddr().(*net.TCPAddr)
+
+			// For SSH forwards: use bind address/port (forwarded back to SSH client)
+			dstHost := tcpIpForward.BindAddress
+			dstPort := tcpIpForward.BindPort
+			// For Slider forwards: use forward destination address/port
+			if !tcpIpForward.IsSshConn {
+				dstHost = tcpIpForward.FwdHost
+				dstPort = tcpIpForward.FwdPort
+			}
+
 			payload := &types.CustomTcpIpChannelMsg{
 				IsSshConn: tcpIpForward.IsSshConn,
 				TcpIpChannelMsg: &types.TcpIpChannelMsg{
-					DstHost: tcpIpForward.BindAddress,
-					DstPort: tcpIpForward.BindPort,
+					DstHost: dstHost,
+					DstPort: dstPort,
 					SrcHost: srcAddr.IP.String(),
 					SrcPort: uint32(srcAddr.Port),
 				},

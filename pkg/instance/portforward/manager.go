@@ -161,6 +161,8 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 			BindAddress: msg.SrcHost,
 			BindPort:    msg.SrcPort,
 		},
+		FwdHost: msg.DstHost, // Destination to forward connections to
+		FwdPort: msg.DstPort, // Port to forward connections to
 	}
 
 	forwardReqBytes, mErr := json.Marshal(forwardReq)

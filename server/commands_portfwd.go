@@ -210,7 +210,7 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	if len(reverseMappings) > 0 {
 		_, _ = fmt.Fprintln(tw)
 		_, _ = fmt.Fprintf(tw, "\tID\tForward Address\tForward Port\tRemote Address\tRemote Port\n")
-		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t----------\t--------------\t-----------\n")
+		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t------------\t--------------\t-----------\n")
 		for _, mapping := range reverseMappings {
 			address := mapping.DstHost
 			port := fmt.Sprintf("%d", int(mapping.DstPort))
@@ -229,7 +229,7 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	if len(localMappings) > 0 {
 		_, _ = fmt.Fprintln(tw)
 		_, _ = fmt.Fprintf(tw, "\tID\tLocal Address\tLocal Port\tForward Address\tForward Port\n")
-		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t----------\t--------------\t-----------\n")
+		_, _ = fmt.Fprintf(tw, "\t--\t-------------\t----------\t---------------\t------------\n")
 		for _, mapping := range localMappings {
 			address := mapping.DstHost
 			port := fmt.Sprintf("%d", int(mapping.DstPort))
