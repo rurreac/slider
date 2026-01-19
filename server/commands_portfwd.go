@@ -111,13 +111,13 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		totalGlobalTcpIp := 0
 
-		// 1. Local Sessions Listing
+		// Local Sessions Listing
 		sessionList := slices.Collect(maps.Values(svr.sessionTrack.Sessions))
 		for _, sItem := range sessionList {
 			totalGlobalTcpIp += listSessionForwarding(tw, sItem.GetID(), sItem.GetSSHInstance())
 		}
 
-		// 2. Remote Sessions Listing
+		// Remote Sessions Listing
 		svr.remoteSessionsMutex.Lock()
 		keys := slices.Collect(maps.Keys(svr.remoteSessions))
 		svr.remoteSessionsMutex.Unlock()
@@ -155,7 +155,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 	} else {
 		// Remote Strategy
-		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
+		key := fmt.Sprintf("portfwd:%d:%v", uSess.OwnerID, uSess.Path)
 		svr.remoteSessionsMutex.Lock()
 		if _, ok := svr.remoteSessions[key]; !ok {
 			svr.remoteSessions[key] = &RemoteSessionState{}
