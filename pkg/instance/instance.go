@@ -7,7 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/signal"
+	"slider/pkg/conf"
 	"slider/pkg/instance/portforward"
 	"slider/pkg/instance/shell"
 	"slider/pkg/instance/socks"
@@ -17,7 +17,6 @@ import (
 	"slider/pkg/slog"
 	"slider/pkg/types"
 	"sync"
-	"syscall"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -38,6 +37,7 @@ const (
 type ChannelOpener interface {
 	OpenChannel(name string, payload []byte) (ssh.Channel, <-chan *ssh.Request, error)
 	SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error)
+	Wait() error
 }
 
 type Config struct {
@@ -59,6 +59,7 @@ type Config struct {
 	EndpointType         string
 	tlsOn                bool
 	interactiveOn        bool
+	useAltShell          bool
 	CertificateAuthority *scrypt.CertificateAuthority
 	certExists           bool
 	serverCertificate    *scrypt.GeneratedCertificate
@@ -68,6 +69,7 @@ type Config struct {
 	serviceManager       *ServiceManager
 	shellService         *shell.Service
 	sshService           *sshservice.Service
+	externalPtyRequested bool // Whether external SSH client requested PTY
 }
 
 func New(config *Config) *Config {
@@ -179,6 +181,15 @@ func (si *Config) SetInteractiveOn(interactiveOn bool) {
 	si.instanceMutex.Unlock()
 }
 
+func (si *Config) SetUseAltShell(useAltShell bool) {
+	si.instanceMutex.Lock()
+	si.useAltShell = useAltShell
+	if si.shellService != nil {
+		si.shellService.SetUseAltShell(useAltShell)
+	}
+	si.instanceMutex.Unlock()
+}
+
 func (si *Config) SetAllowedFingerprint(fp string) {
 	si.instanceMutex.Lock()
 	si.allowedFingerprint = fp
@@ -229,9 +240,35 @@ func (si *Config) StartEndpoint(port int) error {
 	si.setPort(port)
 
 	go func() {
-		if <-si.stopSignal; true {
-			close(si.stopSignal)
-			_ = listener.Close()
+		// Wait for stop signal
+		<-si.stopSignal
+		_ = listener.Close()
+	}()
+
+	// Helper function for safe access
+	getSSHConn := func() ChannelOpener {
+		si.instanceMutex.Lock()
+		defer si.instanceMutex.Unlock()
+		// Make a copy or return interface
+		return si.sshSessionConn
+	}
+
+	// Monitor the underlying connection
+	go func() {
+		conn := getSSHConn()
+		if conn != nil {
+			_ = conn.Wait()
+			// Connection closed or errored, stop the listener
+			si.Logger.DebugWith("Triggering listener cleanup signal",
+				slog.F("session_id", si.SessionID),
+				slog.F("port", port))
+
+			// Ensure Port Forwarding is also cleaned up
+			if si.portFwdManager != nil {
+				si.portFwdManager.CloseAll()
+			}
+
+			si.stopSignal <- true
 		}
 	}()
 
@@ -391,15 +428,10 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	envChange := make(chan []byte, 10)
 	defer close(envChange)
 
-	var envCloser struct{ Key, Value string }
-	envCloser.Key = "SLIDER_ENV"
-	envCloser.Value = "true"
-	envCloserBytes := ssh.Marshal(envCloser)
-
 	for req := range requests {
 		ok := false
 		if req.Type != "env" {
-			si.Logger.DebugWith("Scope \"%s\" - Request Type \"%s\" - payload: %v",
+			si.Logger.DebugWith("External request received",
 				slog.F("session_id", si.SessionID),
 				slog.F("scope", scope),
 				slog.F("request_type", req.Type),
@@ -411,8 +443,11 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
-			// At this point all environment variables are already set
-			envChange <- envCloserBytes
+
+			// Send environment variables to channel
+			for _, envVar := range si.getEnvVars() {
+				envChange <- ssh.Marshal(envVar)
+			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, nil, winChange, envChange)
 		case "exec":
 			ok = true
@@ -421,13 +456,18 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 					_ = req.Reply(ok, nil)
 				}()
 			}
-			// At this point all environment variables are already set
-			envChange <- envCloserBytes
+
+			// Send environment variables to channel
+			for _, envVar := range si.getEnvVars() {
+				envChange <- ssh.Marshal(envVar)
+			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, req.Payload, winChange, envChange)
 		case "pty-req":
 			// Answering pty-req request true if Slider client has ptyOn
 			if si.ptyOn {
 				ok = true
+				// Track that external client requested PTY
+				si.externalPtyRequested = true
 				// Process req-pty info to Slider client through a new channel "init-size"
 				si.sendInitTermSize(req.Payload)
 			}
@@ -471,6 +511,33 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			}
 		}
 	}
+}
+
+func (si *Config) getEnvVars() []struct{ Key, Value string } {
+	envVarList := make([]struct{ Key, Value string }, 0)
+	// Request alternate shell if enabled
+	if si.useAltShell {
+		var altC struct{ Key, Value string }
+		altC.Key = conf.SliderAltShellEnvVar
+		altC.Value = "true"
+		envVarList = append(envVarList, altC)
+	}
+	// Always request PTY for Console execute command
+	if si.externalPtyRequested {
+		var ptySignal struct{ Key, Value string }
+		ptySignal.Key = conf.SliderExecPtyEnvVar
+		ptySignal.Value = "true"
+		envVarList = append(envVarList, ptySignal)
+	}
+
+	// Always send closer env var
+	var envCloser struct{ Key, Value string }
+	envCloser.Key = conf.SliderCloserEnvVar
+	envCloser.Value = "true"
+	envVarList = append(envVarList, envCloser)
+
+	return envVarList
+
 }
 
 func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier chan error) {
@@ -604,7 +671,7 @@ func (si *Config) sendInitTermSize(payload []byte) {
 
 }
 
-func (si *Config) ExecuteCommand(command string, initState *term.State, out io.Writer) error {
+func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
 	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
@@ -612,8 +679,7 @@ func (si *Config) ExecuteCommand(command string, initState *term.State, out io.W
 	}
 
 	// Build command payload
-	cmdLen := len(command)
-	cmdBytes := []byte(command)
+	cmdLen := len(string(cmdBytes))
 	payload := []byte{0, 0, 0, byte(cmdLen)}
 	payload = append(payload, cmdBytes...)
 
@@ -625,10 +691,13 @@ func (si *Config) ExecuteCommand(command string, initState *term.State, out io.W
 
 	go ssh.DiscardRequests(shellRequests)
 
-	var envCloser struct{ Key, Value string }
-	envCloser.Key = "SLIDER_ENV"
-	envCloser.Value = "true"
-	envVarList := append(si.envVarList, envCloser)
+	// Always request PTY for Console execute command
+	var ptySignal struct{ Key, Value string }
+	ptySignal.Key = conf.SliderExecPtyEnvVar
+	ptySignal.Value = "true"
+
+	// Concatenate with existing environment variables
+	envVarList := append([]struct{ Key, Value string }{ptySignal}, si.getEnvVars()...)
 
 	// Handle environment variable events
 	go func() {
@@ -642,28 +711,27 @@ func (si *Config) ExecuteCommand(command string, initState *term.State, out io.W
 		}
 	}()
 
-	if initState != nil {
-		state, _ := term.GetState(int(os.Stdin.Fd()))
-		if rErr := term.Restore(int(os.Stdin.Fd()), initState); rErr != nil {
-			return rErr
-		}
-		defer func() { _ = term.Restore(int(os.Stdin.Fd()), state) }()
-	}
+	// Signal channel to stop stdin reader when the connection errors/closes
+	done := make(chan struct{})
 
-	// Capture interrupt signal for Ctrl+C handling
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Remote -> Local: copy from connection to stdout
 	go func() {
-		sig := make(chan os.Signal, 1)
-		signal.Notify(sig, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-		for range sig {
-			// Stop capture
-			signal.Stop(sig)
-			close(sig)
-			// Manually write SIGQUIT to the channel to stop the process
-			_, _ = sliderClientChannel.Write([]byte{0x03})
-		}
+		defer wg.Done()
+		_, _ = io.Copy(ic, sliderClientChannel)
+		// Signal stdin reader to stop
+		close(done)
 	}()
 
-	_, _ = io.Copy(out, sliderClientChannel)
+	// Local -> Remote: cancellable stdin copy using select(2)
+	go func() {
+		defer wg.Done()
+		sio.CopyInteractiveCancellable(sliderClientChannel, ic, done)
+	}()
+
+	wg.Wait()
 
 	return nil
 }
@@ -725,6 +793,7 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 
 		}
 	}()
+
 	// Handle environment variable events
 	go func() {
 		for envVarBytes := range envChange {
@@ -737,6 +806,12 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 			}
 		}
 	}()
+
+	// Send environment variables to channel
+	for _, envVar := range si.getEnvVars() {
+		envChange <- ssh.Marshal(envVar)
+	}
+
 	// Handle requests from the SSH channel
 	go si.handleRequests(sessionClientChannel, shellRequests, sliderChannelScope)
 	// Pipe SSH channel with SSH channel
@@ -775,11 +850,7 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 
 		}
 	}()
-	var envCloser struct{ Key, Value string }
-	envCloser.Key = "SLIDER_ENV"
-	envCloser.Value = "true"
-	envCloserBytes := ssh.Marshal(envCloser)
-	envChange <- envCloserBytes
+
 	// Handle environment variable events
 	go func() {
 		for envVarBytes := range envChange {
@@ -792,6 +863,12 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 			}
 		}
 	}()
+
+	// Send environment variables to channel
+	for _, envVar := range si.getEnvVars() {
+		envChange <- ssh.Marshal(envVar)
+	}
+
 	// Handle requests from the SSH channel
 	go ssh.DiscardRequests(shellRequests)
 

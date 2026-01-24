@@ -16,5 +16,6 @@ type UserInterface interface {
 	FlatPrintf(format string, args ...any)
 	clearScreen()
 	CenterScreen()
+	Reset()
 	Writer() io.Writer
 }

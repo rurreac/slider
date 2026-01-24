@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -9,7 +11,9 @@ import (
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
+	"slider/pkg/types"
 	"sync"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -47,7 +51,6 @@ func (s *BidirectionalSession) HandleShell(nc ssh.NewChannel) error {
 
 	// Create channels for requests
 	winChange := make(chan []byte, 10)
-	defer close(winChange)
 	envChange := make(chan []byte, 10)
 
 	// Handle SSH requests (PTY, window-change, env)
@@ -55,27 +58,42 @@ func (s *BidirectionalSession) HandleShell(nc ssh.NewChannel) error {
 
 	// Collect environment variables
 	var envVars []string
+	var useAltShell bool
 	for envBytes := range envChange {
 		var kv struct{ Key, Value string }
 		_ = ssh.Unmarshal(envBytes, &kv)
-		// Close the channel when the SLIDER_ENV environment variable is set
-		if kv.Key == "SLIDER_ENV" && kv.Value == "true" {
-			close(envChange)
+		// Break the loop when the closer environment variable is set
+		if kv.Key == conf.SliderCloserEnvVar && kv.Value == "true" {
+			break
 		} else {
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.logger.DebugWith("Adding environment variable",
+			if kv.Key == conf.SliderAltShellEnvVar && kv.Value == "true" {
+				useAltShell = true
+			}
+			s.logger.DebugWith("Received environment variable",
 				slog.F("session_id", s.sessionID),
 				slog.F("key", kv.Key),
 				slog.F("value", kv.Value))
 		}
 	}
+	// Drain environment variable channel in background
+	go func() {
+		for range envChange {
+		}
+	}()
 
 	// Execute shell based on PTY availability of the peer
-	if s.peerInterpreter != nil && s.peerInterpreter.PtyOn {
-		return s.executeShellWithPty(sshChan, winChange, envVars)
+	if s.peerBaseInfo.PtyOn {
+		return s.executeShellWithPty(sshChan, winChange, envVars, useAltShell)
 	}
 
-	return s.executeShellWithoutPty(sshChan, envVars)
+	// Drain window change channel if not using PTY
+	go func() {
+		for range winChange {
+		}
+	}()
+
+	return s.executeShellWithoutPty(sshChan, envVars, useAltShell)
 }
 
 // executeShellWithPty runs an interactive shell with PTY
@@ -83,18 +101,28 @@ func (s *BidirectionalSession) executeShellWithPty(
 	channel ssh.Channel,
 	winChange <-chan []byte,
 	envVars []string,
+	useAltShell bool,
 ) error {
 	// Get the local execution parameters
-	shell := "/bin/bash"
+	var shell string
+	var args []string
 	if s.localInterpreter != nil && s.localInterpreter.Shell != "" {
 		shell = s.localInterpreter.Shell
+		args = s.localInterpreter.ShellArgs
+		if useAltShell && s.localInterpreter.AltShell != "" {
+			shell = s.localInterpreter.AltShell
+			args = s.localInterpreter.AltShellArgs
+		}
+	} else {
+		return fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running SHELL on PTY",
 		slog.F("session_id", s.sessionID),
-		slog.F("shell", shell))
+		slog.F("shell", shell),
+		slog.F("use_alt", useAltShell))
 
-	cmd := exec.Command(shell)
+	cmd := exec.Command(shell, args...)
 	cmd.Env = append(os.Environ(), envVars...)
 
 	// Get terminal size
@@ -185,26 +213,29 @@ func (s *BidirectionalSession) executeShellWithPty(
 func (s *BidirectionalSession) executeShellWithoutPty(
 	channel ssh.Channel,
 	envVars []string,
+	useAltShell bool,
 ) error {
 	// Get the local execution parameters
-	shell := "/bin/sh"
-	system := "linux"
+	var shell string
+	var args []string
 	if s.localInterpreter != nil {
 		shell = s.localInterpreter.Shell
-		system = s.localInterpreter.System
+		args = s.localInterpreter.ShellArgs
+		if useAltShell && s.localInterpreter.AltShell != "" {
+			shell = s.localInterpreter.AltShell
+			args = s.localInterpreter.AltShellArgs
+		}
+	} else {
+		return fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running SHELL on NON PTY",
 		slog.F("session_id", s.sessionID),
-		slog.F("shell", shell))
+		slog.F("shell", shell),
+		slog.F("use_alt", useAltShell))
 
-	cmd := exec.Command(shell)
+	cmd := exec.Command(shell, args...)
 	cmd.Env = append(os.Environ(), envVars...)
-
-	// Windows non-PTY shell requires /qa flag
-	if system == "windows" {
-		cmd.Args = append(cmd.Args, "/qa")
-	}
 
 	outRC, oErr := cmd.StdoutPipe()
 	if oErr != nil {
@@ -269,28 +300,27 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 
 	// Create channels for requests
 	winChange := make(chan []byte, 10)
-	defer close(winChange)
 	envChange := make(chan []byte, 10)
-
-	// Extract command from ExtraData
-	// First 4 elements are 3 null bytes plus the size of the payload
-	s.logger.DebugWith("Channel ExtraData",
-		slog.F("session_id", s.sessionID),
-		slog.F("extra_data", nc.ExtraData()))
-
-	rcvCmd := string(nc.ExtraData()[4:])
 
 	// Handle SSH requests
 	go s.handleSSHRequests(requests, winChange, envChange)
 
 	// Collect environment variables
 	var envVars []string
+	var useAltShell bool
+	var execWithPty bool // Whether caller requested PTY for this exec
 	for envBytes := range envChange {
 		var kv struct{ Key, Value string }
 		_ = ssh.Unmarshal(envBytes, &kv)
-		if kv.Key == "SLIDER_ENV" && kv.Value == "true" {
-			close(envChange)
+		if kv.Key == conf.SliderCloserEnvVar && kv.Value == "true" {
+			break
 		} else {
+			if kv.Key == conf.SliderAltShellEnvVar && kv.Value == "true" {
+				useAltShell = true
+			}
+			if kv.Key == conf.SliderExecPtyEnvVar && kv.Value == "true" {
+				execWithPty = true
+			}
 			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
 			s.logger.DebugWith("Adding environment variable",
 				slog.F("session_id", s.sessionID),
@@ -299,12 +329,51 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 		}
 	}
 
-	// Execute command
-	var exitCode int
-	if s.peerInterpreter != nil && s.peerInterpreter.PtyOn {
-		exitCode, err = s.executeCommandWithPty(rcvCmd, sshChan, winChange, envVars)
+	var cCmd types.CustomCmd
+	var path, command, rcvCmd, cmdSeparator string
+	if useAltShell {
+		cmdSeparator = s.localInterpreter.AltShellSeparator
 	} else {
-		exitCode, err = s.executeCommandWithoutPty(rcvCmd, sshChan, envVars)
+		cmdSeparator = s.localInterpreter.ShellSeparator
+	}
+	// Extract command from ExtraData
+
+	// Extract as SSH wire format - command from external ssh connection
+	// First 4 elements are 3 null bytes plus the size of the payload
+	rcvCmdBytes := nc.ExtraData()[4:]
+	rcvCmd = string(rcvCmdBytes)
+	// Try CustomCmd format - internal command from Session
+	if jErr := json.Unmarshal(rcvCmdBytes, &cCmd); jErr == nil {
+		path = cCmd.Path
+		command = cCmd.Command
+		s.logger.DebugWith("CustomCmd format",
+			slog.F("session_id", s.sessionID),
+			slog.F("path", path),
+			slog.F("command", command))
+		rcvCmd = "cd " + path + " " + cmdSeparator + " " + command
+	}
+	s.logger.DebugWith("Channel ExtraData",
+		slog.F("session_id", s.sessionID),
+		slog.F("extra_data", rcvCmdBytes))
+
+	// Drain environment variable channel in background
+	go func() {
+		for range envChange {
+		}
+	}()
+
+	// Execute command
+	// Use PTY only if caller requested it AND agent supports PTY
+	var exitCode int
+	if execWithPty && s.peerBaseInfo.PtyOn {
+		exitCode, err = s.executeCommandWithPty(rcvCmd, sshChan, winChange, envVars, useAltShell)
+	} else {
+		// Drain window change channel if not using PTY
+		go func() {
+			for range winChange {
+			}
+		}()
+		exitCode, err = s.executeCommandWithoutPty(rcvCmd, sshChan, envVars, useAltShell)
 	}
 
 	// Send exit status (always send, even on error)
@@ -324,13 +393,20 @@ func (s *BidirectionalSession) executeCommandWithPty(
 	channel ssh.Channel,
 	winChange <-chan []byte,
 	envVars []string,
+	useAltShell bool,
 ) (int, error) {
 	// Get the local execution parameters
-	shell := "/bin/bash"
+	var shell string
 	var cmdArgs []string
 	if s.localInterpreter != nil && s.localInterpreter.Shell != "" {
 		shell = s.localInterpreter.Shell
 		cmdArgs = s.localInterpreter.CmdArgs
+		if useAltShell && s.localInterpreter.AltShell != "" {
+			shell = s.localInterpreter.AltShell
+			cmdArgs = s.localInterpreter.AltCmdArgs
+		}
+	} else {
+		return 0, fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running EXEC on PTY",
@@ -434,28 +510,32 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 	command string,
 	channel ssh.Channel,
 	envVars []string,
+	useAltShell bool,
 ) (int, error) {
 	// Get the local execution parameters
-	shell := "/bin/sh"
+	var shell string
 	var cmdArgs []string
-	system := "linux"
 	if s.localInterpreter != nil {
 		shell = s.localInterpreter.Shell
 		cmdArgs = s.localInterpreter.CmdArgs
-		system = s.localInterpreter.System
+		if useAltShell && s.localInterpreter.AltShell != "" {
+			shell = s.localInterpreter.AltShell
+			cmdArgs = s.localInterpreter.AltCmdArgs
+		}
+	} else {
+		return 0, fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running EXEC on NON PTY",
 		slog.F("session_id", s.sessionID),
 		slog.F("cmd", command))
 
-	cmd := exec.Command(shell, append(cmdArgs, command)...)
-	cmd.Env = append(os.Environ(), envVars...)
+	// Create a context with a 10-second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	// Windows non-PTY shell requires /qa flag
-	if system == "windows" {
-		cmd.Args = append(cmd.Args, "/qa")
-	}
+	cmd := exec.CommandContext(ctx, shell, append(cmdArgs, command)...)
+	cmd.Env = append(os.Environ(), envVars...)
 
 	outRC, oErr := cmd.StdoutPipe()
 	if oErr != nil {
@@ -472,8 +552,6 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 		return 1, eErr
 	}
 
-	cmd.Stdin = channel
-
 	if runErr := cmd.Start(); runErr != nil {
 		s.logger.ErrorWith("Failed to execute command",
 			slog.F("session_id", s.sessionID),
@@ -485,7 +563,7 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 	go func() { _, _ = io.Copy(channel, errRC) }()
 
 	if wErr := cmd.Wait(); wErr != nil {
-		s.logger.ErrorWith("Failed to wait for command",
+		s.logger.ErrorWith("Failed to wait for command or timed out",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", wErr))
 		exitCode := 1

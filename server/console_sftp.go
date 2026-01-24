@@ -19,11 +19,11 @@ import (
 
 // SftpConsoleOptions defines configuration for starting an interactive SFTP session
 type SftpConsoleOptions struct {
-	Session           *session.BidirectionalSession
-	SftpClient        *sftp.Client
-	RemoteInterpreter *interpreter.Interpreter
-	targetSessionID   int64
-	LatestDir         string
+	Session         *session.BidirectionalSession
+	SftpClient      *sftp.Client
+	RemoteInfo      interpreter.BaseInfo
+	targetSessionID int64
+	LatestDir       string
 }
 
 // newSftpConsoleWithInterpreter provides an interactive SFTP session
@@ -31,18 +31,16 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 	// Extract options for cleaner usage
 	bSession := opts.Session
 	sftpClient := opts.SftpClient
-	remoteInterpreter := opts.RemoteInterpreter
+	remoteInfo := opts.RemoteInfo
 	targetSessionID := opts.targetSessionID
 	latestDir := opts.LatestDir
 
-	if remoteInterpreter == nil {
-		// Since we always ensure an Interpreter at initialization, this should never happen.
-		if bSession.GetInterpreter() == nil {
-			ui.PrintError("Session interpreter not initialized, won't enter interactive")
-			return
-		}
-		remoteInterpreter = bSession.GetInterpreter()
+	// Since we always ensure an Interpreter at initialization, this should never happen.
+	if bSession.GetPeerInfo().User == "" {
+		ui.PrintError("Session interpreter not initialized, won't enter interactive")
+		return
 	}
+	remoteInfo = bSession.GetPeerInfo()
 
 	// Get the current directory
 	localCwd, clErr := os.Getwd()
@@ -72,7 +70,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 		remoteCwd, err = sftpClient.Getwd()
 		if err != nil {
 			// Fallback to LaunchDir if Getwd fails (LaunchDir is always set and fallsback to HOME)
-			remoteCwd = remoteInterpreter.LaunchDir
+			remoteCwd = remoteInfo.LaunchDir
 			ui.PrintWarn("Unable to determine remote directory, falling back to LaunchDir: %v", err)
 		}
 	}
@@ -80,7 +78,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 	// Normalize the working directory to SFTP format (Unix-style paths)
 	// SFTP protocol always uses Unix-style paths even for Windows servers
 	if remoteCwd != "" {
-		remoteCwd = spath.NormalizeToSFTPPath(remoteCwd, remoteInterpreter.System)
+		remoteCwd = spath.NormalizeToSFTPPath(remoteCwd, remoteInfo.System)
 	}
 
 	// Use target session ID if provided, otherwise use actual session ID
@@ -90,10 +88,10 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 
 	// Keep remoteCwd in SFTP format (Unix-style) from sftpClient.Getwd()
 	// Convert remoteHomeDir to SFTP format if it's in native Windows format
-	remoteHomeDirSFTP := spath.NormalizeToSFTPPath(remoteInterpreter.HomeDir, remoteInterpreter.System)
+	remoteHomeDirSFTP := spath.NormalizeToSFTPPath(remoteInfo.HomeDir, remoteInfo.System)
 	// Store SFTP format in the target interpreter for consistent usage
-	if remoteHomeDirSFTP != remoteInterpreter.HomeDir {
-		remoteInterpreter.HomeDir = remoteHomeDirSFTP
+	if remoteHomeDirSFTP != remoteInfo.HomeDir {
+		remoteInfo.HomeDir = remoteHomeDirSFTP
 	}
 
 	// Print welcome message and help info
@@ -102,13 +100,13 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 	ui.PrintInfo("Type \"exit\" or press \"CTRL^C\" to return to Console")
 
 	sftpCtx := &SftpCommandContext{
-		sftpCli:           sftpClient,
-		session:           bSession,
-		localCwd:          &localCwd,
-		remoteCwd:         &remoteCwd,
-		localInterpreter:  s.serverInterpreter,
-		remoteInterpreter: remoteInterpreter,
-		targetID:          targetSessionID,
+		sftpCli:          sftpClient,
+		session:          bSession,
+		localCwd:         &localCwd,
+		remoteCwd:        &remoteCwd,
+		localInterpreter: s.serverInterpreter,
+		remoteInfo:       remoteInfo,
+		targetID:         targetSessionID,
 	}
 
 	sftpRegistry := s.initSftpRegistry(bSession)
@@ -213,20 +211,20 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 
 func (ctx *SftpCommandContext) getSFTPPrompt() string {
 	// Convert remoteCwd to display format for prompt
-	displayPath := spath.NormalizeToSystemPath(*ctx.remoteCwd, ctx.remoteInterpreter.System)
+	displayPath := spath.NormalizeToSystemPath(*ctx.remoteCwd, ctx.remoteInfo.System)
 
 	// Replace home directory with '~' if applicable but don't replace if home is root ("/")
 	rCwd := displayPath
-	if ctx.remoteInterpreter.HomeDir != "/" && strings.HasPrefix(*ctx.remoteCwd, ctx.remoteInterpreter.HomeDir) {
+	if ctx.remoteInfo.HomeDir != "/" && strings.HasPrefix(*ctx.remoteCwd, ctx.remoteInfo.HomeDir) {
 		// Replace SFTP format home with ~, then convert to display format
-		rCwd = strings.Replace(*ctx.remoteCwd, ctx.remoteInterpreter.HomeDir, "~", 1)
+		rCwd = strings.Replace(*ctx.remoteCwd, ctx.remoteInfo.HomeDir, "~", 1)
 	}
 
 	return fmt.Sprintf(
 		"\r(%s) %s@%s:%s%s ",
 		escseq.CyanBoldText(fmt.Sprintf("S%d", ctx.targetID)),
-		ctx.remoteInterpreter.User,
-		ctx.remoteInterpreter.Hostname,
+		ctx.remoteInfo.User,
+		ctx.remoteInfo.Hostname,
 		rCwd,
 		escseq.CyanBoldText("$"),
 	)

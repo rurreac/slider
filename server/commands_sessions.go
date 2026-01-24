@@ -8,7 +8,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
 
@@ -45,6 +44,7 @@ type UnifiedSession struct {
 	IsGateway      bool
 	ConnectionAddr string
 	Path           []int64
+	PtyOn          bool
 }
 
 // ResolveUnifiedSessions aggregates local and remote sessions into a single list with Unified IDs
@@ -81,22 +81,24 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 			uSess.Host = sess.GetWebSocketConn().RemoteAddr().String()
 			uSess.System = "unknown/unknown"
 			uSess.HomeDir = "/"
-			if sess.GetInterpreter() != nil {
-				uSess.User = sess.GetInterpreter().User
-				uSess.Host = sess.GetInterpreter().Hostname
-				uSess.System = fmt.Sprintf("%s/%s", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
-				uSess.HomeDir = sess.GetInterpreter().HomeDir
-				uSess.SliderDir = sess.GetInterpreter().SliderDir
-				uSess.LaunchDir = sess.GetInterpreter().LaunchDir
+			if sess.GetPeerInfo().User != "" {
+				uSess.User = sess.GetPeerInfo().User
+				uSess.Host = sess.GetPeerInfo().Hostname
+				uSess.System = fmt.Sprintf("%s/%s", sess.GetPeerInfo().Arch, sess.GetPeerInfo().System)
+				uSess.HomeDir = sess.GetPeerInfo().HomeDir
+				uSess.SliderDir = sess.GetPeerInfo().SliderDir
+				uSess.LaunchDir = sess.GetPeerInfo().LaunchDir
+				uSess.PtyOn = sess.GetPeerInfo().PtyOn
 			}
-		} else if sess.GetInterpreter() != nil {
-			uSess.User = sess.GetInterpreter().User
-			uSess.Host = sess.GetInterpreter().Hostname
-			uSess.System = fmt.Sprintf("%s/%s", sess.GetInterpreter().Arch, sess.GetInterpreter().System)
-			uSess.HomeDir = sess.GetInterpreter().HomeDir
-			uSess.SliderDir = sess.GetInterpreter().SliderDir
-			uSess.LaunchDir = sess.GetInterpreter().LaunchDir
+		} else if sess.GetPeerInfo().User != "" {
+			uSess.User = sess.GetPeerInfo().User
+			uSess.Host = sess.GetPeerInfo().Hostname
+			uSess.System = fmt.Sprintf("%s/%s", sess.GetPeerInfo().Arch, sess.GetPeerInfo().System)
+			uSess.HomeDir = sess.GetPeerInfo().HomeDir
+			uSess.SliderDir = sess.GetPeerInfo().SliderDir
+			uSess.LaunchDir = sess.GetPeerInfo().LaunchDir
 			uSess.Type = "LOCAL"
+			uSess.PtyOn = sess.GetPeerInfo().PtyOn
 		}
 
 		uSess.Role = sess.GetPeerRole().String()
@@ -129,7 +131,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						OwnerID:        sess.GetID(), // This local session is the gateway
 						Type:           "REMOTE",
 						User:           rs.User,
-						Host:           rs.Host,
+						Host:           rs.Hostname,
 						System:         system,
 						Role:           rs.Role,
 						HomeDir:        rs.HomeDir,
@@ -140,6 +142,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						IsGateway:      rs.IsGateway,
 						ConnectionAddr: rs.ConnectionAddr,
 						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
+						PtyOn:          rs.PtyOn,
 					}
 					unifiedMap[uSess.UnifiedID] = uSess
 				}
@@ -448,7 +451,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 		}
 
-		remoteInterpreter := &interpreter.Interpreter{
+		remoteInfo := interpreter.BaseInfo{
 			User:      uSess.User,
 			Hostname:  uSess.Host,
 			HomeDir:   homeDir,
@@ -466,12 +469,12 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				case "keep-alive":
 					_ = gatewaySession.ReplyConnRequest(req, true, []byte("pong"))
 				case "client-info":
-					ci := &conf.ClientInfo{}
+					ci := &interpreter.Info{}
 					if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
 						// Update the remote interpreter (NOT the gateway session's interpreter)
 						// Convert HomeDir to SFTP format for Windows systems if needed
-						homeDir := ci.Interpreter.HomeDir
-						if strings.ToLower(ci.Interpreter.System) == "windows" {
+						homeDir := ci.HomeDir
+						if strings.ToLower(ci.System) == "windows" {
 							// Only convert if it's in native Windows format (contains backslashes)
 							if strings.Contains(homeDir, "\\") {
 								homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
@@ -481,13 +484,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 							}
 						}
 						// Copy the updated values to our remote interpreter
-						remoteInterpreter.User = ci.Interpreter.User
-						remoteInterpreter.Hostname = ci.Interpreter.Hostname
-						remoteInterpreter.HomeDir = homeDir
-						remoteInterpreter.System = strings.ToLower(ci.Interpreter.System)
-						remoteInterpreter.Arch = ci.Interpreter.Arch
-						remoteInterpreter.SliderDir = ci.Interpreter.SliderDir
-						remoteInterpreter.LaunchDir = ci.Interpreter.LaunchDir
+						remoteInfo.User = ci.User
+						remoteInfo.Hostname = ci.Hostname
+						remoteInfo.HomeDir = homeDir
+						remoteInfo.System = strings.ToLower(ci.System)
+						remoteInfo.Arch = ci.Arch
+						remoteInfo.SliderDir = ci.SliderDir
+						remoteInfo.LaunchDir = ci.LaunchDir
 					}
 					_ = gatewaySession.ReplyConnRequest(req, true, nil)
 				default:
@@ -520,11 +523,11 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Currently, uSess.WorkingDir may be empty or stale for leaves because the intermediate gateway
 		// does not track/persist the state of transient SFTP channels opened to the leaf.
 		svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
-			Session:           gatewaySession,
-			SftpClient:        sftpCli,
-			RemoteInterpreter: remoteInterpreter,
-			targetSessionID:   uSess.UnifiedID,
-			LatestDir:         uSess.WorkingDir,
+			Session:         gatewaySession,
+			SftpClient:      sftpCli,
+			RemoteInfo:      remoteInfo,
+			targetSessionID: uSess.UnifiedID,
+			LatestDir:       uSess.WorkingDir,
 		})
 		console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 	}

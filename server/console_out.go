@@ -94,3 +94,7 @@ func (c *Console) CenterScreen() {
 func (c *Console) FlatPrintf(format string, args ...any) {
 	_, _ = fmt.Fprintf(c.Term, "%s", fmt.Sprintf(format, args...))
 }
+
+func (c *Console) Reset() {
+	_, _ = fmt.Fprint(c.Term, escseq.Reset())
+}

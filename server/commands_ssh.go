@@ -37,6 +37,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 	sPort := sshFlags.IntP("port", "p", 0, "Local port to forward SSH connection to")
 	sKill := sshFlags.IntP("kill", "k", 0, "Kill SSH port forwarding to a Session ID")
 	sExpose := sshFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
+	sAltShell := sshFlags.BoolP("alt-shell", "a", false, "Use the alternate shell")
 
 	sshFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", sshDesc)
@@ -119,8 +120,8 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			defer sshTicker.Stop()
 			timeout := time.After(conf.Timeout)
 
-			// Need to figure out a way to better use that error if needed
-			go func() { _ = session.EnableSSH(*sPort, *sExpose, notifier) }()
+			// Enable SSH Endpoint in the background
+			go func() { _ = session.EnableSSH(*sPort, *sExpose, *sAltShell, notifier) }()
 
 			for {
 				select {
@@ -191,12 +192,15 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 				Logger:       svr.Logger,
 				SessionID:    uSess.UnifiedID,
 				EndpointType: instance.SshEndpoint,
-				ServerKey:    svr.serverKey, // Needed for SSH handshake
-				// AuthOn? Server.authOn?
-				AuthOn: svr.authOn,
+				ServerKey:    svr.serverKey,
+				AuthOn:       svr.authOn,
 			})
 			config.SetSSHConn(remoteConn)
 			config.SetExpose(*sExpose)
+			config.SetUseAltShell(*sAltShell)
+			if uSess.PtyOn {
+				config.SetPtyOn(true)
+			}
 
 			ui.PrintInfo("Enabling Remote SSH Endpoint in the background")
 

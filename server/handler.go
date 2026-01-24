@@ -114,10 +114,10 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	biSession := session.NewServerFromClientSession(
 		s.Logger,
 		wsConn,
-		nil,        // sshServerConn will be set by NewSSHServer
-		s.sshConf,  // SSH server config
-		nil,        // interpreter will be detected later
-		remoteAddr, // hostIP
+		nil,                 // sshServerConn will be set by NewSSHServer
+		s.sshConf,           // SSH server config
+		s.serverInterpreter, // Use server's local interpreter
+		remoteAddr,          // hostIP
 		opts,
 	)
 
@@ -281,8 +281,8 @@ func (s *server) newConnector(targetUrl *url.URL, notifier chan error, certID in
 		biSession = session.NewServerToServerSession(
 			s.Logger,
 			wsConn,
-			nil, // sshClient will be set by NewSSHClient
-			nil, // interpreter will be detected later
+			nil,                 // sshClient will be set by NewSSHClient
+			s.serverInterpreter, // Use server's local interpreter
 			remoteAddr,
 			opts,
 		)
@@ -295,9 +295,9 @@ func (s *server) newConnector(targetUrl *url.URL, notifier chan error, certID in
 		biSession = session.NewServerToListenerSession(
 			s.Logger,
 			wsConn,
-			nil,      // sshServerConn will be set by NewSSHServer
-			&sshConf, // SSH server config
-			nil,      // interpreter will be detected later
+			nil,                 // sshServerConn will be set by NewSSHServer
+			&sshConf,            // SSH server config
+			s.serverInterpreter, // Use server's local interpreter
 			remoteAddr,
 			opts,
 		)
@@ -310,9 +310,9 @@ func (s *server) newConnector(targetUrl *url.URL, notifier chan error, certID in
 		biSession = session.NewServerToListenerSession(
 			s.Logger,
 			wsConn,
-			nil,      // sshServerConn will be set by NewSSHServer
-			&sshConf, // SSH server config
-			nil,      // interpreter will be detected later
+			nil,                 // sshServerConn will be set by NewSSHServer
+			&sshConf,            // SSH server config
+			s.serverInterpreter, // Use server's local interpreter
 			remoteAddr,
 			opts,
 		)

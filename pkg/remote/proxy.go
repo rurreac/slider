@@ -86,3 +86,8 @@ type ConnectRequest struct {
 	ChannelType string  `json:"channel_type"` // e.g., "sftp"
 	Payload     []byte  `json:"payload"`      // Optional payload for the channel
 }
+
+// Wait waits for the underlying connection to close (delegates to gateway)
+func (p *Proxy) Wait() error {
+	return p.gateway.GetSSHConn().Wait()
+}

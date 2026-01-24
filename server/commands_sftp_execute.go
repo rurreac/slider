@@ -1,13 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"slider/pkg/instance"
 	"slider/pkg/remote"
 	"slider/pkg/spath"
+	"slider/pkg/types"
 	"strings"
-
-	"golang.org/x/term"
 )
 
 // SftpExecuteCommand allows running the 'execute' command from within the SFTP console
@@ -38,9 +38,14 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 	// Get Remote Working Directory
 	remoteCwd := sftpCtx.GetRemoteCwd()
 
-	// Prepend cd command
-	commandStr := strings.Join(args, " ")
-	commandWithCd := fmt.Sprintf("cd %s && %s", spath.NormalizeToSystemPath(remoteCwd, sftpCtx.RemoteSystem()), commandStr)
+	// Command in Session format
+	cmdBytes, err := json.Marshal(types.CustomCmd{
+		Path:    spath.NormalizeToSystemPath(remoteCwd, sftpCtx.RemoteSystem()),
+		Command: strings.Join(args, " "),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal command: %v", err)
+	}
 
 	// Resolve the target session
 	// We need to know if the current target is local or remote to invoke the right handler.
@@ -54,7 +59,11 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 	if !ok {
 		return fmt.Errorf("target session %d not found", sftpCtx.GetTargetID())
 	}
-
+	// Cast UI to *Console
+	console, ok := ui.(*Console)
+	if !ok {
+		return fmt.Errorf("UI is not a Console")
+	}
 	// Execute Command
 	if uSess.OwnerID == 0 {
 		// Local Execution
@@ -65,19 +74,13 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 		}
 
 		var envVarList []struct{ Key, Value string }
-		i := bidirSession.NewExecInstance(envVarList)
-		// Use console InitState if available
-		var initState *term.State
-		if execCtx.server != nil && execCtx.server.console.InitState != nil {
-			initState = execCtx.server.console.InitState
-		}
+		instanceConfig := bidirSession.NewExecInstance(envVarList)
 
-		if err := i.ExecuteCommand(commandWithCd, initState, ui.Writer()); err != nil {
+		if err := instanceConfig.ExecuteCommand(cmdBytes, console.ReadWriter); err != nil {
 			ui.PrintError("%v", err)
 		}
 	} else {
 		// Remote Execution
-		// We reuse the logic pattern from ExecuteCommand but adapted here
 
 		// Get Gateway Session
 		gatewaySession, sessErr := svr.GetSession(int(uSess.OwnerID))
@@ -93,24 +96,19 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 		remoteConn := remote.NewProxy(gatewaySession, target)
 
 		// Create Instance Config
-		config := instance.New(&instance.Config{
+		instanceConfig := instance.New(&instance.Config{
 			Logger:       svr.Logger,
 			SessionID:    uSess.UnifiedID,
 			EndpointType: instance.ExecEndpoint,
 		})
-		config.SetSSHConn(remoteConn)
-		config.SetPtyOn(false) // Defaulting to false for remote execution
+		instanceConfig.SetSSHConn(remoteConn)
 
-		var initState *term.State
-		if execCtx.server != nil && execCtx.server.console.InitState != nil {
-			initState = execCtx.server.console.InitState
-		}
-
-		if err := config.ExecuteCommand(commandWithCd, initState, ui.Writer()); err != nil {
+		if err := instanceConfig.ExecuteCommand(cmdBytes, console.ReadWriter); err != nil {
 			ui.PrintError("Remote Execution Failed: %v", err)
 		}
 	}
-
+	// Reset Console to ensure clean state
+	ui.Reset()
 	ui.Printf("\n")
 	return nil
 }

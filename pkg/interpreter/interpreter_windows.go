@@ -11,91 +11,58 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/UserExistsError/conpty"
+	"github.com/rurreac/conpty"
 	"golang.org/x/sys/windows"
 )
 
 const (
-	cmdPrompt = "Windows\\system32\\cmd.exe"
-	pShell    = "Windows\\System32\\WindowsPowershell\\v1.0\\powershell.exe"
+	cmdPrompt          = "Windows\\system32\\cmd.exe"
+	cmdPromptSeparator = "&"
+	pShell             = "Windows\\System32\\WindowsPowershell\\v1.0\\powershell.exe"
+	pShellSeparator    = ";"
 )
 
 type Interpreter struct {
-	Arch        string   `json:"Arch"`
-	System      string   `json:"System"`
-	User        string   `json:"User"`
-	HomeDir     string   `json:"HomeDir"`
-	Hostname    string   `json:"Hostname"`
-	Shell       string   `json:"Shell"`
-	AltShell    string   `json:"AltShell"`
-	ShellArgs   []string `json:"ShellArgs"`
-	CmdArgs     []string `json:"CmdArgs"`
-	PtyOn       bool     `json:"PtyOn"`
-	ColorOn     bool     `json:"ColorOn"`
-	SliderDir   string   `json:"SliderDir"`
-	LaunchDir   string   `json:"LaunchDir"`
-	Pty         Pty
-	inputModes  uint32
-	outputModes uint32
+	BaseInfo
+	Shell             string   `json:"Shell"`
+	ShellSeparator    string   `json:"ShellSeparator"`
+	AltShell          string   `json:"AltShell"`
+	AltShellSeparator string   `json:"AltShellSeparator"`
+	ShellArgs         []string `json:"ShellArgs"`
+	AltShellArgs      []string `json:"AltShellArgs"`
+	CmdArgs           []string `json:"CmdArgs"`
+	AltCmdArgs        []string `json:"AltCmdArgs"`
+	inputModes        uint32
+	outputModes       uint32
 }
 
 type winPty struct {
-	con     *conpty.ConPty
-	cleaner *InitialScreenClearer
+	con *conpty.LocalConPty
 }
 
-// Read implements io.Reader for the pty, using InitialScreenClearer to strip initial clear sequences.
-func (p *winPty) Read(b []byte) (n int, err error) {
-	n, err = p.con.Read(b)
-	if n > 0 && p.cleaner != nil {
-		// This is a hack to prevent the initial clear sequences from being sent to the terminal
-		// and may go away in the future if a better solution is found or an annomalous behaviour
-		// is detected.
-		// Most terminal sequences are sent at initialization and won't be sent again.
-		// Our issue presents itself because of the way we spawn the process.
-		cleaned := p.cleaner.Process(b[:n])
-		if len(cleaned) == 0 {
-			copy(b, []byte{})
-			return 0, nil
-		}
-
-		// If data changed size (stripped)
-		if len(cleaned) != n {
-			copy(b, cleaned)
-			return len(cleaned), err
-		}
-		// Pass through unmodified
-	}
-	return n, err
-}
+func (p *winPty) Read(b []byte) (n int, err error)  { return p.con.Read(b) }
 func (p *winPty) Write(b []byte) (n int, err error) { return p.con.Write(b) }
 func (p *winPty) Close() error                      { return p.con.Close() }
-func (p *winPty) Resize(cols, rows uint32) error {
-	return p.con.Resize(int(cols), int(rows))
-}
-
+func (p *winPty) Resize(cols, rows uint32) error    { return p.con.Resize(int(cols), int(rows)) }
 func (p *winPty) Wait() error {
 	_, err := p.con.Wait(context.Background())
 	return err
 }
 
+// StartPty creates a new PTY.
 func StartPty(cmd *exec.Cmd, cols, rows uint32) (Pty, error) {
-	// Build the command line for Windows.
-	// On Windows, conpty.Start (CreateProcess) expects a single command line string.
-	// cmd.String() correctly joins and quotes the arguments since Go 1.17.
 	commandLine := cmd.String()
 
-	c, err := conpty.Start(commandLine, conpty.ConPtyDimensions(int(cols), int(rows)), conpty.ConPtyEnv(cmd.Env))
+	// Enable cursor inheritance and raw console mode
+	options := []conpty.ConPtyOption{
+		conpty.WithInheritCursor(true),
+	}
+	c, err := conpty.StartConPty(commandLine, int(cols), int(rows), cmd.Env, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	cleaner := NewInitialScreenClearer()
-	if logPath := os.Getenv("SLIDER_PTY_LOG"); logPath != "" {
-		_ = cleaner.EnableLogging(logPath)
-	}
-
-	return &winPty{con: c, cleaner: cleaner}, nil
+	return &winPty{con: c}, nil
 }
 
 func isPtyOn() bool {
@@ -195,14 +162,17 @@ func NewInterpreter() (*Interpreter, error) {
 		// Try default if not automatically detected
 		systemDrive = "C:"
 	}
-	// We default to always using Command Prompt as it is safer when launching from Term, and
-	// also some security controls do not apply to it
-	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
-	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
+	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
+	i.ShellSeparator = pShellSeparator
 	i.ShellArgs = []string{}
-	i.CmdArgs = []string{"/c"}
 
-	i.CmdArgs = []string{"/c"}
+	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.AltShellSeparator = cmdPromptSeparator
+	i.AltShellArgs = []string{"/qa"}
+
+	i.CmdArgs = []string{"-Command"}
+	i.AltCmdArgs = []string{"/qac"}
+
 	// Capture binary path
 	if exe, err := os.Executable(); err == nil {
 		i.SliderDir = exe

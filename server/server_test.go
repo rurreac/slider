@@ -16,30 +16,34 @@ import (
 func TestInt_ClientInfoExchange(t *testing.T) {
 	// Create a session with interpreter info (simulating post-handshake state)
 	interp := &interpreter.Interpreter{
-		User:      "testuser",
-		Hostname:  "testhost",
-		System:    "linux",
-		Arch:      "amd64",
-		HomeDir:   "/home/testuser",
-		SliderDir: "/opt/slider",
-		LaunchDir: "/tmp",
+		BaseInfo: interpreter.BaseInfo{
+			User:      "testuser",
+			Hostname:  "testhost",
+			System:    "linux",
+			Arch:      "amd64",
+			HomeDir:   "/home/testuser",
+			SliderDir: "/opt/slider",
+			LaunchDir: "/tmp",
+		},
 	}
 
 	logger := slog.NewLogger("test-session")
 	sess := session.NewServerFromClientSession(
 		logger,
-		nil, // WsConn
-		nil, // SSHServerConn
-		nil, // SSHConfig
-		interp,
+		nil,    // WsConn
+		nil,    // SSHServerConn
+		nil,    // SSHConfig
+		interp, // Passed as local interpreter
 		"192.168.1.100",
 		nil, // opts
 	)
+	// Explicitly set peer info for test
+	sess.SetPeerInfo(interp.BaseInfo)
 
 	// Verify interpreter info is stored correctly
-	storedInterp := sess.GetInterpreter()
-	if storedInterp == nil {
-		t.Fatal("Expected interpreter to be set")
+	storedInterp := sess.GetPeerInfo()
+	if storedInterp.User == "" {
+		t.Fatal("Expected user to be set")
 	}
 
 	if storedInterp.User != "testuser" {
@@ -65,7 +69,9 @@ func TestInt_SessionCleanup(t *testing.T) {
 	sess := session.NewServerFromClientSession(
 		logger,
 		nil, nil, nil,
-		&interpreter.Interpreter{User: "cleanup-test"},
+		&interpreter.Interpreter{
+			BaseInfo: interpreter.BaseInfo{User: "cleanup-test"},
+		},
 		"127.0.0.1",
 		nil,
 	)
@@ -177,7 +183,9 @@ func TestInt_SessionActivation(t *testing.T) {
 	sess := session.NewServerFromClientSession(
 		logger,
 		nil, nil, nil,
-		&interpreter.Interpreter{User: "active-test"},
+		&interpreter.Interpreter{
+			BaseInfo: interpreter.BaseInfo{User: "active-test"},
+		},
 		"127.0.0.1",
 		nil,
 	)

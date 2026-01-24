@@ -57,6 +57,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	sInteractive := shellFlags.BoolP("interactive", "i", false, "Interactive mode, enters shell directly. Always TLS")
 	sTls := shellFlags.BoolP("tls", "t", false, "Enable TLS for the Shell")
 	sExpose := shellFlags.BoolP("expose", "e", false, "Expose port to all interfaces")
+	sAltShell := shellFlags.BoolP("alt-shell", "a", false, "Use the alternate shell")
 
 	shellFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", shellDesc)
@@ -125,7 +126,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 		// Handle session flag for remote shells
 		if *sSession > 0 {
-			return c.handleRemoteShell(svr, uSess, ui, *sPort, *sInteractive, *sTls, *sExpose)
+			return c.handleRemoteShell(svr, uSess, ui, *sPort, *sInteractive, *sTls, *sExpose, *sAltShell)
 		}
 	}
 
@@ -163,7 +164,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 			// Reasons:
 			// - On *nix systems we can control Interrupts using signals to safely return to Console
 			// - Old Windows don't support syscall interrupts
-			if !sess.GetInterpreter().PtyOn {
+			if !sess.IsPtyOn() {
 				return fmt.Errorf("target does not support shell in interactive mode")
 			}
 			ui.PrintInfo("Enabling Interactive Shell Endpoint in the background")
@@ -193,7 +194,9 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 		sess.SetInitTermSize(types.TermDimensions{Width: uint32(width), Height: uint32(height)})
 
 		// Need to figure out a way to better use that error if needed
-		go func() { _ = sess.EnableShell(*sPort, *sExpose, *sTls, *sInteractive, notifier) }()
+		go func() {
+			_ = sess.EnableShell(*sPort, *sExpose, *sTls, *sInteractive, *sAltShell, notifier)
+		}()
 
 		for {
 			// Priority check: always check notifier first
@@ -285,7 +288,7 @@ func (ic *InteractiveConsole) Run() error {
 	}()
 
 	ic.ui.PrintSuccess("Authenticated with mTLS")
-	ic.CenterScreen()
+	ic.ui.CenterScreen()
 
 	// Signal channel to stop stdin reader when the connection errors/closes
 	done := make(chan struct{})
@@ -324,6 +327,8 @@ func (ic *InteractiveConsole) Run() error {
 	}()
 
 	wg.Wait()
+	// Reset Console to ensure clean state
+	ic.ui.Reset()
 	return nil
 }
 
@@ -423,7 +428,7 @@ func (c *ShellCommand) runRemoteInteractiveShell(ic *InteractiveConsole, shellIn
 	}()
 
 	ic.ui.PrintSuccess("Authenticated with mTLS")
-	ic.CenterScreen()
+	ic.ui.CenterScreen()
 
 	// Signal channel to stop stdin reader when the connection errors/closes
 	done := make(chan struct{})
@@ -462,11 +467,13 @@ func (c *ShellCommand) runRemoteInteractiveShell(ic *InteractiveConsole, shellIn
 	}()
 
 	wg.Wait()
+	// Reset Console to ensure clean state
+	ic.ui.Reset()
 	return nil
 }
 
 // handleRemoteShell uses a unified approach with local sessions via remote.Proxy
-func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui UserInterface, port int, interactive bool, tlsOn bool, expose bool) error {
+func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui UserInterface, port int, interactive bool, tlsOn bool, expose bool, useAltShell bool) error {
 	// Create tracking key for this remote session
 	key := fmt.Sprintf("shell:%d:%v", uSess.OwnerID, uSess.Path)
 
@@ -521,6 +528,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		// Virtual instances don't have a source session we can set dimensions on easily
 		// to propagate to the Service. We need to set it on the remoteShellInstance directly.
 		remoteShellInstance.SetInitTermSize(types.TermDimensions{Width: uint32(width), Height: uint32(height)})
+		remoteShellInstance.SetUseAltShell(useAltShell)
 
 		ui.PrintInfo("Enabling Interactive Shell Endpoint in the background")
 		tlsOn = true

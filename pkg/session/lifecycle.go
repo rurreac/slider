@@ -23,7 +23,7 @@ func NewClientToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
 	sshClient *ssh.Client,
-	interp *interpreter.Interpreter,
+	localInterp *interpreter.Interpreter,
 	serverAddr string,
 ) *BidirectionalSession {
 	id := atomic.AddInt64(&sessionCounter, 1)
@@ -34,9 +34,6 @@ func NewClientToServerSession(
 		slog.F("role", "CLIENT"),
 		slog.F("server_addr", serverAddr))
 
-	// Create local interpreter for local execution
-	localInterp, _ := interpreter.NewInterpreter()
-
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
@@ -44,7 +41,7 @@ func NewClientToServerSession(
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
-		peerInterpreter:  interp,
+		peerBaseInfo:     interpreter.BaseInfo{}, // Initialized empty, populated via handshake
 		serverAddr:       serverAddr,
 
 		KeepAliveChan: make(chan bool, 1),
@@ -75,7 +72,7 @@ func NewServerFromClientSession(
 	wsConn *websocket.Conn,
 	sshServerConn *ssh.ServerConn,
 	sshConfig *ssh.ServerConfig,
-	interp *interpreter.Interpreter,
+	localInterp *interpreter.Interpreter,
 	hostIP string,
 	opts *ServerSessionOptions,
 ) *BidirectionalSession {
@@ -87,9 +84,6 @@ func NewServerFromClientSession(
 		slog.F("role", "SERVER"),
 		slog.F("host_ip", hostIP))
 
-	// Create local interpreter for local execution
-	localInterp, _ := interpreter.NewInterpreter()
-
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
@@ -98,7 +92,7 @@ func NewServerFromClientSession(
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
 		localInterpreter: localInterp,
-		peerInterpreter:  interp,
+		peerBaseInfo:     interpreter.BaseInfo{}, // Initialized empty, populated via handshake
 		hostIP:           hostIP,
 
 		KeepAliveChan: make(chan bool, 1),
@@ -152,7 +146,7 @@ func NewServerToServerSession(
 	logger *slog.Logger,
 	wsConn *websocket.Conn,
 	sshClient *ssh.Client,
-	interp *interpreter.Interpreter,
+	localInterp *interpreter.Interpreter,
 	hostIP string,
 	opts *ServerSessionOptions,
 ) *BidirectionalSession {
@@ -164,9 +158,6 @@ func NewServerToServerSession(
 		slog.F("role", "GATEWAY"),
 		slog.F("host_ip", hostIP))
 
-	// Create local interpreter for local execution
-	localInterp, _ := interpreter.NewInterpreter()
-
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
@@ -174,7 +165,7 @@ func NewServerToServerSession(
 		wsConn:           wsConn,
 		sshClient:        sshClient,
 		localInterpreter: localInterp,
-		peerInterpreter:  interp,
+		peerBaseInfo:     interpreter.BaseInfo{}, // Initialized empty, populated via handshake
 		hostIP:           hostIP,
 
 		KeepAliveChan: make(chan bool, 1),
@@ -226,7 +217,7 @@ func NewServerToListenerSession(
 	wsConn *websocket.Conn,
 	sshServerConn *ssh.ServerConn,
 	sshConfig *ssh.ServerConfig,
-	interp *interpreter.Interpreter,
+	localInterp *interpreter.Interpreter,
 	hostIP string,
 	opts *ServerSessionOptions,
 ) *BidirectionalSession {
@@ -238,9 +229,6 @@ func NewServerToListenerSession(
 		slog.F("role", "OPERATOR"),
 		slog.F("host_ip", hostIP))
 
-	// Create local interpreter for local execution
-	localInterp, _ := interpreter.NewInterpreter()
-
 	sess := &BidirectionalSession{
 		logger:           logger,
 		sessionID:        id,
@@ -250,7 +238,7 @@ func NewServerToListenerSession(
 		sshServerConn:    sshServerConn,
 		sshConfig:        sshConfig,
 		localInterpreter: localInterp,
-		peerInterpreter:  interp,
+		peerBaseInfo:     interpreter.BaseInfo{}, // Initialized empty, populated via handshake
 		hostIP:           hostIP,
 
 		KeepAliveChan: make(chan bool, 1),

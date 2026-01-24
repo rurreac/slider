@@ -113,6 +113,10 @@ func (b *testSessionBuilder) build() *session.BidirectionalSession {
 	)
 	// Override role if needed
 	sess.SetRole(b.role)
+	// Set peer info explicitly since factory now treats arg as local interpreter
+	if b.interpreter != nil {
+		sess.SetPeerInfo(b.interpreter.BaseInfo)
+	}
 	return sess
 }
 
@@ -127,16 +131,20 @@ func TestInt_SessionListing(t *testing.T) {
 	// Add multiple sessions
 	sess1 := newTestSession(1).
 		withInterpreter(&interpreter.Interpreter{
-			User:     "user1",
-			Hostname: "host1",
-			System:   "linux",
+			BaseInfo: interpreter.BaseInfo{
+				User:     "user1",
+				Hostname: "host1",
+				System:   "linux",
+			},
 		}).
 		build()
 	sess2 := newTestSession(2).
 		withInterpreter(&interpreter.Interpreter{
-			User:     "user2",
-			Hostname: "host2",
-			System:   "darwin",
+			BaseInfo: interpreter.BaseInfo{
+				User:     "user2",
+				Hostname: "host2",
+				System:   "darwin",
+			},
 		}).
 		build()
 
@@ -194,9 +202,11 @@ func TestInt_ForwardRequest(t *testing.T) {
 	// Add a target session
 	targetSession := newTestSession(42). // Note: 42 is ignored, ID is auto-generated
 						withInterpreter(&interpreter.Interpreter{
-			User:     "target",
-			Hostname: "targethost",
-			System:   "windows",
+			BaseInfo: interpreter.BaseInfo{
+				User:     "target",
+				Hostname: "targethost",
+				System:   "windows",
+			},
 		}).
 		build()
 	srv.addSession(targetSession)
@@ -236,14 +246,16 @@ func TestInt_FingerprintStamping(t *testing.T) {
 
 	// Simulate building a RemoteSession
 	sess := newTestSession(1).
-		withInterpreter(&interpreter.Interpreter{User: "testuser"}).
+		withInterpreter(&interpreter.Interpreter{
+			BaseInfo: interpreter.BaseInfo{User: "testuser"},
+		}).
 		build()
 	srv.addSession(sess)
 
 	remoteSession := session.RemoteSession{
 		ID:                sess.GetID(),
 		ServerFingerprint: srv.GetFingerprint(),
-		User:              sess.GetInterpreter().User,
+		BaseInfo:          sess.GetPeerInfo(),
 	}
 
 	if remoteSession.ServerFingerprint != "server-fp-123" {
