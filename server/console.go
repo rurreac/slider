@@ -44,7 +44,7 @@ func (sIO screenIO) Fd() uintptr {
 }
 
 func (s *server) consoleBanner(ui *Console) {
-	ui.CenterScreen()
+	ui.ScreenAlignment(true)
 	ui.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
 	ui.PrintInfo("Type \"bg\" to return to logging.")
 	ui.PrintInfo("Type \"help\" to see available commands.")
