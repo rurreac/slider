@@ -1,7 +1,6 @@
 package completion
 
 import (
-	"context"
 	"os"
 	"slider/pkg/spath"
 )
@@ -10,7 +9,7 @@ import (
 type PathCompleter interface {
 	// Complete returns completion suggestions for the given input
 	// homeDir is the user's home directory for ~ expansion
-	Complete(ctx context.Context, input string, cwd string, system string, homeDir string) ([]string, string, error)
+	Complete(input string, cwd string, system string, homeDir string) ([]string, string, error)
 }
 
 // Result holds the results of a completion operation
