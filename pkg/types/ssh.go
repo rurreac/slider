@@ -69,3 +69,10 @@ type TermDimensions struct {
 	X      uint32
 	Y      uint32
 }
+
+// CustomCmd is the custom structure of a message
+// from a Session to execute a command
+type CustomCmd struct {
+	Path    string `json:"path"`
+	Command string `json:"command"`
+}

@@ -121,7 +121,7 @@ func (b *SessionBuilder) WithApplicationServer(srv ApplicationServer) *SessionBu
 
 // WithInterpreter sets the peer interpreter
 func (b *SessionBuilder) WithInterpreter(interp *interpreter.Interpreter) *SessionBuilder {
-	b.session.peerInterpreter = interp
+	b.session.peerBaseInfo = interp.BaseInfo
 	return b
 }
 
@@ -273,10 +273,12 @@ func TestSessionGathering_DataProviderPattern(t *testing.T) {
 	session1 := NewTestSession(1).Build()
 	session2 := NewTestSession(2).
 		WithInterpreter(&interpreter.Interpreter{
-			User:     "testuser",
-			Hostname: "testhost",
-			System:   "linux",
-			Arch:     "amd64",
+			BaseInfo: interpreter.BaseInfo{
+				User:     "testuser",
+				Hostname: "testhost",
+				System:   "linux",
+				Arch:     "amd64",
+			},
 		}).
 		Build()
 
@@ -314,8 +316,10 @@ func TestSessionLookup(t *testing.T) {
 	// Add a session
 	session := NewTestSession(42).
 		WithInterpreter(&interpreter.Interpreter{
-			User:   "admin",
-			System: "darwin",
+			BaseInfo: interpreter.BaseInfo{
+				User:   "admin",
+				System: "darwin",
+			},
 		}).
 		Build()
 	mock.AddSession(session)
@@ -333,8 +337,8 @@ func TestSessionLookup(t *testing.T) {
 	if found.GetID() != 42 {
 		t.Errorf("Expected session ID 42, got %d", found.GetID())
 	}
-	if found.GetInterpreter().User != "admin" {
-		t.Errorf("Expected user 'admin', got '%s'", found.GetInterpreter().User)
+	if found.GetPeerInfo().User != "admin" {
+		t.Errorf("Expected user 'admin', got '%s'", found.GetPeerInfo().User)
 	}
 
 	// Try to look up non-existent session
@@ -352,13 +356,15 @@ func TestRemoteSessionBuilding(t *testing.T) {
 
 	session := NewTestSession(1).
 		WithInterpreter(&interpreter.Interpreter{
-			User:      "testuser",
-			Hostname:  "testhost",
-			System:    "linux",
-			Arch:      "amd64",
-			HomeDir:   "/home/test",
-			SliderDir: "/opt/slider",
-			LaunchDir: "/tmp",
+			BaseInfo: interpreter.BaseInfo{
+				User:      "testuser",
+				Hostname:  "testhost",
+				System:    "linux",
+				Arch:      "amd64",
+				HomeDir:   "/home/test",
+				SliderDir: "/opt/slider",
+				LaunchDir: "/tmp",
+			},
 		}).
 		Build()
 
@@ -368,17 +374,11 @@ func TestRemoteSessionBuilding(t *testing.T) {
 	sessions := mock.GetAllSessions()
 	var remoteSessions []RemoteSession
 	for _, sess := range sessions {
-		interp := sess.GetInterpreter()
+		interp := sess.GetPeerInfo()
 		remoteSessions = append(remoteSessions, RemoteSession{
 			ID:                sess.GetID(),
 			ServerFingerprint: mock.GetFingerprint(),
-			User:              interp.User,
-			Host:              interp.Hostname,
-			System:            interp.System,
-			Arch:              interp.Arch,
-			HomeDir:           interp.HomeDir,
-			SliderDir:         interp.SliderDir,
-			LaunchDir:         interp.LaunchDir,
+			BaseInfo:          interp,
 		})
 	}
 

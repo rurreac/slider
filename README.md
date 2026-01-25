@@ -91,21 +91,24 @@ Flags:
 
 ### Environment Variables
 
-##### `SLIDER_HOME`:
+##### `S_HOME`:
 When defined, Slider will use this path to save all information.
 
 When not defined / the environment variable does not exist or has an empty value:
 1. Slider will try to obtain the User Home directory. If this fails,
 2. Slider will use the current working path.
 
-##### `SLIDER_CERT_JAR`:
-When not defined or its value is `1` or `true`. Changes to certificates (creation or deletion),
-will be stored.
+##### `S_CERT_JAR`:
+When not defined or its value is `1` or `true`. Changes to certificates (creation or deletion) will be stored.
 
 If any other value is found then changes to certificates won't be stored. Note that if in this case,
 the value is not `0` or `false`, you will be warned, just in case this wasn't on purpose.
 
 Slider only creates and uses [Ed25519](https://ed25519.cr.yp.to/) keys.
+
+##### `S_ALIGN_CONSOLE_SHELL`:
+When set to `true`, positions console shells at coordinates (0,0). Might be more visually appealing to some.
+
 
 ### Server Flags Overview
 
@@ -120,7 +123,7 @@ By default, Slider Clients do not require any authentication to connect to Serve
 
 When `--auth` is passed, a few things will and may happen:
 1. If `--certs` flag is not provided:
-    1. Slider will check if the default certificate file (`client-certs.json`) exists in "[Slider Home directory](#slider_home)".
+    1. Slider will check if the default certificate file (`client-certs.json`) exists in "[Slider Home directory](#s_home)".
     2. If `client-certs.json` exists, Slider will load all existing KeyPairs into its Certificate Jar.
     3. If `client-certs.json` does not exist, Slider will initialize its Certificate Jar with a new KeyPair  
        and store it a new `client-certs.json` file.
@@ -129,10 +132,10 @@ When `--auth` is passed, a few things will and may happen:
     2. If the file does not exist, Slider will initialize the Certificate Jar with a new certificate and attempt to save it
        in the provided path.
 
-A note of the Certificates Files, whether changes to the Certificate Jar are stored depend on the "[SLIDER_CERT_JAR](#slider_cert_jar)"
+A note of the Certificates Files, whether changes to the Certificate Jar are stored depend on the "[S_CERT_JAR](#s_cert_jar)"
 environment variable.
 
-The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CERT_JAR](#slider_cert_jar)" + `/.certs`
+The Certificate Jar will be saved in whatever is resolved from the  "[S_CERT_JAR](#s_cert_jar)" + `/.certs`
 on *nix hosts, or `\certs` on Windows hosts.
 
 ##### `--json-log`:
@@ -155,7 +158,7 @@ it to this one.
 By default, everytime Slider Server is executed, new in memory KeyPair and CA are generated, and so it's lost on termination.
 
 When the flag `--ca-store` is provided, Slider will store a new KeyPair in disk, but:
-1. If `--ca-store-path` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
+1. If `--ca-store-path` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#s_home)",
    then it will be loaded instead or overriding it.
 2. If `--ca-store-path` was provided:
     1. If the path exists, Slider will attempt to load its KeyPair.
@@ -276,17 +279,13 @@ Slider# help
 ##### Sessions
 ```
 Slider# sessions -h
-When run without parameters, all available Sessions are listed.
+Usage: Usage: sessions [flags]
 
-Usage: sessions [flags]
+Interacts with Client Sessions
 
-  -i, --interactive  Start Interactive Slider Shell on a Session ID (default 0)  
-  -d, --disconnect   Disconnect Session ID (default 0)                           
-  -k, --kill         Kill Session ID (default 0)                                 
-
-Mutually exclusive flags:
-
-  -i/--interactive, -d/--disconnect, -k/--kill
+  -d, --disconnect int    Disconnect Session ID
+  -i, --interactive int   Start Interactive Slider Shell on a Session ID
+  -k, --kill int          Kill Session ID
 ```
 Each connection from a Slider Client creates a new Session, and when that connection is broken or terminated, the
 Session is dropped.
@@ -303,27 +302,29 @@ robust way to handle transfers, shells, etc...
 Running an interactive session provides its own sets of commands:
 
 ```
-  Command           Description
-  -------           -----------
-  cd, chdir         Change remote directory
-  execute           Runs a command remotely from the current directory
-  exit              Exits Console and terminates the Server
-  get, download     Download file or directory from remote
-  help              Shows this output
-  lcd               Change local directory
-  lls, ldir, llist  List local directory contents
-  lmkdir            Create local directory
-  lpwd, lgetwd      Print local working directory
-  ls, dir, list     List remote directory contents
-  mkdir             Create remote directory
-  mv, rename, move  Move or rename remote file/directory
-  put, upload       Upload file or directory to remote
-  pwd, getwd        Print remote working directory
-  rm, del, delete   Remove remote file or directory
-  stat, info        Display remote file information
-  sysinfo           Display system information
-  execute           Execute command on remote system
-  shell             Enter interactive shell
+  Command           Description                                         
+  -------           -----------                                         
+  cd, chdir         Change remote directory                             
+  execute           Runs a command remotely from the current directory  
+  exit              Exits Console and terminates the Server             
+  get, download     Download file or directory from remote              
+  help              Shows this output                                   
+  lcd               Change local directory                              
+  lls, ldir, llist  List local directory contents                       
+  lmkdir            Create local directory                              
+  lpwd, lgetwd      Print local working directory                       
+  ls, dir, list     List remote directory contents                      
+  mkdir             Create remote directory                             
+  mv, rename, move  Move or rename remote file/directory                
+  put, upload       Upload file or directory to remote                  
+  pwd, getwd        Print remote working directory                      
+  rm, del, delete   Remove remote file or directory                     
+  stat, info        Display remote file information                     
+  sysinfo           Display system information                          
+                                                                        
+  execute           Execute command on remote system                    
+  shell             Enter interactive shell                             
+  psh               Enter interactive PowerShell                        
   !command          Execute "command" in local shell (non-interactive)
 ```
 
@@ -344,17 +345,15 @@ runs its next keepalive check will shut down.
 ##### Connect
 ```
 Slider# connect -h
-Usage: connect [flags] <[host_address]:port>
+Establishes a connection to a Client
+Usage: Usage: connect [flags] <host_address:port>
 
-  -b, --callback          Connect to server and offer control
   -i, --cert-id int       Specify certID for SSH key authentication
   -d, --dns string        Use custom DNS resolver
   -g, --gateway           Connect to another server in gateway mode
   -p, --proto string      Use custom proto (default "slider-v1")
   -t, --tls-cert string   Use custom client TLS certificate
   -k, --tls-key string    Use custom client TLS key
-
-Requires exactly 1 argument(s)
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener or a Server in Gateway mode
 then we'll need to use the `connect` command.
@@ -389,22 +388,14 @@ Slider# connect --callback regular-server.example.com:8080
 ##### SOCKS
 ```
 Slider# socks -h
-Usage: socks [flags]
+Manages SOCKS5 servers (local and session-based)
+Usage: Usage: socks [flags]
 
-  -s, --session  Run a Socks5 server over an SSH Channel on a Session ID (default 0)              
-  -p, --port     Use this port number as local Listener, otherwise randomly selected (default 0)  
-  -k, --kill     Kill Socks5 Listener and Server on a Session ID (default 0)                      
-  -e, --expose   Expose port to all interfaces (default false)                                    
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session  
-  -k/--kill, -p/--port     
-  -k/--kill, -e/--expose 
+  -e, --expose        Expose port to all interfaces
+  -k, --kill          Kill SOCKS5 server (requires -l or -s)
+  -l, --local         Target local SOCKS5 server
+  -p, --port int      Port number (for server creation)
+  -s, --session int   Target session-based SOCKS5 server
 ```
 Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side on the specified port,
 or a port randomly selected if not specified.
@@ -413,25 +404,19 @@ If a port is not specified using the `-p` flag, it will be automatically assigne
 
 By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
 
+The local SOCKS server can be used in combination with a reverse port forwarding using the `portfwd` command to create a reverse SOCKS server.
+
 ##### SSH
 ```
 Slider# ssh -h
-Usage: ssh [flags]
+Runs an local SSH server piped to an SSH Channel on a Session ID
+Usage: Usage: ssh [flags]
 
-  -s, --session  Session ID to establish SSH connection with (default 0)  
-  -p, --port     Local port to forward SSH connection to (default 0)      
-  -k, --kill     Kill SSH port forwarding to a Session ID (default 0)     
-  -e, --expose   Expose port to all interfaces (default false)            
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session  
-  -k/--kill, -p/--port     
-  -k/--kill, -e/--expose 
+  -a, --alt-shell     Use the alternate shell
+  -e, --expose        Expose port to all interfaces
+  -k, --kill int      Kill SSH port forwarding to a Session ID
+  -p, --port int      Local port to forward SSH connection to
+  -s, --session int   Session ID to establish SSH connection with
 ```
 Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
 and forward the connection to the Client side through another SSH channel.
@@ -440,6 +425,13 @@ By default, the SSH server will be exposed only to the localhost interface, but 
 to all interfaces.
 
 The only supported authentication methods are anonymous and Public/Private key.
+
+The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of the default one:
+
+| System | Default Shell | Alternate Shell |
+|--------|---------------|-----------------|
+| *nix | `$SHELL`       | `/bin/sh`     |
+| Windows | `cmd.exe` | `powershell.exe` |
 
 While it is not a full implementation, this SSH connection opens the following possibilities:
 * Connect to a Client Shell using any SSH client.
@@ -464,28 +456,16 @@ connection will be non-interactive, ergo, pressing CTRL^C will kill the SSH conn
 ##### Shell
 ```
 Slider# shell -h
-Usage: shell [flags]
+Binds to a client Shell
+Usage: Usage: shell [flags]
 
-  -s, --session      Target Session ID for the shell (default 0)               
-  -p, --port         Use this port number as local Listener, otherwise randomly selected (default 0)  
-  -k, --kill         Kill Shell Listener and Server on a Session ID (default 0)                       
-  -i, --interactive  Interactive mode, enters shell directly. Always TLS (default false)              
-  -t, --tls          Enable TLS for the Shell (default false)                                         
-  -e, --expose       Expose port to all interfaces (default false)                                    
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session        
-  -k/--kill, -p/--port           
-  -k/--kill, -i/--interactive    
-  -k/--kill, -t/--tls            
-  -k/--kill, -e/--expose         
-  -i/--interactive, -e/--expose  
-  -i/--interactive, -t/--tls 
+  -a, --alt-shell     Use the alternate shell
+  -e, --expose        Expose port to all interfaces
+  -i, --interactive   Interactive mode, enters shell directly. Always TLS
+  -k, --kill int      Kill Shell Listener and Server on a Session ID
+  -p, --port int      Use this port number as local Listener, otherwise randomly selected
+  -s, --session int   Target Session ID for the shell
+  -t, --tls           Enable TLS for the Shell
 ```
 Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
 or `openssl` for cyphered connections with the tls flag `-t`, which may be useful is `ssh` is not at hand. 
@@ -493,9 +473,16 @@ or `openssl` for cyphered connections with the tls flag `-t`, which may be usefu
 By default, the Shell will be exposed only to the localhost interface, but you can use the `-e` flag to expose it to 
 all interfaces.
 
+The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of the default one:
+
+| System | Default Shell | Alternate Shell |
+|--------|---------------|-----------------|
+| *nix | `$SHELL`       | `/bin/sh`     |
+| Windows | `cmd.exe` | `powershell.exe` |
+
 A few considerations:
-* If the client supports PTYs the Shell can be upgraded to fully interactive as well.
-* If the client is Windows and supports PTYs you will want to connect through `stty raw -echo && nc <host> <port>` or 
+* If the client supports PTY, the Shell can be upgraded to fully interactive as well.
+* If the client is Windows and supports PTY, you will want to connect through `stty raw -echo && nc <host> <port>` or 
 `stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell. 
 Otherwise, you may end up with a dummy shell.
 
@@ -510,10 +497,6 @@ Usage: certs [flags]
   -r, --remove    Remove matching index from the Certificate Jar (default 0)  
   -d, --dump-ssh  Dump corresponding CertID SSH keys (default 0)              
   -c, --dump-ca   Dump CA Certificate and key (default false)                 
-
-Mutually exclusive flags:
-
-  -n/--new, -r/--remove, -d/--dump-ssh, -c/--dump-ca  
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be available.
 
@@ -523,8 +506,8 @@ The Private Key contained within the Keypair can be passed to the client so that
 Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. 
 Using the `-d`flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH endpoint (ssh, sftp, scp, ...).
 
-Note that when dumping certificates, `SLIDER_CERT_JAR` defines if the Certificate with the given ID is saved or not, by default, it will be stored locally, and you'll get the path.
-If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
+Note that when dumping certificates, `S_CERT_JAR` defines if the Certificate with the given ID is saved or not, by default, it will be stored locally, and you'll get the path.
+If `S_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
 
 We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates for creating TLS listeners.
 If the server was run with the `--ca-store` flag, the CA certificate and key will be saved to disk, otherwise since it is ephemeral it will be just dump to the console.
@@ -539,7 +522,7 @@ Once you have the dump the CA certificate and key, you can use them to create yo
 c_name="http-listener"
 openssl ecparam -genkey -name prime256v1 -out $c_name.key
 ```
-      While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
+> While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
 2. Generate certificate (replace host/IP as necessary):
 ```
 openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
@@ -554,16 +537,13 @@ openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
 ##### Portfwd
 ```
 Slider# portfwd -h
-Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>
+Creates a port forwarding tunnel
+Usage: Usage: portfwd [flags] <[a_addr]:a_port:[b_addr]:b_port>
 
-  -s, --session  Session ID to add or remove Port Forwarding (default 0)                                          
-  -L, --local    Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port> (default false)        
-  -R, --reverse  Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port> (default false)  
-  -r, --remove   Remove Port Forwarding from port passed as argument (requires L or R) (default false)            
-
-Mutually exclusive flags:
-
-  -L/--local, -R/--reverse 
+  -L, --local         Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>
+  -r, --remove        Remove Port Forwarding from port passed as argument (requires L or R)
+  -R, --reverse       Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>
+  -s, --session int   Session ID to add or remove Port Forwarding
 ```
 Allows creating / removing Local and Remote port forwards dynamically over a specific session.
 

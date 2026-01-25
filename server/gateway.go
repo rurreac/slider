@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/session"
@@ -54,19 +53,19 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 	// Identify ourselves to the upstream server
 	interp, iErr := interpreter.NewInterpreter()
 	if iErr == nil {
-		clientInfo := &conf.ClientInfo{
-			Interpreter: interp,
-			Identity:    s.GetServerIdentity(), // Include our identity (fingerprint:port)
+		clientInfo := &interpreter.Info{
+			BaseInfo: interp.BaseInfo,
+			Identity: s.GetServerIdentity(), // Include our identity (fingerprint:port)
 		}
 		payload, _ := json.Marshal(clientInfo)
 		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", biSession.GetID()))
 		ok, reply, sErr := cConn.SendRequest("client-info", true, payload)
 		if sErr == nil && ok && len(reply) > 0 {
 			// The server identifies itself in the reply
-			var ciAnswer conf.ClientInfo
+			var ciAnswer interpreter.Info
 			if mErr := json.Unmarshal(reply, &ciAnswer); mErr == nil {
-				if ciAnswer.Interpreter != nil {
-					biSession.SetInterpreter(ciAnswer.Interpreter)
+				if ciAnswer.User != "" {
+					biSession.SetPeerInfo(ciAnswer.BaseInfo)
 				}
 				// Store peer's identity if provided
 				if ciAnswer.Identity != "" {

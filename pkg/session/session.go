@@ -38,11 +38,12 @@ type BidirectionalSession struct {
 	// Session State
 	// ========================================
 	localInterpreter *interpreter.Interpreter // Host system info for local process execution
-	peerInterpreter  *interpreter.Interpreter // Remote system info received from peer
+	peerBaseInfo     interpreter.BaseInfo     // Remote system info received from peer
 	peerIdentity     string                   // Peer server identity (fingerprint:port) for loop detection
 	initTermSize     types.TermDimensions
 	isListener       bool // Whether this session is to/from a listener client
 	isGateway        bool // Whether the peer node is in gateway mode
+	useAltShell      bool // Whether to use the alternate shell for execution
 
 	// Channel tracking
 	channels      []ssh.Channel
@@ -176,9 +177,16 @@ func (s *BidirectionalSession) GetWebSocketConn() *websocket.Conn {
 	return s.wsConn
 }
 
-// GetInterpreter returns the remote session (peer) interpreter info
-func (s *BidirectionalSession) GetInterpreter() *interpreter.Interpreter {
-	return s.peerInterpreter
+// GetPeerInfo returns the remote session (peer) interpreter info
+func (s *BidirectionalSession) GetPeerInfo() interpreter.BaseInfo {
+	return s.peerBaseInfo
+}
+
+// SetPeerInfo sets the remote session (peer) interpreter info
+func (s *BidirectionalSession) SetPeerInfo(baseInfo interpreter.BaseInfo) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.peerBaseInfo = baseInfo
 }
 
 // GetLocalInterpreter returns the host (local) interpreter info
@@ -210,14 +218,25 @@ func (s *BidirectionalSession) GetInitTermSize() types.TermDimensions {
 	return s.initTermSize
 }
 
+// SetUseAltShell sets whether to use the alternate shell
+func (s *BidirectionalSession) SetUseAltShell(useAlt bool) {
+	s.sessionMutex.Lock()
+	s.useAltShell = useAlt
+	s.sessionMutex.Unlock()
+}
+
+// GetUseAltShell returns whether to use the alternate shell
+func (s *BidirectionalSession) GetUseAltShell() bool {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.useAltShell
+}
+
 // IsPtyOn returns whether PTY is enabled on the peer system
 func (s *BidirectionalSession) IsPtyOn() bool {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
-	if s.peerInterpreter == nil {
-		return false
-	}
-	return s.peerInterpreter.PtyOn
+	return s.peerBaseInfo.PtyOn
 }
 
 // AddChannel registers a channel with the session

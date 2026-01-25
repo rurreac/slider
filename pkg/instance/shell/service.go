@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -23,6 +24,7 @@ type Service struct {
 	initTermSize  *types.TermDimensions
 	winChannels   map[net.Conn]chan []byte
 	mutex         sync.Mutex
+	useAltShell   bool
 }
 
 // ChannelOpener defines the interface for opening SSH channels and sending requests
@@ -145,6 +147,26 @@ func (s *Service) Start(conn net.Conn) error {
 	envChange := make(chan []byte, 10)
 	defer close(envChange)
 
+	// Set environment variables
+
+	// Request alternate shell if enabled
+	if s.useAltShell {
+		var altC struct{ Key, Value string }
+		altC.Key = conf.SliderAltShellEnvVar
+		altC.Value = "true"
+		s.envVarList = append(s.envVarList, altC)
+	}
+
+	// Finalize environment variables
+	var envCloser struct{ Key, Value string }
+	envCloser.Key = conf.SliderCloserEnvVar
+	envCloser.Value = "true"
+	s.envVarList = append(s.envVarList, envCloser)
+
+	for _, ev := range s.envVarList {
+		envChange <- ssh.Marshal(ev)
+	}
+
 	return s.interactiveConnPipe(conn, "shell", nil, winChange, envChange)
 }
 
@@ -162,6 +184,11 @@ func (s *Service) SetEnvVarList(evl []struct{ Key, Value string }) {
 // SetInteractiveOn sets whether interactive mode is enabled
 func (s *Service) SetInteractiveOn(interactiveOn bool) {
 	s.interactiveOn = interactiveOn
+}
+
+// SetUseAltShell sets whether to use the alternate shell
+func (s *Service) SetUseAltShell(useAlt bool) {
+	s.useAltShell = useAlt
 }
 
 // interactiveConnPipe is extracted from instance.go to handle shell connection piping
@@ -188,12 +215,6 @@ func (s *Service) interactiveConnPipe(conn net.Conn, channelType string, payload
 			}
 		}
 	}()
-
-	var envCloser struct{ Key, Value string }
-	envCloser.Key = "SLIDER_ENV"
-	envCloser.Value = "true"
-	envCloserBytes := ssh.Marshal(envCloser)
-	envChange <- envCloserBytes
 
 	// Handle environment variable events
 	go func() {

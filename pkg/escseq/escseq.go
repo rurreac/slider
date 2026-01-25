@@ -13,7 +13,7 @@ var (
 	eraseLine     = []byte{KeyEscape, '[', '2', 'K'}
 	eraseScreen   = []byte{KeyEscape, '[', '2', 'J'}
 	cursorClear   = []byte{KeyEscape, '[', '0', 'J'}
-	cursorHome    = []byte{KeyEscape, '[', '2', 'H'}
+	cursorHome    = []byte{KeyEscape, '[', 'H'}
 	cursorUp      = []byte{KeyEscape, '[', '1', 'A'}
 	cursorRequest = []byte{KeyEscape, '[', '6', 'n'}
 	blink         = []byte{KeyEscape, '[', '5', 'm'}
@@ -68,8 +68,12 @@ func ClearScreen() string {
 	return string(eraseScreen) + string(cursorHome)
 }
 
-// CenterScreen is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
-func CenterScreen(rw io.ReadWriter) string {
+func Reset() string {
+	return string(resetColor)
+}
+
+// ScreenAlignment is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
+func ScreenAlignment(rw io.ReadWriter) string {
 	// Ask the terminal for the cursor position (DSR)
 	_, _ = rw.Write(cursorRequest)
 

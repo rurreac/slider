@@ -17,13 +17,13 @@ import (
 
 // SftpCommandContext provides SFTP-specific context for commands
 type SftpCommandContext struct {
-	sftpCli           *sftp.Client
-	session           *session.BidirectionalSession
-	localCwd          *string
-	remoteCwd         *string
-	localInterpreter  *interpreter.Interpreter // Reference to local interpreter
-	remoteInterpreter *interpreter.Interpreter // Reference to remote interpreter for dynamic updates
-	targetID          int64                    // The logical session ID (UnifiedID) for this context
+	sftpCli          *sftp.Client
+	session          *session.BidirectionalSession
+	localCwd         *string
+	remoteCwd        *string
+	localInterpreter *interpreter.Interpreter // Reference to local interpreter
+	remoteInfo       interpreter.BaseInfo     // Reference to remote interpreter info
+	targetID         int64                    // The logical session ID (UnifiedID) for this context
 }
 
 // initSftpRegistry initializes the SFTP command registry and returns it
@@ -75,7 +75,7 @@ func (s *server) initSftpRegistry(sess *session.BidirectionalSession) *CommandRe
 	registry.RegisterAlias("move", mvCmd)
 
 	// Register chmod command (remote only, non-Windows)
-	if sess.GetInterpreter().System != "windows" {
+	if sess.GetPeerInfo().System != "windows" {
 		registry.Register(&SftpChmodCommand{})
 	}
 
@@ -173,7 +173,7 @@ func (ctx *SftpCommandContext) pathStat(path string, isRemote bool) (os.FileInfo
 
 func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 	if isRemote {
-		return strings.ToLower(ctx.remoteInterpreter.System)
+		return strings.ToLower(ctx.remoteInfo.System)
 	}
 	return strings.ToLower(ctx.localInterpreter.System)
 }
@@ -181,7 +181,7 @@ func (ctx *SftpCommandContext) getContextSystem(isRemote bool) string {
 // getContextHomeDir returns the home directory for the given context (remote or local)
 func (ctx *SftpCommandContext) getContextHomeDir(isRemote bool) string {
 	if isRemote {
-		return ctx.remoteInterpreter.HomeDir
+		return ctx.remoteInfo.HomeDir
 	}
 	return ctx.localInterpreter.HomeDir
 }

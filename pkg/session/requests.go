@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"slider/pkg/conf"
+	"slider/pkg/interpreter"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -25,6 +26,8 @@ func (s *BidirectionalSession) handleSSHRequests(
 	winChange chan<- []byte,
 	envChange chan<- []byte,
 ) {
+	defer close(winChange)
+	defer close(envChange)
 	for req := range requests {
 		ok := false
 
@@ -45,7 +48,7 @@ func (s *BidirectionalSession) handleSSHRequests(
 
 		case "window-change":
 			// Terminal window size change
-			if s.peerInterpreter != nil && s.peerInterpreter.PtyOn {
+			if s.peerBaseInfo.PtyOn {
 				ok = true
 			}
 			if req.WantReply {
@@ -55,7 +58,27 @@ func (s *BidirectionalSession) handleSSHRequests(
 
 		case "pty-req":
 			// PTY request - typically handled before shell/exec
-			ok = true
+			// Standard SSH clients send dimensions here
+			var ptyReq types.PtyRequest
+			if err := ssh.Unmarshal(req.Payload, &ptyReq); err != nil {
+				s.logger.ErrorWith("Failed to unmarshal pty-req",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", err))
+				ok = false
+			} else {
+				s.logger.DebugWith("Received pty-req",
+					slog.F("session_id", s.sessionID),
+					slog.F("term", ptyReq.TermEnvVar),
+					slog.F("cols", ptyReq.TermWidthCols),
+					slog.F("rows", ptyReq.TermHeightRows))
+
+				s.SetInitTermSize(types.TermDimensions{
+					Width:  ptyReq.TermWidthCols,
+					Height: ptyReq.TermHeightRows,
+				})
+				ok = true
+			}
+
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
@@ -366,7 +389,7 @@ func (s *BidirectionalSession) handleCancelTcpIpForward(req *ssh.Request) {
 
 // handleClientInfo handles client-info requests (all roles)
 func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
-	ci := &conf.ClientInfo{}
+	ci := &interpreter.Info{}
 	if jErr := json.Unmarshal(req.Payload, ci); jErr != nil {
 		s.logger.DErrorWith("Failed to parse Client Info",
 			slog.F("session_id", s.sessionID),
@@ -376,7 +399,7 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 	}
 
 	// Store session info from peer
-	s.SetInterpreter(ci.Interpreter)
+	s.SetPeerInfo(ci.BaseInfo)
 	// Store peer's identity if provided
 	if ci.Identity != "" {
 		s.SetPeerIdentity(ci.Identity)
@@ -386,9 +409,9 @@ func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
 	if s.applicationServer != nil {
 		// Get server info from application server
 		if serverInfo := s.applicationServer.GetServerInterpreter(); serverInfo != nil {
-			replyInfo := &conf.ClientInfo{
-				Interpreter: serverInfo,
-				Identity:    s.applicationServer.GetServerIdentity(), // Include our identity
+			replyInfo := &interpreter.Info{
+				BaseInfo: serverInfo.BaseInfo,
+				Identity: s.applicationServer.GetServerIdentity(), // Include our identity
 			}
 			interpreterPayload, jErr := json.Marshal(replyInfo)
 			if jErr != nil {
@@ -488,20 +511,28 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 
 		s.logger.DebugWith("Checking session for list",
 			slog.F("id", sess.GetID()),
-			slog.F("is_client", sess.GetInterpreter() != nil),
+			slog.F("is_client", sess.GetPeerInfo().User != ""),
 			slog.F("is_gateway", sess.GetSSHClient() != nil))
 
 		// Identify user/host/system/arch/homeDir/workingDir
-		var user, system, arch, homeDir, workingDir, sliderDir, launchDir string
+
+		// Identify user/host/system/arch/homeDir/workingDir
+		var baseInfo interpreter.BaseInfo
+		var workingDir string
 		host := sess.GetHostIP()
-		if sess.GetInterpreter() != nil {
-			user = sess.GetInterpreter().User
-			host = sess.GetInterpreter().Hostname
-			system = sess.GetInterpreter().System
-			arch = sess.GetInterpreter().Arch
-			homeDir = sess.GetInterpreter().HomeDir
-			sliderDir = sess.GetInterpreter().SliderDir
-			launchDir = sess.GetInterpreter().LaunchDir
+		if sess.GetPeerInfo().User != "" {
+			// Copy BaseInfo from interpreter
+			baseInfo = sess.GetPeerInfo()
+		} else {
+			// Fallback/Init necessary fields if no interpreter
+			// (Though essentially if no interpreter, most are empty)
+			baseInfo.Hostname = host
+		}
+
+		// Ensure Hostname is set if it was empty from interpreter (e.g. connecting...)
+		// or unrelated to interpreter host
+		if baseInfo.Hostname == "" {
+			baseInfo.Hostname = host
 		}
 
 		// Get the current SFTP working directory if available
@@ -510,15 +541,9 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 		sessions = append(sessions, RemoteSession{
 			ID:                sess.GetID(),
 			ServerFingerprint: fingerprint,
-			User:              user,
-			Host:              host,
-			System:            system,
+			BaseInfo:          baseInfo,
 			Role:              sess.GetPeerRole().String(),
-			Arch:              arch,
-			HomeDir:           homeDir,
 			WorkingDir:        workingDir,
-			SliderDir:         sliderDir,
-			LaunchDir:         launchDir,
 			IsConnector:       sess.GetRole().IsConnector(),
 			IsGateway:         sess.GetIsGateway(),
 			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),

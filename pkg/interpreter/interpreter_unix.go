@@ -14,21 +14,20 @@ import (
 	"github.com/creack/pty"
 )
 
+const (
+	shellSeparator = ";"
+)
+
 type Interpreter struct {
-	Arch      string   `json:"Arch"`
-	System    string   `json:"System"`
-	User      string   `json:"User"`
-	HomeDir   string   `json:"HomeDir"`
-	Hostname  string   `json:"Hostname"`
-	Shell     string   `json:"Shell"`
-	AltShell  string   `json:"AltShell"`
-	ShellArgs []string `json:"ShellArgs"`
-	CmdArgs   []string `json:"CmdArgs"`
-	PtyOn     bool     `json:"PtyOn"`
-	ColorOn   bool     `json:"ColorOn"`
-	SliderDir string   `json:"SliderDir"`
-	LaunchDir string   `json:"LaunchDir"`
-	Pty       Pty
+	BaseInfo
+	Shell             string   `json:"Shell"`
+	ShellSeparator    string   `json:"ShellSeparator"`
+	ShellArgs         []string `json:"ShellArgs"`
+	ShellExecArgs     []string `json:"ShellExecArgs"`
+	AltShell          string   `json:"AltShell"`
+	AltShellSeparator string   `json:"AltShellSeparator"`
+	AltShellArgs      []string `json:"AltShellArgs"`
+	AltShellExecArgs  []string `json:"AltShellExecArgs"`
 }
 
 type unixPty struct {
@@ -78,6 +77,7 @@ var (
 		"/bin/tsh",
 		"/bin/fish",
 	}
+	cmdArgs = []string{"-c"}
 )
 
 func findNixShell() string {
@@ -137,9 +137,14 @@ func NewInterpreter() (*Interpreter, error) {
 	} else if i.Shell == "" && i.PtyOn {
 		i.Shell = findNixShell()
 	}
-	i.AltShell = findSafeShell()
+	i.ShellSeparator = shellSeparator
 	i.ShellArgs = []string{"-i"}
-	i.CmdArgs = []string{"-c"}
+	i.ShellExecArgs = cmdArgs
+
+	i.AltShell = findSafeShell()
+	i.AltShellSeparator = shellSeparator
+	i.AltShellArgs = []string{}
+	i.AltShellExecArgs = cmdArgs
 
 	if i.Shell == "" {
 		return nil, fmt.Errorf("can not find a suitable shell on system %s", i.System)
