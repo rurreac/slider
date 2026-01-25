@@ -88,7 +88,7 @@ func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
 }
 
 func (c *Console) ScreenAlignment(enabled bool) {
-	if !enabled {
+	if enabled {
 		_, _ = fmt.Fprint(c.Term, escseq.ScreenAlignment(c.ReadWriter))
 	}
 	_, _ = fmt.Fprint(c.Term, "\n")
