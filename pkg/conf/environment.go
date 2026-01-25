@@ -2,6 +2,13 @@ package conf
 
 // Slider environment variables
 const (
+
+	// ========================================
+	// Slider ENV VARS
+	// ========================================
+	SliderHomeEnvVar    = "S_HOME"
+	SliderCertJarEnvVar = "S_CERT_JAR"
+
 	// ========================================
 	// Console ENV VARS
 	// ========================================

@@ -3,7 +3,17 @@ package conf
 import "time"
 
 const (
-	// Ticker intervals for command status polling
+	// Timeout acts as the general Timeout default value
+	Timeout = 10 * time.Second
+
+	// dnsTimeout is the resolver timeout default value
+	dnsTimeout = 5 * time.Second
+
+	// Keepalive acts as the general KeepAlive default value
+	Keepalive = 60 * time.Second
+
+	// MinKeepAlive is the minimum keepalive allowed duration
+	MinKeepAlive = 5 * time.Second
 
 	// ConnectTickerInterval is the polling interval for connection establishments
 	ConnectTickerInterval = 500 * time.Millisecond

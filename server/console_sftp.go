@@ -8,9 +8,9 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
-	"time"
 
 	"slider/pkg/completion"
+	"slider/pkg/conf"
 	"slider/pkg/escseq"
 	"slider/pkg/interpreter"
 	"slider/pkg/session"
@@ -259,7 +259,7 @@ func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
 	// Force 10s timeout just in case:
 	// - An interactive command is executed
 	// - The command takes a long time to complete
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), conf.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.serverInterpreter.Shell, fCmd...)
 	cmd.Dir = workingDir // Set working directory

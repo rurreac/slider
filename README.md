@@ -91,16 +91,15 @@ Flags:
 
 ### Environment Variables
 
-##### `SLIDER_HOME`:
+##### `S_HOME`:
 When defined, Slider will use this path to save all information.
 
 When not defined / the environment variable does not exist or has an empty value:
 1. Slider will try to obtain the User Home directory. If this fails,
 2. Slider will use the current working path.
 
-##### `SLIDER_CERT_JAR`:
-When not defined or its value is `1` or `true`. Changes to certificates (creation or deletion),
-will be stored.
+##### `S_CERT_JAR`:
+When not defined or its value is `1` or `true`. Changes to certificates (creation or deletion) will be stored.
 
 If any other value is found then changes to certificates won't be stored. Note that if in this case,
 the value is not `0` or `false`, you will be warned, just in case this wasn't on purpose.
@@ -108,20 +107,8 @@ the value is not `0` or `false`, you will be warned, just in case this wasn't on
 Slider only creates and uses [Ed25519](https://ed25519.cr.yp.to/) keys.
 
 ##### `S_ALIGN_CONSOLE_SHELL`:
-When set to `true`, positions console shells at (0,0) coordinates. This can help with terminal rendering consistency
-when using the interactive console shell feature.
+When set to `true`, positions console shells at coordinates (0,0). Might be more visually appealing to some.
 
-##### `S_ALT_SHELL`:
-When set to `true`, uses an alternate shell implementation. This may be useful for compatibility with different
-terminal environments or specific shell requirements.
-
-##### `S_EXEC_PTY`:
-When set to `true`, requests a PTY for command execution. This affects how commands are executed remotely
-and can be useful for commands that require terminal interaction.
-
-##### `S_ENV_CLOSER`:
-When set to `true`, closes environment variables after use. This can help with cleanup and resource management
-in certain scenarios.
 
 ### Server Flags Overview
 
@@ -136,7 +123,7 @@ By default, Slider Clients do not require any authentication to connect to Serve
 
 When `--auth` is passed, a few things will and may happen:
 1. If `--certs` flag is not provided:
-    1. Slider will check if the default certificate file (`client-certs.json`) exists in "[Slider Home directory](#slider_home)".
+    1. Slider will check if the default certificate file (`client-certs.json`) exists in "[Slider Home directory](#s_home)".
     2. If `client-certs.json` exists, Slider will load all existing KeyPairs into its Certificate Jar.
     3. If `client-certs.json` does not exist, Slider will initialize its Certificate Jar with a new KeyPair  
        and store it a new `client-certs.json` file.
@@ -145,10 +132,10 @@ When `--auth` is passed, a few things will and may happen:
     2. If the file does not exist, Slider will initialize the Certificate Jar with a new certificate and attempt to save it
        in the provided path.
 
-A note of the Certificates Files, whether changes to the Certificate Jar are stored depend on the "[SLIDER_CERT_JAR](#slider_cert_jar)"
+A note of the Certificates Files, whether changes to the Certificate Jar are stored depend on the "[S_CERT_JAR](#s_cert_jar)"
 environment variable.
 
-The Certificate Jar will be saved in whatever is resolved from the  "[SLIDER_CERT_JAR](#slider_cert_jar)" + `/.certs`
+The Certificate Jar will be saved in whatever is resolved from the  "[S_CERT_JAR](#s_cert_jar)" + `/.certs`
 on *nix hosts, or `\certs` on Windows hosts.
 
 ##### `--json-log`:
@@ -171,7 +158,7 @@ it to this one.
 By default, everytime Slider Server is executed, new in memory KeyPair and CA are generated, and so it's lost on termination.
 
 When the flag `--ca-store` is provided, Slider will store a new KeyPair in disk, but:
-1. If `--ca-store-path` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#slider_home)",
+1. If `--ca-store-path` was not provided, and the default key file `server-cert.json` exists in the "[Slider Home directory](#s_home)",
    then it will be loaded instead or overriding it.
 2. If `--ca-store-path` was provided:
     1. If the path exists, Slider will attempt to load its KeyPair.
@@ -519,8 +506,8 @@ The Private Key contained within the Keypair can be passed to the client so that
 Spinning up an SSH endpoint when authentication is enabled will require providing a valid certificate. 
 Using the `-d`flag we can dump the SSH certificate matching the CertID use by the session and use it for any interaction with the SSH endpoint (ssh, sftp, scp, ...).
 
-Note that when dumping certificates, `SLIDER_CERT_JAR` defines if the Certificate with the given ID is saved or not, by default, it will be stored locally, and you'll get the path.
-If `SLIDER_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
+Note that when dumping certificates, `S_CERT_JAR` defines if the Certificate with the given ID is saved or not, by default, it will be stored locally, and you'll get the path.
+If `S_CERT_JAR` is set to `false`, the Certificate will be dumped to the console and not saved.
 
 We can also dump the server Certificate Authority certificate and key which we can use to generate our own certificates for creating TLS listeners.
 If the server was run with the `--ca-store` flag, the CA certificate and key will be saved to disk, otherwise since it is ephemeral it will be just dump to the console.

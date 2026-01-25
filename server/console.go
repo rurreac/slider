@@ -16,7 +16,6 @@ import (
 	"slider/pkg/types"
 	"strconv"
 	"strings"
-	"time"
 
 	"golang.org/x/term"
 )
@@ -368,7 +367,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 	// Force 10s timeout just in case:
 	// - An interactive command is executed
 	// - The command takes a long time to complete
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), conf.Timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, s.serverInterpreter.Shell, fCmd...)
 	cmd.Stdout = s.console.Term
