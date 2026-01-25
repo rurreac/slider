@@ -417,6 +417,8 @@ If a port is not specified using the `-p` flag, it will be automatically assigne
 
 By default, the Socks server will be exposed only to localhost, but you can use the `-e` flag to expose it to all interfaces.
 
+The local SOCKS server can be used in combination with a reverse port forwarding using the `portfwd` command to create a reverse SOCKS server.
+
 ##### SSH
 ```
 Slider# ssh -h
@@ -436,6 +438,13 @@ By default, the SSH server will be exposed only to the localhost interface, but 
 to all interfaces.
 
 The only supported authentication methods are anonymous and Public/Private key.
+
+The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of the default one:
+
+| System | Default Shell | Alternate Shell |
+|--------|---------------|-----------------|
+| *nix | `$SHELL`       | `/bin/sh`     |
+| Windows | `cmd.exe` | `powershell.exe` |
 
 While it is not a full implementation, this SSH connection opens the following possibilities:
 * Connect to a Client Shell using any SSH client.
@@ -477,9 +486,16 @@ or `openssl` for cyphered connections with the tls flag `-t`, which may be usefu
 By default, the Shell will be exposed only to the localhost interface, but you can use the `-e` flag to expose it to 
 all interfaces.
 
+The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of the default one:
+
+| System | Default Shell | Alternate Shell |
+|--------|---------------|-----------------|
+| *nix | `$SHELL`       | `/bin/sh`     |
+| Windows | `cmd.exe` | `powershell.exe` |
+
 A few considerations:
-* If the client supports PTYs the Shell can be upgraded to fully interactive as well.
-* If the client is Windows and supports PTYs you will want to connect through `stty raw -echo && nc <host> <port>` or 
+* If the client supports PTY, the Shell can be upgraded to fully interactive as well.
+* If the client is Windows and supports PTY, you will want to connect through `stty raw -echo && nc <host> <port>` or 
 `stty raw -echo && openssl s_client --quiet --connect <host>:<port>` if tls enabled, to bind to the shell. 
 Otherwise, you may end up with a dummy shell.
 
