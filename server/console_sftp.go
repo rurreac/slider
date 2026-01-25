@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"slices"
 	"strings"
+	"time"
 
 	"slider/pkg/completion"
 	"slider/pkg/escseq"
@@ -254,8 +256,13 @@ func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
 	s.console.PrintWarn("Executing local Command: %s", fCmd)
 	fCmd = append(s.serverInterpreter.ShellExecArgs, strings.Join(fCmd, " "))
 
-	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
-	cmd.Dir = workingDir                                    // Set working directory
+	// Force 10s timeout just in case:
+	// - An interactive command is executed
+	// - The command takes a long time to complete
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, s.serverInterpreter.Shell, fCmd...)
+	cmd.Dir = workingDir // Set working directory
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
