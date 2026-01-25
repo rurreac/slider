@@ -69,7 +69,6 @@ type Config struct {
 	serviceManager       *ServiceManager
 	shellService         *shell.Service
 	sshService           *sshservice.Service
-	externalPtyRequested bool // Whether external SSH client requested PTY
 }
 
 func New(config *Config) *Config {
@@ -428,6 +427,8 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	envChange := make(chan []byte, 10)
 	defer close(envChange)
 
+	var externalPtyRequested bool // Local PTY tracking for this connection
+
 	for req := range requests {
 		ok := false
 		if req.Type != "env" {
@@ -438,6 +439,26 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				slog.F("payload", req.Payload))
 		}
 		switch req.Type {
+		case "pty-req":
+			// Answering pty-req request true if Slider client has ptyOn
+			if si.ptyOn {
+				ok = true
+				// Track that external client requested PTY for this connection
+				externalPtyRequested = true
+				// Process req-pty info to Slider client through a new channel "init-size"
+				si.sendInitTermSize(req.Payload)
+			}
+			if req.WantReply {
+				go func() {
+					_ = req.Reply(ok, nil)
+				}()
+			}
+		case "env":
+			ok = true
+			if req.WantReply {
+				go func() { _ = req.Reply(ok, nil) }()
+			}
+			envChange <- req.Payload
 		case "shell":
 			ok = true
 			if req.WantReply {
@@ -445,7 +466,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			}
 
 			// Send environment variables to channel
-			for _, envVar := range si.getEnvVars() {
+			for _, envVar := range si.getEnvVars(externalPtyRequested) {
 				envChange <- ssh.Marshal(envVar)
 			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, nil, winChange, envChange)
@@ -458,24 +479,10 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			}
 
 			// Send environment variables to channel
-			for _, envVar := range si.getEnvVars() {
+			for _, envVar := range si.getEnvVars(externalPtyRequested) {
 				envChange <- ssh.Marshal(envVar)
 			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, req.Payload, winChange, envChange)
-		case "pty-req":
-			// Answering pty-req request true if Slider client has ptyOn
-			if si.ptyOn {
-				ok = true
-				// Track that external client requested PTY
-				si.externalPtyRequested = true
-				// Process req-pty info to Slider client through a new channel "init-size"
-				si.sendInitTermSize(req.Payload)
-			}
-			if req.WantReply {
-				go func() {
-					_ = req.Reply(ok, nil)
-				}()
-			}
 		case "window-change":
 			if si.ptyOn {
 				ok = true
@@ -484,12 +491,6 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				go func() { _ = req.Reply(ok, nil) }()
 			}
 			winChange <- req.Payload
-		case "env":
-			ok = true
-			if req.WantReply {
-				go func() { _ = req.Reply(ok, nil) }()
-			}
-			envChange <- req.Payload
 		case "subsystem":
 			if string(req.Payload[4:]) == "sftp" {
 				ok = true
@@ -513,8 +514,8 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	}
 }
 
-func (si *Config) getEnvVars() []struct{ Key, Value string } {
-	envVarList := make([]struct{ Key, Value string }, 0)
+func (si *Config) getEnvVars(externalPtyRequested bool) []struct{ Key, Value string } {
+	var envVarList []struct{ Key, Value string }
 	// Request alternate shell if enabled
 	if si.useAltShell {
 		var altC struct{ Key, Value string }
@@ -523,7 +524,7 @@ func (si *Config) getEnvVars() []struct{ Key, Value string } {
 		envVarList = append(envVarList, altC)
 	}
 	// Always request PTY for Console execute command
-	if si.externalPtyRequested {
+	if externalPtyRequested {
 		var ptySignal struct{ Key, Value string }
 		ptySignal.Key = conf.SliderExecPtyEnvVar
 		ptySignal.Value = "true"
@@ -537,7 +538,6 @@ func (si *Config) getEnvVars() []struct{ Key, Value string } {
 	envVarList = append(envVarList, envCloser)
 
 	return envVarList
-
 }
 
 func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier chan error) {
@@ -691,17 +691,10 @@ func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
 
 	go ssh.DiscardRequests(shellRequests)
 
-	// Always request PTY for Console execute command
-	var ptySignal struct{ Key, Value string }
-	ptySignal.Key = conf.SliderExecPtyEnvVar
-	ptySignal.Value = "true"
-
-	// Concatenate with existing environment variables
-	envVarList := append([]struct{ Key, Value string }{ptySignal}, si.getEnvVars()...)
-
 	// Handle environment variable events
 	go func() {
-		for _, envVar := range envVarList {
+		// Always request PTY for Console execute commands
+		for _, envVar := range si.getEnvVars(true) {
 			if _, eErr := sliderClientChannel.SendRequest("env", true, ssh.Marshal(envVar)); eErr != nil {
 				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
@@ -808,7 +801,7 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 	}()
 
 	// Send environment variables to channel
-	for _, envVar := range si.getEnvVars() {
+	for _, envVar := range si.getEnvVars(false) {
 		envChange <- ssh.Marshal(envVar)
 	}
 
@@ -865,7 +858,7 @@ func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload
 	}()
 
 	// Send environment variables to channel
-	for _, envVar := range si.getEnvVars() {
+	for _, envVar := range si.getEnvVars(false) {
 		envChange <- ssh.Marshal(envVar)
 	}
 

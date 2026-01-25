@@ -22,12 +22,12 @@ type Interpreter struct {
 	BaseInfo
 	Shell             string   `json:"Shell"`
 	ShellSeparator    string   `json:"ShellSeparator"`
+	ShellArgs         []string `json:"ShellArgs"`
+	ShellExecArgs     []string `json:"ShellExecArgs"`
 	AltShell          string   `json:"AltShell"`
 	AltShellSeparator string   `json:"AltShellSeparator"`
-	ShellArgs         []string `json:"ShellArgs"`
 	AltShellArgs      []string `json:"AltShellArgs"`
-	CmdArgs           []string `json:"CmdArgs"`
-	AltCmdArgs        []string `json:"AltCmdArgs"`
+	AltShellExecArgs  []string `json:"AltShellExecArgs"`
 }
 
 type unixPty struct {
@@ -139,13 +139,12 @@ func NewInterpreter() (*Interpreter, error) {
 	}
 	i.ShellSeparator = shellSeparator
 	i.ShellArgs = []string{"-i"}
+	i.ShellExecArgs = cmdArgs
 
 	i.AltShell = findSafeShell()
 	i.AltShellSeparator = shellSeparator
 	i.AltShellArgs = []string{}
-
-	i.CmdArgs = cmdArgs
-	i.AltCmdArgs = cmdArgs
+	i.AltShellExecArgs = cmdArgs
 
 	if i.Shell == "" {
 		return nil, fmt.Errorf("can not find a suitable shell on system %s", i.System)

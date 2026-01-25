@@ -22,16 +22,23 @@ const (
 	pShellSeparator    = ";"
 )
 
+var (
+	cmdPromptArgs     = []string{"/qa"}
+	cmdPromptExecArgs = []string{"/qa", "/c"}
+	pShellArgs        = []string{}
+	pShellExecArgs    = []string{"-Command"}
+)
+
 type Interpreter struct {
 	BaseInfo
 	Shell             string   `json:"Shell"`
 	ShellSeparator    string   `json:"ShellSeparator"`
+	ShellArgs         []string `json:"ShellArgs"`
+	ShellExecArgs     []string `json:"ShellExecArgs"`
 	AltShell          string   `json:"AltShell"`
 	AltShellSeparator string   `json:"AltShellSeparator"`
-	ShellArgs         []string `json:"ShellArgs"`
 	AltShellArgs      []string `json:"AltShellArgs"`
-	CmdArgs           []string `json:"CmdArgs"`
-	AltCmdArgs        []string `json:"AltCmdArgs"`
+	AltShellExecArgs  []string `json:"AltShellExecArgs"`
 	inputModes        uint32
 	outputModes       uint32
 }
@@ -162,16 +169,15 @@ func NewInterpreter() (*Interpreter, error) {
 		// Try default if not automatically detected
 		systemDrive = "C:"
 	}
-	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
-	i.ShellSeparator = pShellSeparator
-	i.ShellArgs = []string{}
+	i.Shell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
+	i.ShellSeparator = cmdPromptSeparator
+	i.ShellArgs = cmdPromptArgs
+	i.ShellExecArgs = cmdPromptExecArgs
 
-	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, cmdPrompt)
-	i.AltShellSeparator = cmdPromptSeparator
-	i.AltShellArgs = []string{"/qa"}
-
-	i.CmdArgs = []string{"-Command"}
-	i.AltCmdArgs = []string{"/qac"}
+	i.AltShell = fmt.Sprintf("%s\\%s", systemDrive, pShell)
+	i.AltShellSeparator = pShellSeparator
+	i.AltShellArgs = pShellArgs
+	i.AltShellExecArgs = pShellExecArgs
 
 	// Capture binary path
 	if exe, err := os.Executable(); err == nil {

@@ -361,7 +361,7 @@ func (s *server) notConsoleCommand(fCmd []string) {
 
 	// Else, we'll try to execute the command locally
 	s.console.PrintWarn("Executing local Command: %s", fCmd)
-	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.serverInterpreter.ShellExecArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Stdout = s.console.Term

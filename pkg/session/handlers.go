@@ -315,26 +315,29 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 		if kv.Key == conf.SliderCloserEnvVar && kv.Value == "true" {
 			break
 		} else {
-			if kv.Key == conf.SliderAltShellEnvVar && kv.Value == "true" {
-				useAltShell = true
-			}
-			if kv.Key == conf.SliderExecPtyEnvVar && kv.Value == "true" {
-				execWithPty = true
-			}
-			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
-			s.logger.DebugWith("Adding environment variable",
+			s.logger.DebugWith("Processing environment variable",
 				slog.F("session_id", s.sessionID),
 				slog.F("key", kv.Key),
 				slog.F("value", kv.Value))
+			// Do not save Slider environment variables
+			if kv.Key == conf.SliderAltShellEnvVar && kv.Value == "true" {
+				useAltShell = true
+				continue
+			}
+			if kv.Key == conf.SliderExecPtyEnvVar && kv.Value == "true" {
+				execWithPty = true
+				continue
+			}
+			// Save the rest of the environment variables
+			envVars = append(envVars, fmt.Sprintf("%s=%s", kv.Key, kv.Value))
 		}
 	}
 
 	var cCmd types.CustomCmd
 	var path, command, rcvCmd, cmdSeparator string
+	cmdSeparator = s.localInterpreter.ShellSeparator
 	if useAltShell {
 		cmdSeparator = s.localInterpreter.AltShellSeparator
-	} else {
-		cmdSeparator = s.localInterpreter.ShellSeparator
 	}
 	// Extract command from ExtraData
 
@@ -342,7 +345,7 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 	// First 4 elements are 3 null bytes plus the size of the payload
 	rcvCmdBytes := nc.ExtraData()[4:]
 	rcvCmd = string(rcvCmdBytes)
-	// Try CustomCmd format - internal command from Session
+	// Try CustomCmd format first internal command from Session
 	if jErr := json.Unmarshal(rcvCmdBytes, &cCmd); jErr == nil {
 		path = cCmd.Path
 		command = cCmd.Command
@@ -362,10 +365,16 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 		}
 	}()
 
-	// Execute command
-	// Use PTY only if caller requested it AND agent supports PTY
 	var exitCode int
-	if execWithPty && s.peerBaseInfo.PtyOn {
+	// Execute command:
+	s.logger.DebugWith("Command request",
+		slog.F("session_id", s.sessionID),
+		slog.F("cmd", rcvCmd),
+		slog.F("exec_with_pty", execWithPty),
+		slog.F("pty_on", s.localInterpreter.PtyOn),
+		slog.F("system", s.localInterpreter.System))
+
+	if execWithPty && s.localInterpreter.PtyOn {
 		exitCode, err = s.executeCommandWithPty(rcvCmd, sshChan, winChange, envVars, useAltShell)
 	} else {
 		// Drain window change channel if not using PTY
@@ -397,13 +406,13 @@ func (s *BidirectionalSession) executeCommandWithPty(
 ) (int, error) {
 	// Get the local execution parameters
 	var shell string
-	var cmdArgs []string
+	var execArgs []string
 	if s.localInterpreter != nil && s.localInterpreter.Shell != "" {
 		shell = s.localInterpreter.Shell
-		cmdArgs = s.localInterpreter.CmdArgs
+		execArgs = s.localInterpreter.ShellExecArgs
 		if useAltShell && s.localInterpreter.AltShell != "" {
 			shell = s.localInterpreter.AltShell
-			cmdArgs = s.localInterpreter.AltCmdArgs
+			execArgs = s.localInterpreter.AltShellExecArgs
 		}
 	} else {
 		return 0, fmt.Errorf("local interpreter not found")
@@ -413,7 +422,7 @@ func (s *BidirectionalSession) executeCommandWithPty(
 		slog.F("session_id", s.sessionID),
 		slog.F("cmd", command))
 
-	cmd := exec.Command(shell, append(cmdArgs, command)...)
+	cmd := exec.Command(shell, append(execArgs, command)...)
 	cmd.Env = append(os.Environ(), envVars...)
 
 	// Get terminal size
@@ -514,13 +523,13 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 ) (int, error) {
 	// Get the local execution parameters
 	var shell string
-	var cmdArgs []string
+	var execArgs []string
 	if s.localInterpreter != nil {
 		shell = s.localInterpreter.Shell
-		cmdArgs = s.localInterpreter.CmdArgs
+		execArgs = s.localInterpreter.ShellExecArgs
 		if useAltShell && s.localInterpreter.AltShell != "" {
 			shell = s.localInterpreter.AltShell
-			cmdArgs = s.localInterpreter.AltCmdArgs
+			execArgs = s.localInterpreter.AltShellExecArgs
 		}
 	} else {
 		return 0, fmt.Errorf("local interpreter not found")
@@ -534,7 +543,7 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, shell, append(cmdArgs, command)...)
+	cmd := exec.CommandContext(ctx, shell, append(execArgs, command)...)
 	cmd.Env = append(os.Environ(), envVars...)
 
 	outRC, oErr := cmd.StdoutPipe()

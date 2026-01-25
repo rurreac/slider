@@ -43,6 +43,9 @@ func (c *SftpHelpCommand) Run(execCtx *ExecutionContext, _ []string) error {
 
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "execute", "Execute command on remote system")
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "shell", "Enter interactive shell")
+	if execCtx.session.GetPeerInfo().System == "windows" {
+		_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "psh", "Enter interactive PowerShell")
+	}
 	_, _ = fmt.Fprintf(tw, "\t%s\t%s\t\n", "!command", "Execute \"command\" in local shell (non-interactive)")
 	_, _ = fmt.Fprintln(tw)
 	_ = tw.Flush()

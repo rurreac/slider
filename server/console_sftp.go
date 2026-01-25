@@ -188,6 +188,17 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 			ui.setSftpConsoleAutoComplete(sftpRegistry, sftpCtx, sftpClient)
 			continue
 		}
+		if command == "psh" && execCtx.session.GetPeerInfo().System == "windows" {
+			// Reuse the main shell command from the server registry
+			eArgs := []string{"-s", fmt.Sprintf("%d", targetSessionID), "-i", "-a"}
+			if err := s.commandRegistry.Execute(execCtx, "shell", eArgs); err != nil {
+				ui.PrintError("Shell error: %v", err)
+			}
+			// Restore SFTP prompt and autocomplete
+			ui.Term.SetPrompt(sftpCtx.getSFTPPrompt())
+			ui.setSftpConsoleAutoComplete(sftpRegistry, sftpCtx, sftpClient)
+			continue
+		}
 
 		// Process commands
 		if _, ok := sftpRegistry.Get(command); ok {
@@ -241,7 +252,7 @@ func (s *server) notConsoleCommandWithDir(fCmd []string, workingDir string) {
 
 	// Else, we'll try to execute the command locally from the specified directory
 	s.console.PrintWarn("Executing local Command: %s", fCmd)
-	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.serverInterpreter.ShellExecArgs, strings.Join(fCmd, " "))
 
 	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
 	cmd.Dir = workingDir                                    // Set working directory
