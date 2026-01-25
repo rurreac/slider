@@ -107,6 +107,22 @@ the value is not `0` or `false`, you will be warned, just in case this wasn't on
 
 Slider only creates and uses [Ed25519](https://ed25519.cr.yp.to/) keys.
 
+##### `S_ALIGN_CONSOLE_SHELL`:
+When set to `true`, positions console shells at (0,0) coordinates. This can help with terminal rendering consistency
+when using the interactive console shell feature.
+
+##### `S_ALT_SHELL`:
+When set to `true`, uses an alternate shell implementation. This may be useful for compatibility with different
+terminal environments or specific shell requirements.
+
+##### `S_EXEC_PTY`:
+When set to `true`, requests a PTY for command execution. This affects how commands are executed remotely
+and can be useful for commands that require terminal interaction.
+
+##### `S_ENV_CLOSER`:
+When set to `true`, closes environment variables after use. This can help with cleanup and resource management
+in certain scenarios.
+
 ### Server Flags Overview
 
 ##### `--address`:
@@ -276,17 +292,13 @@ Slider# help
 ##### Sessions
 ```
 Slider# sessions -h
-When run without parameters, all available Sessions are listed.
+Usage: Usage: sessions [flags]
 
-Usage: sessions [flags]
+Interacts with Client Sessions
 
-  -i, --interactive  Start Interactive Slider Shell on a Session ID (default 0)  
-  -d, --disconnect   Disconnect Session ID (default 0)                           
-  -k, --kill         Kill Session ID (default 0)                                 
-
-Mutually exclusive flags:
-
-  -i/--interactive, -d/--disconnect, -k/--kill
+  -d, --disconnect int    Disconnect Session ID
+  -i, --interactive int   Start Interactive Slider Shell on a Session ID
+  -k, --kill int          Kill Session ID
 ```
 Each connection from a Slider Client creates a new Session, and when that connection is broken or terminated, the
 Session is dropped.
@@ -303,27 +315,29 @@ robust way to handle transfers, shells, etc...
 Running an interactive session provides its own sets of commands:
 
 ```
-  Command           Description
-  -------           -----------
-  cd, chdir         Change remote directory
-  execute           Runs a command remotely from the current directory
-  exit              Exits Console and terminates the Server
-  get, download     Download file or directory from remote
-  help              Shows this output
-  lcd               Change local directory
-  lls, ldir, llist  List local directory contents
-  lmkdir            Create local directory
-  lpwd, lgetwd      Print local working directory
-  ls, dir, list     List remote directory contents
-  mkdir             Create remote directory
-  mv, rename, move  Move or rename remote file/directory
-  put, upload       Upload file or directory to remote
-  pwd, getwd        Print remote working directory
-  rm, del, delete   Remove remote file or directory
-  stat, info        Display remote file information
-  sysinfo           Display system information
-  execute           Execute command on remote system
-  shell             Enter interactive shell
+  Command           Description                                         
+  -------           -----------                                         
+  cd, chdir         Change remote directory                             
+  execute           Runs a command remotely from the current directory  
+  exit              Exits Console and terminates the Server             
+  get, download     Download file or directory from remote              
+  help              Shows this output                                   
+  lcd               Change local directory                              
+  lls, ldir, llist  List local directory contents                       
+  lmkdir            Create local directory                              
+  lpwd, lgetwd      Print local working directory                       
+  ls, dir, list     List remote directory contents                      
+  mkdir             Create remote directory                             
+  mv, rename, move  Move or rename remote file/directory                
+  put, upload       Upload file or directory to remote                  
+  pwd, getwd        Print remote working directory                      
+  rm, del, delete   Remove remote file or directory                     
+  stat, info        Display remote file information                     
+  sysinfo           Display system information                          
+                                                                        
+  execute           Execute command on remote system                    
+  shell             Enter interactive shell                             
+  psh               Enter interactive PowerShell                        
   !command          Execute "command" in local shell (non-interactive)
 ```
 
@@ -344,17 +358,15 @@ runs its next keepalive check will shut down.
 ##### Connect
 ```
 Slider# connect -h
-Usage: connect [flags] <[host_address]:port>
+Establishes a connection to a Client
+Usage: Usage: connect [flags] <host_address:port>
 
-  -b, --callback          Connect to server and offer control
   -i, --cert-id int       Specify certID for SSH key authentication
   -d, --dns string        Use custom DNS resolver
   -g, --gateway           Connect to another server in gateway mode
   -p, --proto string      Use custom proto (default "slider-v1")
   -t, --tls-cert string   Use custom client TLS certificate
   -k, --tls-key string    Use custom client TLS key
-
-Requires exactly 1 argument(s)
 ```
 Regular Clients automatically connect back to the Server, but if we want to open a Session to a Client working as Listener or a Server in Gateway mode
 then we'll need to use the `connect` command.
@@ -389,22 +401,14 @@ Slider# connect --callback regular-server.example.com:8080
 ##### SOCKS
 ```
 Slider# socks -h
-Usage: socks [flags]
+Manages SOCKS5 servers (local and session-based)
+Usage: Usage: socks [flags]
 
-  -s, --session  Run a Socks5 server over an SSH Channel on a Session ID (default 0)              
-  -p, --port     Use this port number as local Listener, otherwise randomly selected (default 0)  
-  -k, --kill     Kill Socks5 Listener and Server on a Session ID (default 0)                      
-  -e, --expose   Expose port to all interfaces (default false)                                    
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session  
-  -k/--kill, -p/--port     
-  -k/--kill, -e/--expose 
+  -e, --expose        Expose port to all interfaces
+  -k, --kill          Kill SOCKS5 server (requires -l or -s)
+  -l, --local         Target local SOCKS5 server
+  -p, --port int      Port number (for server creation)
+  -s, --session int   Target session-based SOCKS5 server
 ```
 Slider will create an SOCKSv5 server on the Client side and forward the connection to the Server side on the specified port,
 or a port randomly selected if not specified.
@@ -416,22 +420,14 @@ By default, the Socks server will be exposed only to localhost, but you can use 
 ##### SSH
 ```
 Slider# ssh -h
-Usage: ssh [flags]
+Runs an local SSH server piped to an SSH Channel on a Session ID
+Usage: Usage: ssh [flags]
 
-  -s, --session  Session ID to establish SSH connection with (default 0)  
-  -p, --port     Local port to forward SSH connection to (default 0)      
-  -k, --kill     Kill SSH port forwarding to a Session ID (default 0)     
-  -e, --expose   Expose port to all interfaces (default false)            
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session  
-  -k/--kill, -p/--port     
-  -k/--kill, -e/--expose 
+  -a, --alt-shell     Use the alternate shell
+  -e, --expose        Expose port to all interfaces
+  -k, --kill int      Kill SSH port forwarding to a Session ID
+  -p, --port int      Local port to forward SSH connection to
+  -s, --session int   Session ID to establish SSH connection with
 ```
 Slider will create an SSH server on the Server side on the specified port, or a port randomly selected if not specified,
 and forward the connection to the Client side through another SSH channel.
@@ -464,28 +460,16 @@ connection will be non-interactive, ergo, pressing CTRL^C will kill the SSH conn
 ##### Shell
 ```
 Slider# shell -h
-Usage: shell [flags]
+Binds to a client Shell
+Usage: Usage: shell [flags]
 
-  -s, --session      Target Session ID for the shell (default 0)               
-  -p, --port         Use this port number as local Listener, otherwise randomly selected (default 0)  
-  -k, --kill         Kill Shell Listener and Server on a Session ID (default 0)                       
-  -i, --interactive  Interactive mode, enters shell directly. Always TLS (default false)              
-  -t, --tls          Enable TLS for the Shell (default false)                                         
-  -e, --expose       Expose port to all interfaces (default false)                                    
-
-One flag required from each group:
-
-  -s/--session, -k/--kill  
-
-Mutually exclusive flags:
-
-  -k/--kill, -s/--session        
-  -k/--kill, -p/--port           
-  -k/--kill, -i/--interactive    
-  -k/--kill, -t/--tls            
-  -k/--kill, -e/--expose         
-  -i/--interactive, -e/--expose  
-  -i/--interactive, -t/--tls 
+  -a, --alt-shell     Use the alternate shell
+  -e, --expose        Expose port to all interfaces
+  -i, --interactive   Interactive mode, enters shell directly. Always TLS
+  -k, --kill int      Kill Shell Listener and Server on a Session ID
+  -p, --port int      Use this port number as local Listener, otherwise randomly selected
+  -s, --session int   Target Session ID for the shell
+  -t, --tls           Enable TLS for the Shell
 ```
 Slider will open a port locally that will allow you to bind to a Client Shell using [netcat](https://nmap.org/ncat/), 
 or `openssl` for cyphered connections with the tls flag `-t`, which may be useful is `ssh` is not at hand. 
@@ -510,10 +494,6 @@ Usage: certs [flags]
   -r, --remove    Remove matching index from the Certificate Jar (default 0)  
   -d, --dump-ssh  Dump corresponding CertID SSH keys (default 0)              
   -c, --dump-ca   Dump CA Certificate and key (default false)                 
-
-Mutually exclusive flags:
-
-  -n/--new, -r/--remove, -d/--dump-ssh, -c/--dump-ca  
 ```
 The `certs` command requires that authentication is enabled on the Server otherwise it won't be available.
 
@@ -539,7 +519,7 @@ Once you have the dump the CA certificate and key, you can use them to create yo
 c_name="http-listener"
 openssl ecparam -genkey -name prime256v1 -out $c_name.key
 ```
-      While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
+> While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
 2. Generate certificate (replace host/IP as necessary):
 ```
 openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
@@ -554,16 +534,13 @@ openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
 ##### Portfwd
 ```
 Slider# portfwd -h
-Usage: portfwd [flags] <[addressA]:portA:[addressB]:portB>
+Creates a port forwarding tunnel
+Usage: Usage: portfwd [flags] <[a_addr]:a_port:[b_addr]:b_port>
 
-  -s, --session  Session ID to add or remove Port Forwarding (default 0)                                          
-  -L, --local    Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port> (default false)        
-  -R, --reverse  Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port> (default false)  
-  -r, --remove   Remove Port Forwarding from port passed as argument (requires L or R) (default false)            
-
-Mutually exclusive flags:
-
-  -L/--local, -R/--reverse 
+  -L, --local         Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>
+  -r, --remove        Remove Port Forwarding from port passed as argument (requires L or R)
+  -R, --reverse       Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>
+  -s, --session int   Session ID to add or remove Port Forwarding
 ```
 Allows creating / removing Local and Remote port forwards dynamically over a specific session.
 
