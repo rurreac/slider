@@ -87,10 +87,17 @@ func (c *Console) PrintCommandUsage(f *flag.FlagSet, h string) {
 	_, _ = fmt.Fprintf(c.Term, "\n")
 }
 
-func (c *Console) CenterScreen() {
-	_, _ = fmt.Fprint(c.Term, escseq.CenterScreen(c.ReadWriter))
+func (c *Console) ScreenAlignment(enabled bool) {
+	if enabled {
+		_, _ = fmt.Fprint(c.Term, escseq.ScreenAlignment(c.ReadWriter))
+	}
+	_, _ = fmt.Fprint(c.Term, "\n")
 }
 
 func (c *Console) FlatPrintf(format string, args ...any) {
 	_, _ = fmt.Fprintf(c.Term, "%s", fmt.Sprintf(format, args...))
+}
+
+func (c *Console) Reset() {
+	_, _ = fmt.Fprint(c.Term, escseq.Reset())
 }

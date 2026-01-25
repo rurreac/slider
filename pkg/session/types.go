@@ -75,19 +75,13 @@ type RevPortControl struct {
 type RemoteSession struct {
 	ID                int64
 	ServerFingerprint string
-	User              string
-	Host              string
-	System            string
-	Arch              string
-	Role              string
-	HomeDir           string
-	WorkingDir        string // Current SFTP working directory (if active)
-	SliderDir         string // Binary path
-	LaunchDir         string // Launch path
-	IsConnector       bool
-	IsGateway         bool
-	ConnectionAddr    string
-	Path              []int64
+	interpreter.BaseInfo
+	Role           string
+	WorkingDir     string // Current SFTP working directory (if active)
+	IsConnector    bool
+	IsGateway      bool
+	ConnectionAddr string
+	Path           []int64
 }
 
 // certInfo stores certificate authentication information
@@ -135,7 +129,7 @@ type Session interface {
 	GetSSHConn() ssh.Conn
 	GetSSHClient() *ssh.Client
 	AddChannel(ch ssh.Channel)
-	GetInterpreter() *interpreter.Interpreter
+	GetPeerInfo() interpreter.BaseInfo
 	HandleForwardedTcpIpChannel(nc ssh.NewChannel)
 	SetInitTermSize(types.TermDimensions)
 	GetInitTermSize() types.TermDimensions

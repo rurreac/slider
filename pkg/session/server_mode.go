@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"slider/pkg/instance"
-	"slider/pkg/interpreter"
 	"slider/pkg/slog"
 
 	"github.com/gorilla/websocket"
@@ -46,7 +45,7 @@ func (s *BidirectionalSession) EnableSocks(port int, expose bool, notifier chan 
 }
 
 // EnableSSH starts the SSH endpoint instance
-func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan error) error {
+func (s *BidirectionalSession) EnableSSH(port int, expose bool, useAltShell bool, notifier chan error) error {
 	if s.role.IsAgent() {
 		return fmt.Errorf("SSH instance not available for targets")
 	}
@@ -60,11 +59,10 @@ func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan er
 		s.sshInstance.SetAllowedFingerprint(s.certInfo.fingerprint)
 	}
 
+	s.sshInstance.SetUseAltShell(useAltShell)
+
 	// Set PTY based on peer interpreter
-	ptyOn := false
-	if s.peerInterpreter != nil {
-		ptyOn = s.peerInterpreter.PtyOn
-	}
+	ptyOn := s.peerBaseInfo.PtyOn
 	s.sshInstance.SetPtyOn(ptyOn)
 	s.sshInstance.SetExpose(expose)
 
@@ -83,7 +81,7 @@ func (s *BidirectionalSession) EnableSSH(port int, expose bool, notifier chan er
 }
 
 // EnableShell starts the Shell endpoint instance
-func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, interactiveOn bool, notifier chan error) error {
+func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, interactiveOn bool, useAltShell bool, notifier chan error) error {
 	if s.role.IsAgent() {
 		return fmt.Errorf("shell instance not available for targets")
 	}
@@ -93,13 +91,11 @@ func (s *BidirectionalSession) EnableShell(port int, expose bool, tlsOn bool, in
 	}
 
 	// Set PTY based on peer interpreter
-	ptyOn := false
-	if s.peerInterpreter != nil {
-		ptyOn = s.peerInterpreter.PtyOn
-	}
+	ptyOn := s.peerBaseInfo.PtyOn
 	s.shellInstance.SetPtyOn(ptyOn)
 	s.shellInstance.SetExpose(expose)
 	s.shellInstance.SetInitTermSize(s.initTermSize)
+	s.shellInstance.SetUseAltShell(useAltShell)
 
 	if tlsOn {
 		s.shellInstance.SetTLSOn(tlsOn)
@@ -160,21 +156,6 @@ func (s *BidirectionalSession) SetSSHConfig(sshConfig *ssh.ServerConfig) {
 	s.sessionMutex.Lock()
 	s.sshConfig = sshConfig
 	s.sessionMutex.Unlock()
-}
-
-// SetInterpreter sets the peer interpreter for the session
-func (s *BidirectionalSession) SetInterpreter(interp *interpreter.Interpreter) {
-	s.sessionMutex.Lock()
-	s.peerInterpreter = interp
-	s.sessionMutex.Unlock()
-
-	// Safety check for logger (should always be set, but be defensive)
-	if s.logger != nil {
-		s.logger.DebugWith("Interpreter set",
-			slog.F("session_id", s.sessionID),
-			slog.F("shell", interp.Shell),
-			slog.F("system", interp.System))
-	}
 }
 
 // SetSSHServerConn sets the SSH server connection for the session

@@ -15,6 +15,7 @@ type UserInterface interface {
 	Printf(format string, args ...any)
 	FlatPrintf(format string, args ...any)
 	clearScreen()
-	CenterScreen()
+	ScreenAlignment(enabled bool)
+	Reset()
 	Writer() io.Writer
 }

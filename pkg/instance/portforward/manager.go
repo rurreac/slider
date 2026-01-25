@@ -50,6 +50,7 @@ type RemoteForward struct {
 type LocalForward struct {
 	RcvChan  chan *types.TcpIpChannelMsg
 	DoneChan chan bool
+	Listener net.Listener
 	*types.CustomTcpIpChannelMsg
 }
 
@@ -107,12 +108,13 @@ func (m *Manager) GetRemoteMapping(port int) (*RemoteForward, error) {
 }
 
 // AddLocalForward adds a local port forward mapping
-func (m *Manager) AddLocalForward(t *types.TcpIpChannelMsg, isSshConn bool) {
+func (m *Manager) AddLocalForward(t *types.TcpIpChannelMsg, listener net.Listener, isSshConn bool) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
 	m.localMappings[int(t.SrcPort)] = &LocalForward{
 		DoneChan: make(chan bool, 1),
+		Listener: listener,
 		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
 			IsSshConn:       isSshConn,
 			TcpIpChannelMsg: t,
@@ -241,7 +243,7 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 		slog.F("src_host", msg.SrcHost),
 		slog.F("src_port", msg.SrcPort))
 
-	m.AddLocalForward(&msg, false)
+	m.AddLocalForward(&msg, listener, false)
 	mapping, mErr := m.GetLocalMapping(int(msg.SrcPort))
 	if mErr != nil {
 		notifier <- fmt.Errorf("failed to get local port mapping - %v", mErr)
@@ -332,7 +334,7 @@ func (m *Manager) CancelAllSSHRemoteForwards() {
 	}
 	m.mutex.Unlock()
 
-	for port, portFwd := range mappings {
+	for _, portFwd := range mappings {
 		payload := ssh.Marshal(&types.TcpIpFwdRequest{
 			BindAddress: portFwd.SrcHost,
 			BindPort:    portFwd.SrcPort,
@@ -355,6 +357,35 @@ func (m *Manager) CancelAllSSHRemoteForwards() {
 			slog.F("fwd_host", portFwd.SrcHost),
 			slog.F("fwd_port", portFwd.SrcPort))
 
-		m.RemoveRemoteForward(port)
+	}
+}
+
+// CloseAll closes all active port forwards (local and remote)
+func (m *Manager) CloseAll() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	// Close Local Mappings (Listeners)
+	for port, fwd := range m.localMappings {
+		if fwd.Listener != nil {
+			_ = fwd.Listener.Close()
+		}
+		// Signal done loop
+		select {
+		case fwd.DoneChan <- true:
+		default:
+		}
+		delete(m.localMappings, port)
+	}
+
+	// Close Remote Mappings
+	for port, fwd := range m.remoteMappings {
+		// Signal done loop
+		select {
+		case fwd.DoneChan <- true:
+		default:
+		}
+		close(fwd.RcvChan)
+		delete(m.remoteMappings, port)
 	}
 }

@@ -169,6 +169,27 @@ func (s *BidirectionalSession) HandleDirectTcpIp(nc ssh.NewChannel) error {
 
 // HandleInitSize handles init-size channels (terminal dimensions)
 func (s *BidirectionalSession) HandleInitSize(nc ssh.NewChannel) error {
+	// Process payload BEFORE accepting the channel to avoid race condition
+	// where client opens shell before server has set the size
+	payload := nc.ExtraData()
+
+	s.logger.DebugWith("SSH Effective \"req-pty\" size as \"init-size\" payload",
+		slog.F("session_id", s.sessionID),
+		slog.F("payload", payload))
+
+	if len(payload) > 0 {
+		var winSize types.TermDimensions
+		if jErr := json.Unmarshal(payload, &winSize); jErr != nil {
+			s.logger.ErrorWith("Failed to unmarshal terminal size payload",
+				slog.F("session_id", s.sessionID),
+				slog.F("err", jErr))
+			// We can reject here or trigger a generic error, but usually better to reject if protocol is invalid
+			_ = nc.Reject(ssh.Prohibited, "invalid payload")
+			return fmt.Errorf("failed to unmarshal terminal size: %w", jErr)
+		}
+		s.SetInitTermSize(winSize)
+	}
+
 	channel, requests, err := nc.Accept()
 	if err != nil {
 		s.logger.ErrorWith("Failed to accept channel",
@@ -182,23 +203,8 @@ func (s *BidirectionalSession) HandleInitSize(nc ssh.NewChannel) error {
 			slog.F("session_id", s.sessionID))
 	}()
 
-	payload := nc.ExtraData()
 	go ssh.DiscardRequests(requests)
 
-	s.logger.DebugWith("SSH Effective \"req-pty\" size as \"init-size\" payload",
-		slog.F("session_id", s.sessionID),
-		slog.F("payload", payload))
-
-	if len(payload) > 0 {
-		var winSize types.TermDimensions
-		if jErr := json.Unmarshal(payload, &winSize); jErr != nil {
-			s.logger.ErrorWith("Failed to unmarshal terminal size payload",
-				slog.F("session_id", s.sessionID),
-				slog.F("err", jErr))
-			return fmt.Errorf("failed to unmarshal terminal size: %w", jErr)
-		}
-		s.SetInitTermSize(winSize)
-	}
 	return nil
 }
 

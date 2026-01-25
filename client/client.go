@@ -131,7 +131,7 @@ func (c *client) newSSHClient(sess *session.BidirectionalSession) {
 		slog.F("session_id", sess.GetID()))
 
 	// Send Client Information to Server
-	clientInfo := &conf.ClientInfo{Interpreter: c.interpreter}
+	clientInfo := &interpreter.Info{BaseInfo: c.interpreter.BaseInfo}
 	go c.sendClientInfo(sess, clientInfo)
 
 	// Set keepalive after connection is established
@@ -233,7 +233,7 @@ func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) e
 	return fmt.Errorf("server %s - verification failed (fingerprint: %s)", remote.String(), serverFingerprint)
 }
 
-func (c *client) sendClientInfo(sess *session.BidirectionalSession, ci *conf.ClientInfo) {
+func (c *client) sendClientInfo(sess *session.BidirectionalSession, ci *interpreter.Info) {
 	clientInfoBytes, _ := json.Marshal(ci)
 	ok, ciAnswerBytes, sErr := sess.SendRequest("client-info", true, clientInfoBytes)
 	if sErr != nil || !ok {
@@ -243,13 +243,13 @@ func (c *client) sendClientInfo(sess *session.BidirectionalSession, ci *conf.Cli
 		return
 	}
 	if len(ciAnswerBytes) != 0 {
-		var ciAnswer conf.ClientInfo
+		var ciAnswer interpreter.Info
 		if mErr := json.Unmarshal(ciAnswerBytes, &ciAnswer); mErr == nil {
-			if ciAnswer.Interpreter != nil {
-				sess.SetInterpreter(ciAnswer.Interpreter)
+			if ciAnswer.User != "" {
+				sess.SetPeerInfo(ciAnswer.BaseInfo)
 				c.Logger.DebugWith("Server identification received",
 					slog.F("session_id", sess.GetID()),
-					slog.F("server_system", ciAnswer.Interpreter.System))
+					slog.F("server_system", ciAnswer.System))
 			}
 		}
 	}

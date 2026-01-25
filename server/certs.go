@@ -64,14 +64,14 @@ func (s *server) loadCertJar() error {
 }
 
 func safeEnabled() (bool, error) {
-	saveJar := os.Getenv("SLIDER_CERT_JAR")
+	saveJar := os.Getenv(conf.SliderCertJarEnvVar)
 	switch saveJar {
 	case "1", "", "true":
 		return true, nil
 	case "0", "false":
-		return false, fmt.Errorf("environment variable \"SLIDER_CERT_JAR\" set to \"%s\", certificate changes won't be saved", saveJar)
+		return false, fmt.Errorf("environment variable \"%s\" set to \"%s\", certificate changes won't be saved", conf.SliderCertJarEnvVar, saveJar)
 	}
-	return false, fmt.Errorf("unknown Environment variable \"SLIDER_CERT_JAR\" value \"%s\", certificate changes won't be saved", saveJar)
+	return false, fmt.Errorf("unknown Environment variable \"%s\" value \"%s\", certificate changes won't be saved", conf.SliderCertJarEnvVar, saveJar)
 }
 
 func (s *server) newCertItem() (*scrypt.KeyPair, error) {

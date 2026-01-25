@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -44,7 +45,7 @@ func (sIO screenIO) Fd() uintptr {
 }
 
 func (s *server) consoleBanner(ui *Console) {
-	ui.CenterScreen()
+	ui.ScreenAlignment(true)
 	ui.Printf("%s\n\n", escseq.GreyBoldText(conf.Banner))
 	ui.PrintInfo("Type \"bg\" to return to logging.")
 	ui.PrintInfo("Type \"help\" to see available commands.")
@@ -361,9 +362,14 @@ func (s *server) notConsoleCommand(fCmd []string) {
 
 	// Else, we'll try to execute the command locally
 	s.console.PrintWarn("Executing local Command: %s", fCmd)
-	fCmd = append(s.serverInterpreter.CmdArgs, strings.Join(fCmd, " "))
+	fCmd = append(s.serverInterpreter.ShellExecArgs, strings.Join(fCmd, " "))
 
-	cmd := exec.Command(s.serverInterpreter.Shell, fCmd...) //nolint:gosec
+	// Force 10s timeout just in case:
+	// - An interactive command is executed
+	// - The command takes a long time to complete
+	ctx, cancel := context.WithTimeout(context.Background(), conf.Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, s.serverInterpreter.Shell, fCmd...)
 	cmd.Stdout = s.console.Term
 	cmd.Stderr = s.console.Term
 	if err := cmd.Run(); err != nil {
