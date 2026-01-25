@@ -182,7 +182,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		return pErr
 	}
 
-	if len(args) > 0 {
+	if len(sessionsFlags.Args()) > 0 {
 		return fmt.Errorf("too many arguments")
 	}
 
