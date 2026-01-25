@@ -72,8 +72,8 @@ func Reset() string {
 	return string(resetColor)
 }
 
-// CenterScreen is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
-func CenterScreen(rw io.ReadWriter) string {
+// ScreenAlignment is a very nasty hack to Position the Cursor near Home without adding blanks or overwriting lines
+func ScreenAlignment(rw io.ReadWriter) string {
 	// Ask the terminal for the cursor position (DSR)
 	_, _ = rw.Write(cursorRequest)
 

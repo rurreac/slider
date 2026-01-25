@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -288,7 +289,7 @@ func (ic *InteractiveConsole) Run() error {
 	}()
 
 	ic.ui.PrintSuccess("Authenticated with mTLS")
-	ic.ui.CenterScreen()
+	ic.ui.ScreenAlignment(os.Getenv(conf.SliderAlignConsoleShellEnvVar) == "true")
 
 	// Signal channel to stop stdin reader when the connection errors/closes
 	done := make(chan struct{})
@@ -428,7 +429,7 @@ func (c *ShellCommand) runRemoteInteractiveShell(ic *InteractiveConsole, shellIn
 	}()
 
 	ic.ui.PrintSuccess("Authenticated with mTLS")
-	ic.ui.CenterScreen()
+	ic.ui.ScreenAlignment(os.Getenv(conf.SliderAlignConsoleShellEnvVar) == "true")
 
 	// Signal channel to stop stdin reader when the connection errors/closes
 	done := make(chan struct{})

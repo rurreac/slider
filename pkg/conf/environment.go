@@ -1,7 +1,13 @@
 package conf
 
+// Slider environment variables
 const (
-	// Slider environment variables
+	// ========================================
+	// Console ENV VARS
+	// ========================================
+
+	// Position console shells in (0,0) if "true"
+	SliderAlignConsoleShellEnvVar = "S_ALIGN_CONSOLE_SHELL"
 
 	// ========================================
 	// SSH MESSAGE ENV VARS

@@ -19,12 +19,12 @@ func (m *mockTerminal) Write(p []byte) (n int, err error) {
 	return m.Buffer.Write(p)
 }
 
-func TestCenterScreen(t *testing.T) {
+func TestScreenAlignment(t *testing.T) {
 	mock := &mockTerminal{
 		response: "\x1b[10;5R", // Row 10, Col 5
 	}
 
-	result := CenterScreen(mock)
+	result := ScreenAlignment(mock)
 
 	// Check if cursorRequest was written
 	if !bytes.Contains(mock.Bytes(), cursorRequest) {
