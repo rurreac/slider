@@ -120,7 +120,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	// REMOTE PROXY STRATEGY
-	if uSess.OwnerID != 0 {
+	if uSess.GatewayID != 0 {
 		// Handle kill flag for remote shells
 		if *sKill > 0 {
 			return c.handleRemoteShellKill(svr, uSess, ui, *sKill)
@@ -335,7 +335,7 @@ func (ic *InteractiveConsole) Run() error {
 
 // handleRemoteShellKill handles killing a remote shell endpoint
 func (c *ShellCommand) handleRemoteShellKill(s *server, uSess UnifiedSession, ui UserInterface, killSessionID int) error {
-	key := fmt.Sprintf("shell:%d:%v", uSess.OwnerID, uSess.Path)
+	key := fmt.Sprintf("shell:%d:%v", uSess.GatewayID, uSess.Path)
 
 	s.remoteSessionsMutex.Lock()
 	state, exists := s.remoteSessions[key]
@@ -473,10 +473,9 @@ func (c *ShellCommand) runRemoteInteractiveShell(ic *InteractiveConsole, shellIn
 	return nil
 }
 
-// handleRemoteShell uses a unified approach with local sessions via remote.Proxy
 func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui UserInterface, port int, interactive bool, tlsOn bool, expose bool, useAltShell bool) error {
 	// Create tracking key for this remote session
-	key := fmt.Sprintf("shell:%d:%v", uSess.OwnerID, uSess.Path)
+	key := fmt.Sprintf("shell:%d:%v", uSess.GatewayID, uSess.Path)
 
 	// Check if shell endpoint already exists for this remote session
 	s.remoteSessionsMutex.Lock()
@@ -493,10 +492,10 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 		}
 	}
 
-	// Get Gateway Session
-	gatewaySession, sessErr := s.GetSession(int(uSess.OwnerID))
+	// Get Gateway Session using GatewayID (local session through which we reach the remote)
+	gatewaySession, sessErr := s.GetSession(int(uSess.GatewayID))
 	if sessErr != nil {
-		return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.OwnerID)
+		return fmt.Errorf("gateway session %d not found (disconnected?)", uSess.GatewayID)
 	}
 
 	// Construct Target Path for slider-connect

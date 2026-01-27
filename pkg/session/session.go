@@ -44,9 +44,10 @@ type BidirectionalSession struct {
 	peerBaseInfo     interpreter.BaseInfo     // Remote system info received from peer
 	peerIdentity     string                   // Peer server identity (fingerprint:port) for loop detection
 	initTermSize     types.TermDimensions
-	isListener       bool // Whether this session is to/from a listener client
-	isGateway        bool // Whether the peer node is in gateway mode
-	useAltShell      bool // Whether to use the alternate shell for execution
+	isListener       bool  // Whether this session is to/from a listener client
+	isGateway        bool  // Whether the peer node is in gateway mode
+	useAltShell      bool  // Whether to use the alternate shell for execution
+	parentSessionID  int64 // Session ID of the beacon that tunneled this connection (0 if direct)
 
 	// Channel tracking
 	channels      []ssh.Channel
@@ -191,7 +192,7 @@ func (s *BidirectionalSession) SetRawConn(conn net.Conn) {
 }
 
 // GetRemoteAddr returns the network address of the connected peer
-// Handles both WebSocket and Raw (TCP/Beacon) connections
+// Handles both WebSocket and Raw Beacon connections
 func (s *BidirectionalSession) GetRemoteAddr() net.Addr {
 	if s.wsConn != nil {
 		return s.wsConn.RemoteAddr()
@@ -286,4 +287,19 @@ func (s *BidirectionalSession) GetCertInfo() (id int64, fingerprint string) {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
 	return s.certInfo.id, s.certInfo.fingerprint
+}
+
+// GetParentSessionID returns the session ID of the beacon that tunneled this connection
+// Returns 0 for direct connections
+func (s *BidirectionalSession) GetParentSessionID() int64 {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.parentSessionID
+}
+
+// SetParentSessionID sets the parent session ID for beacon-tunneled connections
+func (s *BidirectionalSession) SetParentSessionID(parentID int64) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.parentSessionID = parentID
 }

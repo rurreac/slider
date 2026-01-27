@@ -21,14 +21,15 @@ func (s *server) BeaconChannelHandler(nc ssh.NewChannel, sess session.Session, s
 	// Wrap channel as net.Conn
 	conn := sconn.SSHChannelToNetConn(channel)
 
-	// Handle as new session
-	go s.HandleBeaconConnect(conn)
+	// Handle as new session, passing the parent session ID for network path tracking
+	go s.HandleBeaconConnect(conn, sess.GetID())
 
 	return nil
 }
 
 // HandleBeaconConnect handles incoming Beacon connections tunneled via SSH channels
-func (s *server) HandleBeaconConnect(conn net.Conn) {
+// parentSessionID is the session ID of the beacon that tunneled this connection (for network path tracking)
+func (s *server) HandleBeaconConnect(conn net.Conn, parentSessionID int64) {
 	s.DebugWith("Processing new Beacon connection",
 		slog.F("remote_addr", conn.RemoteAddr().String()))
 
@@ -54,6 +55,8 @@ func (s *server) HandleBeaconConnect(conn net.Conn) {
 
 	// Set Beacon specific fields
 	biSession.SetRawConn(conn)
+	// Track parent session for network path visualization
+	biSession.SetParentSessionID(parentSessionID)
 	// Set roles
 	biSession.SetRole(session.OperatorListener)
 	biSession.SetPeerRole(session.AgentConnector)

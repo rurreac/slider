@@ -10,6 +10,7 @@ import (
 
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
+	"slider/pkg/session"
 
 	"github.com/pkg/sftp"
 	"github.com/spf13/pflag"
@@ -30,7 +31,8 @@ type UnifiedSession struct {
 	// Identifiers
 	UnifiedID int64 // Unique ID for the session
 	ActualID  int64 // Session ID as stored on the system that owns the session
-	OwnerID   int64 // 0 for local, valid Session ID for remote gateway
+	OwnerID   int64 // Parent unified ID for display (0 for direct local connections)
+	GatewayID int64 // Local gateway session ID for routing (0 for local sessions)
 	Role      string
 	// System properties
 	PtyOn      bool
@@ -48,104 +50,230 @@ type UnifiedSession struct {
 	Path           []int64
 }
 
+// pathKey is used to uniquely identify a remote session for parent resolution
+type pathKey struct {
+	gatewayID int64
+	pathStr   string // String representation of path
+	actualID  int64
+}
+
+// remoteSessionEntry holds a remote session with its gateway context
+type remoteSessionEntry struct {
+	rs             session.RemoteSession
+	gatewayID      int64 // Local gateway session ID
+	gatewayUnified int64 // Unified ID of the gateway
+}
+
 // ResolveUnifiedSessions aggregates local and remote sessions into a single list with Unified IDs
 func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 	unifiedMap := make(map[int64]UnifiedSession)
 
+	// Collect and process local sessions
+	localSessions := s.GetAllSessions()
+	maxID := s.collectLocalSessions(unifiedMap, localSessions)
+
+	// Collect remote sessions from all gateways
+	remoteEntries := s.collectRemoteSessions(localSessions)
+
+	// Build lookup table for parent resolution
+	remoteUnifiedLookup := s.buildRemoteLookup(remoteEntries, &maxID)
+
+	// Create unified sessions for remote entries
+	s.processRemoteSessions(unifiedMap, remoteEntries, remoteUnifiedLookup)
+
+	return unifiedMap
+}
+
+// collectLocalSessions processes local sessions and returns the max ID used
+func (s *server) collectLocalSessions(unifiedMap map[int64]UnifiedSession, sessions []*session.BidirectionalSession) int64 {
 	maxID := int64(0)
 
-	// Collect Local Sessions
-	localSessions := s.GetAllSessions()
-
-	for _, sess := range localSessions {
-		uSess := UnifiedSession{
-			UnifiedID: sess.GetID(),
-			ActualID:  sess.GetID(),
-			OwnerID:   0,
-			User:      "unknown",
-			Host:      "unknown",
-			System:    "unknown",
-		}
+	for _, sess := range sessions {
+		uSess := s.createUnifiedFromLocal(sess)
+		unifiedMap[uSess.UnifiedID] = uSess
 
 		if sess.GetID() > maxID {
 			maxID = sess.GetID()
 		}
-
-		if sess.GetRouter() != nil || (sess.GetSSHClient() != nil && !sess.GetIsListener()) {
-			uSess.User = "server"
-			if addr := sess.GetRemoteAddr(); addr != nil {
-				uSess.Host = addr.String()
-			}
-			uSess.System = "unknown/unknown"
-			uSess.HomeDir = "/"
-			if sess.GetPeerInfo().User != "" {
-				uSess.User = sess.GetPeerInfo().User
-				uSess.Host = sess.GetPeerInfo().Hostname
-				uSess.System = fmt.Sprintf("%s/%s", sess.GetPeerInfo().Arch, sess.GetPeerInfo().System)
-				uSess.HomeDir = sess.GetPeerInfo().HomeDir
-				uSess.SliderDir = sess.GetPeerInfo().SliderDir
-				uSess.LaunchDir = sess.GetPeerInfo().LaunchDir
-				uSess.PtyOn = sess.GetPeerInfo().PtyOn
-			}
-		} else if sess.GetPeerInfo().User != "" {
-			uSess.User = sess.GetPeerInfo().User
-			uSess.Host = sess.GetPeerInfo().Hostname
-			uSess.System = fmt.Sprintf("%s/%s", sess.GetPeerInfo().Arch, sess.GetPeerInfo().System)
-			uSess.HomeDir = sess.GetPeerInfo().HomeDir
-			uSess.SliderDir = sess.GetPeerInfo().SliderDir
-			uSess.LaunchDir = sess.GetPeerInfo().LaunchDir
-			uSess.PtyOn = sess.GetPeerInfo().PtyOn
-		}
-
-		uSess.Role = sess.GetPeerRole().String()
-
-		// Get the current SFTP working directory if available
-		uSess.WorkingDir = sess.GetSftpWorkingDir()
-		uSess.IsGateway = sess.GetIsGateway()
-		unifiedMap[uSess.UnifiedID] = uSess
 	}
 
-	// Collect Remote Sessions
-	// Iterate only over Gateways/Servers
+	return maxID
+}
+
+// createUnifiedFromLocal creates a UnifiedSession from a local BidirectionalSession
+func (s *server) createUnifiedFromLocal(sess *session.BidirectionalSession) UnifiedSession {
+	uSess := UnifiedSession{
+		UnifiedID: sess.GetID(),
+		ActualID:  sess.GetID(),
+		OwnerID:   sess.GetParentSessionID(), // 0 for direct, parent ID for beacon-tunneled
+		User:      "unknown",
+		Host:      "unknown",
+		System:    "unknown",
+	}
+
+	peerInfo := sess.GetPeerInfo()
+
+	if sess.GetRouter() != nil || (sess.GetSSHClient() != nil && !sess.GetIsListener()) {
+		uSess.User = "server"
+		if addr := sess.GetRemoteAddr(); addr != nil {
+			uSess.Host = addr.String()
+		}
+		uSess.System = "unknown/unknown"
+		uSess.HomeDir = "/"
+		if peerInfo.User != "" {
+			uSess.User = peerInfo.User
+			uSess.Host = peerInfo.Hostname
+			uSess.System = fmt.Sprintf("%s/%s", peerInfo.Arch, peerInfo.System)
+			uSess.HomeDir = peerInfo.HomeDir
+			uSess.SliderDir = peerInfo.SliderDir
+			uSess.LaunchDir = peerInfo.LaunchDir
+			uSess.PtyOn = peerInfo.PtyOn
+		}
+	} else if peerInfo.User != "" {
+		uSess.User = peerInfo.User
+		uSess.Host = peerInfo.Hostname
+		uSess.System = fmt.Sprintf("%s/%s", peerInfo.Arch, peerInfo.System)
+		uSess.HomeDir = peerInfo.HomeDir
+		uSess.SliderDir = peerInfo.SliderDir
+		uSess.LaunchDir = peerInfo.LaunchDir
+		uSess.PtyOn = peerInfo.PtyOn
+	}
+
+	uSess.Role = sess.GetPeerRole().String()
+	uSess.WorkingDir = sess.GetSftpWorkingDir()
+	uSess.IsGateway = sess.GetIsGateway()
+
+	return uSess
+}
+
+// collectRemoteSessions fetches remote sessions from all gateway sessions
+func (s *server) collectRemoteSessions(localSessions []*session.BidirectionalSession) []remoteSessionEntry {
+	var entries []remoteSessionEntry
+
+	currentIdentity := fmt.Sprintf("%s:%d", s.fingerprint, s.port)
+	visited := []string{currentIdentity}
+
 	for _, sess := range localSessions {
-		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
-			// Fetch remotes
-			currentIdentity := fmt.Sprintf("%s:%d", s.fingerprint, s.port)
-			visited := []string{currentIdentity}
+		// Only query sessions that are actual gateways (have SSH client capability)
+		if sess.GetIsGateway() && sess.GetSSHClient() != nil {
 			remoteSessions, err := sess.GetRemoteSessions(visited)
 			if err == nil {
 				for _, rs := range remoteSessions {
-					// Assign new Unified ID
-					maxID++
-					system := fmt.Sprintf("%s/%s", rs.Arch, rs.System)
-					if rs.System == "unknown" || rs.Arch == "unknown" {
-						system = "REMOTE"
-					}
-					uSess := UnifiedSession{
-						UnifiedID:      maxID,
-						ActualID:       rs.ID,
-						OwnerID:        sess.GetID(), // This local session is the gateway
-						User:           rs.User,
-						Host:           rs.Hostname,
-						System:         system,
-						Role:           rs.Role,
-						HomeDir:        rs.HomeDir,
-						WorkingDir:     rs.WorkingDir,
-						SliderDir:      rs.SliderDir,
-						LaunchDir:      rs.LaunchDir,
-						IsConnector:    rs.IsConnector,
-						IsGateway:      rs.IsGateway,
-						ConnectionAddr: rs.ConnectionAddr,
-						Path:           rs.Path, // Path from the remote perspective (relative to Owner)
-						PtyOn:          rs.PtyOn,
-					}
-					unifiedMap[uSess.UnifiedID] = uSess
+					entries = append(entries, remoteSessionEntry{
+						rs:             rs,
+						gatewayID:      sess.GetID(),
+						gatewayUnified: sess.GetID(), // For local sessions, UnifiedID == ActualID
+					})
 				}
 			}
 		}
 	}
 
-	return unifiedMap
+	return entries
+}
+
+// buildRemoteLookup creates a lookup table mapping (gateway, path, actualID) -> unifiedID
+func (s *server) buildRemoteLookup(entries []remoteSessionEntry, maxID *int64) map[pathKey]int64 {
+	lookup := make(map[pathKey]int64)
+
+	for _, entry := range entries {
+		*maxID++
+		key := pathKey{
+			gatewayID: entry.gatewayID,
+			pathStr:   fmt.Sprintf("%v", entry.rs.Path),
+			actualID:  entry.rs.ID,
+		}
+		lookup[key] = *maxID
+	}
+
+	return lookup
+}
+
+// processRemoteSessions creates UnifiedSessions for all remote entries
+func (s *server) processRemoteSessions(unifiedMap map[int64]UnifiedSession, entries []remoteSessionEntry, lookup map[pathKey]int64) {
+	for _, entry := range entries {
+		uSess := s.createUnifiedFromRemote(entry, lookup)
+		unifiedMap[uSess.UnifiedID] = uSess
+	}
+}
+
+// createUnifiedFromRemote creates a UnifiedSession from a remote session entry
+func (s *server) createUnifiedFromRemote(entry remoteSessionEntry, lookup map[pathKey]int64) UnifiedSession {
+	rs := entry.rs
+
+	system := fmt.Sprintf("%s/%s", rs.Arch, rs.System)
+	if rs.System == "" || rs.Arch == "" {
+		system = "REMOTE"
+	}
+
+	ownerID := s.resolveRemoteOwner(entry, lookup)
+
+	// Get the unified ID for this session
+	key := pathKey{
+		gatewayID: entry.gatewayID,
+		pathStr:   fmt.Sprintf("%v", rs.Path),
+		actualID:  rs.ID,
+	}
+	unifiedID := lookup[key]
+
+	return UnifiedSession{
+		UnifiedID:      unifiedID,
+		ActualID:       rs.ID,
+		OwnerID:        ownerID,
+		GatewayID:      entry.gatewayID, // Local gateway for routing
+		User:           rs.User,
+		Host:           rs.Hostname,
+		System:         system,
+		Role:           rs.Role,
+		HomeDir:        rs.HomeDir,
+		WorkingDir:     rs.WorkingDir,
+		SliderDir:      rs.SliderDir,
+		LaunchDir:      rs.LaunchDir,
+		IsConnector:    rs.IsConnector,
+		IsGateway:      rs.IsGateway,
+		ConnectionAddr: rs.ConnectionAddr,
+		Path:           rs.Path,
+		PtyOn:          rs.PtyOn,
+	}
+}
+
+// resolveRemoteOwner determines the parent unified ID for a remote session
+func (s *server) resolveRemoteOwner(entry remoteSessionEntry, lookup map[pathKey]int64) int64 {
+	rs := entry.rs
+
+	// Direct child of local gateway (no path)
+	if len(rs.Path) == 0 {
+		return entry.gatewayUnified
+	}
+
+	// Has explicit parent session ID - look up its unified ID
+	if rs.ParentSessionID != 0 {
+		parentKey := pathKey{
+			gatewayID: entry.gatewayID,
+			pathStr:   fmt.Sprintf("%v", rs.Path),
+			actualID:  rs.ParentSessionID,
+		}
+		if parentUnified, found := lookup[parentKey]; found {
+			return parentUnified
+		}
+		// Fallback to path-based resolution
+	}
+
+	// Parent is the session at the end of the path
+	// Look up: path = rs.Path[:-1], actualID = rs.Path[last]
+	parentPath := rs.Path[:len(rs.Path)-1]
+	parentActualID := rs.Path[len(rs.Path)-1]
+	parentKey := pathKey{
+		gatewayID: entry.gatewayID,
+		pathStr:   fmt.Sprintf("%v", parentPath),
+		actualID:  parentActualID,
+	}
+	if parentUnified, found := lookup[parentKey]; found {
+		return parentUnified
+	}
+
+	// Final fallback: gateway is the owner
+	return entry.gatewayUnified
 }
 
 func (c *SessionsCommand) Name() string             { return sessionsCmd }
@@ -211,6 +339,15 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			}
 			sort.Ints(keys)
 
+			// Build set of sessions that have children (beacons/relays)
+			// A session is a beacon if other sessions have it as their OwnerID
+			hasChildren := make(map[int64]bool)
+			for _, uSess := range unifiedMap {
+				if uSess.OwnerID != 0 {
+					hasChildren[uSess.OwnerID] = true
+				}
+			}
+
 			tw := new(tabwriter.Writer)
 			tw.Init(ui.Writer(), 0, 4, 2, ' ', 0)
 			// Added Role column
@@ -228,8 +365,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				inOut := "--"
 				connection := "--"
 
-				// If Local, fetch detailed info from actual session
-				if uSess.OwnerID == 0 {
+				// If Local (GatewayID == 0), fetch detailed info from actual session
+				if uSess.GatewayID == 0 {
 					if sess, ok := svr.sessionTrack.Sessions[uSess.ActualID]; ok {
 						if sess.GetSSHInstance().IsEnabled() {
 							if port, pErr := sess.GetSSHInstance().GetEndpointPort(); pErr == nil {
@@ -266,8 +403,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					}
 					connection = uSess.ConnectionAddr
 
-					// Check for SSH
-					sshKey := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
+					// Check for SSH using GatewayID for state key
+					sshKey := fmt.Sprintf("ssh:%d:%v", uSess.GatewayID, uSess.Path)
 					svr.remoteSessionsMutex.Lock()
 					if state, ok := svr.remoteSessions[sshKey]; ok {
 						if state.SSHInstance != nil && state.SSHInstance.IsEnabled() {
@@ -278,8 +415,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					}
 					svr.remoteSessionsMutex.Unlock()
 
-					// Check for Shell
-					shellKey := fmt.Sprintf("shell:%d:%v", uSess.OwnerID, uSess.Path)
+					// Check for Shell using GatewayID for state key
+					shellKey := fmt.Sprintf("shell:%d:%v", uSess.GatewayID, uSess.Path)
 					svr.remoteSessionsMutex.Lock()
 					if state, ok := svr.remoteSessions[shellKey]; ok {
 						if state.ShellInstance != nil && state.ShellInstance.IsEnabled() {
@@ -306,11 +443,21 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					hostname = hostname[:15] + "..."
 				}
 
+				// Build role display with capability suffix
+				// Gateway = has IsGateway flag (server in gateway mode)
+				// Beacon = not a gateway but has children (is acting as a relay/pivot)
+				roleDisplay := uSess.Role
+				if uSess.IsGateway {
+					roleDisplay += "·G"
+				} else if hasChildren[uSess.UnifiedID] {
+					roleDisplay += "·B"
+				}
+
 				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 					uSess.UnifiedID,
 					ownerStr,
 					uSess.System,
-					uSess.Role,
+					roleDisplay,
 					uSess.User,
 					hostname,
 					inOut,
@@ -369,7 +516,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		// ROUTE BASED ON LOCAL vs REMOTE
-		if uSess.OwnerID == 0 {
+		// GatewayID == 0 means local session, GatewayID != 0 means remote session accessed via that gateway
+		if uSess.GatewayID == 0 {
 			// LOCAL SESSION
 			sess, sessErr := svr.GetSession(int(uSess.ActualID))
 			if sessErr != nil {
@@ -397,14 +545,14 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		// REMOTE SESSION
-		// 1. Get Gateway Session
-		gatewaySession, sessErr := svr.GetSession(int(uSess.OwnerID))
+		// 1. Get Gateway Session using GatewayID (the local session through which we reach the remote)
+		gatewaySession, sessErr := svr.GetSession(int(uSess.GatewayID))
 		if sessErr != nil {
-			return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+			return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
 		}
 
 		if gatewaySession.GetSSHClient() == nil {
-			return fmt.Errorf("gateway session %d is not promiscuous", uSess.OwnerID)
+			return fmt.Errorf("gateway session %d is not promiscuous", uSess.GatewayID)
 		}
 
 		// 2. Construct Target Path for slider-connect
