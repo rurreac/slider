@@ -27,24 +27,25 @@ type SessionsCommand struct{}
 
 // UnifiedSession represents a normalized session (local or remote)
 type UnifiedSession struct {
-	UnifiedID      int64
-	ActualID       int64
-	OwnerID        int64  // 0 for local, valid Session ID for remote gateway
-	Type           string // "LOCAL", "PROMISCUOUS/SERVER", "REMOTE"
-	User           string
-	Host           string
-	System         string
-	Role           string
-	HomeDir        string
-	WorkingDir     string // Current SFTP working directory (if active)
-	SliderDir      string // Binary path
-	LaunchDir      string // Launch path
-	Extra          string // For port info etc
+	// Identifiers
+	UnifiedID int64 // Unique ID for the session
+	ActualID  int64 // Session ID as stored on the system that owns the session
+	OwnerID   int64 // 0 for local, valid Session ID for remote gateway
+	Role      string
+	// System properties
+	PtyOn      bool
+	User       string
+	Host       string
+	System     string
+	HomeDir    string
+	WorkingDir string // Current SFTP working directory (if active)
+	SliderDir  string // Binary path
+	LaunchDir  string // Launch path
+	// Connection type
 	IsConnector    bool
 	IsGateway      bool
 	ConnectionAddr string
 	Path           []int64
-	PtyOn          bool
 }
 
 // ResolveUnifiedSessions aggregates local and remote sessions into a single list with Unified IDs
@@ -53,7 +54,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 
 	maxID := int64(0)
 
-	// 1. Collect Local Sessions
+	// Collect Local Sessions
 	localSessions := s.GetAllSessions()
 
 	for _, sess := range localSessions {
@@ -71,12 +72,6 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 		}
 
 		if sess.GetRouter() != nil || (sess.GetSSHClient() != nil && !sess.GetIsListener()) {
-			uSess.Type = "PROMISCUOUS"
-			if sess.GetSSHClient() != nil {
-				uSess.Type = "PROMISCUOUS/SERVER"
-			} else {
-				uSess.Type = "PROMISCUOUS/CLIENT"
-			}
 			uSess.User = "server"
 			if addr := sess.GetRemoteAddr(); addr != nil {
 				uSess.Host = addr.String()
@@ -99,7 +94,6 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 			uSess.HomeDir = sess.GetPeerInfo().HomeDir
 			uSess.SliderDir = sess.GetPeerInfo().SliderDir
 			uSess.LaunchDir = sess.GetPeerInfo().LaunchDir
-			uSess.Type = "LOCAL"
 			uSess.PtyOn = sess.GetPeerInfo().PtyOn
 		}
 
@@ -111,7 +105,7 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 		unifiedMap[uSess.UnifiedID] = uSess
 	}
 
-	// 2. Collect Remote Sessions
+	// Collect Remote Sessions
 	// Iterate only over Gateways/Servers
 	for _, sess := range localSessions {
 		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
@@ -131,7 +125,6 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 						UnifiedID:      maxID,
 						ActualID:       rs.ID,
 						OwnerID:        sess.GetID(), // This local session is the gateway
-						Type:           "REMOTE",
 						User:           rs.User,
 						Host:           rs.Hostname,
 						System:         system,
