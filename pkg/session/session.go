@@ -1,6 +1,7 @@
 package session
 
 import (
+	"net"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -25,9 +26,11 @@ type BidirectionalSession struct {
 	// ========================================
 	// Network Connections
 	// ========================================
-	wsConn *websocket.Conn // WebSocket underlying connection
+	// WebSocket Connection - mutually exclusive
+	wsConn  *websocket.Conn // WebSocket underlying connection
+	rawConn net.Conn        // Raw underlying Beacon connection
 
-	// SSH Connections - exactly ONE will be set based on role:
+	// SSH Connections - exactly one will be set based on role:
 	// - AgentRole/OperatorRole (Initiator): sshClient is set
 	// - OperatorRole/GatewayRole/AgentRole (Acceptor): sshServerConn is set
 	sshClient     *ssh.Client       // When acting as SSH client
@@ -175,6 +178,28 @@ func (s *BidirectionalSession) GetSSHClient() *ssh.Client {
 // GetWebSocketConn returns the WebSocket connection
 func (s *BidirectionalSession) GetWebSocketConn() *websocket.Conn {
 	return s.wsConn
+}
+
+// GetRawConn returns the raw connection
+func (s *BidirectionalSession) GetRawConn() net.Conn {
+	return s.rawConn
+}
+
+// SetRawConn sets the raw connection
+func (s *BidirectionalSession) SetRawConn(conn net.Conn) {
+	s.rawConn = conn
+}
+
+// GetRemoteAddr returns the network address of the connected peer
+// Handles both WebSocket and Raw (TCP/Beacon) connections
+func (s *BidirectionalSession) GetRemoteAddr() net.Addr {
+	if s.wsConn != nil {
+		return s.wsConn.RemoteAddr()
+	}
+	if s.rawConn != nil {
+		return s.rawConn.RemoteAddr()
+	}
+	return nil
 }
 
 // GetPeerInfo returns the remote session (peer) interpreter info

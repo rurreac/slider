@@ -83,10 +83,26 @@ type RemoteSessionState struct {
 }
 
 func (s *server) NewSSHServer(biSession *session.BidirectionalSession) {
-	netConn := sconn.WsConnToNetConn(biSession.GetWebSocketConn())
+	// Determine underlying connection type
+	var netConn net.Conn
+	var transportType string
+	if biSession.GetWebSocketConn() != nil {
+		// WebSocket connection - Websocket Tunnel
+		netConn = sconn.WsConnToNetConn(biSession.GetWebSocketConn())
+		transportType = "Websocket"
+	} else {
+		// Raw connection - Beacon Tunnel
+		netConn = biSession.GetRawConn()
+		transportType = "Beacon Tunnel"
+	}
+
+	if netConn == nil {
+		s.ErrorWith("Session has no network connection", slog.F("session_id", biSession.GetID()))
+		return
+	}
 
 	s.DebugWith(
-		"Established WebSocket connection with client",
+		"Established connection with client",
 		slog.F("session_id", biSession.GetID()),
 		slog.F("remote_addr", netConn.RemoteAddr().String()),
 	)
@@ -135,7 +151,7 @@ func (s *server) NewSSHServer(biSession *session.BidirectionalSession) {
 	}
 
 	s.DebugWith(
-		"Upgraded Websocket transport to SSH Connection",
+		fmt.Sprintf("Upgraded %s transport to SSH Connection", transportType),
 		slog.F("session_id", biSession.GetID()),
 		slog.F("host", biSession.GetSSHServerConn().RemoteAddr().String()),
 		slog.F("client_version", biSession.GetSSHServerConn().ClientVersion()),
@@ -152,12 +168,16 @@ func (s *server) NewSSHServer(biSession *session.BidirectionalSession) {
 	// This ensures handleClientInfo has access to server interpreter for reply
 	biSession.SetApplicationServer(s)
 
+	// Create and configure application router
+	appRouter := remote.NewRouter(s.Logger)
+	// Register handlers available to ALL sessions
+	appRouter.RegisterHandler("slider-beacon", s.BeaconChannelHandler)
+
 	if s.gateway {
-		// Create and configure application router for slider-connect channels
-		appRouter := remote.NewRouter(s.Logger)
+		// Register handlers available only to Gateway sessions
 		appRouter.RegisterHandler("slider-connect", remote.HandleSliderConnect)
-		biSession.SetRouter(appRouter)
 	}
+	biSession.SetRouter(appRouter)
 
 	// Use centralized channel routing
 	// Session handles all standard SSH protocol channels (shell, exec, sftp, etc.)

@@ -89,6 +89,14 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
+	case "slider-beacon":
+		if s.router != nil && s.applicationServer != nil {
+			err = s.router.Route(nc, s, s.applicationServer)
+		} else {
+			s.rejectChannel(nc, channelType, "beacon channels only supported with application router/server")
+			return nil
+		}
+
 	case "session":
 		if s.role.IsAgent() {
 			err = s.HandleShell(nc)

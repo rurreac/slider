@@ -27,6 +27,7 @@ type Config struct {
 	Fingerprint   string
 	Key           string
 	ListenerOn    bool
+	BeaconOn      bool
 	Port          int
 	Address       string
 	Retry         bool
@@ -123,8 +124,9 @@ func RunClient(cfg *Config) {
 		"Sec-WebSocket-Operation": {conf.OperationAgent},
 	}
 
-	if cfg.ListenerOn {
+	if cfg.ListenerOn || cfg.BeaconOn {
 		c.isListener = cfg.ListenerOn
+		c.isBeacon = cfg.BeaconOn
 		c.serverHeader = cfg.ServerHeader
 
 		if cfg.TemplatePath != "" {
@@ -179,6 +181,7 @@ func RunClient(cfg *Config) {
 			}
 		}
 
+		// Start Listener in a goroutine
 		go func() {
 			handler := c.buildRouter()
 
@@ -199,11 +202,12 @@ func RunClient(cfg *Config) {
 				c.Logger.FatalWith("Listener failure",
 					slog.F("err", sErr))
 			}
-
 		}()
 		c.Logger.Infof("Listening on %s://%s", listenerProto, clientAddr.String())
-		<-shutdown
-	} else {
+	}
+
+	// If ServerURL is provided, connect to Server
+	if cfg.ServerURL != "" {
 		su, uErr := listener.ResolveURL(cfg.ServerURL)
 		if uErr != nil {
 			c.Logger.Fatalf("Argument \"%s\" is not a valid URL", cfg.ServerURL)
@@ -224,6 +228,7 @@ func RunClient(cfg *Config) {
 				slog.F("key", cfg.ClientTlsKey))
 		}
 
+		// Main connection loop
 		for loop := true; loop; {
 			c.startConnection(cfg.CustomDNS)
 
@@ -239,6 +244,13 @@ func RunClient(cfg *Config) {
 				}
 				time.Sleep(c.keepalive)
 			}
+		}
+	} else {
+		// If only listening, block here until shutdown
+		if cfg.ListenerOn {
+			<-shutdown
+		} else {
+			c.Logger.Fatalf("No server URL and no listener/beacon enabled")
 		}
 	}
 

@@ -78,7 +78,9 @@ func (s *server) ResolveUnifiedSessions() map[int64]UnifiedSession {
 				uSess.Type = "PROMISCUOUS/CLIENT"
 			}
 			uSess.User = "server"
-			uSess.Host = sess.GetWebSocketConn().RemoteAddr().String()
+			if addr := sess.GetRemoteAddr(); addr != nil {
+				uSess.Host = addr.String()
+			}
 			uSess.System = "unknown/unknown"
 			uSess.HomeDir = "/"
 			if sess.GetPeerInfo().User != "" {
@@ -258,7 +260,9 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 						if sess.GetRole().IsConnector() {
 							inOut = "->"
 						}
-						connection = sess.GetWebSocketConn().RemoteAddr().String()
+						if addr := sess.GetRemoteAddr(); addr != nil {
+							connection = addr.String()
+						}
 					}
 				} else {
 					// Remote Session Logic
