@@ -565,6 +565,7 @@ Usage:
 
 Flags:
       --address string              Address the Listener will bind to (default "0.0.0.0")
+      --beacon                      Client will also act as a Pivot (accepts Agents, connects to Server)
       --caller-log                  Display caller information in logs
       --colorless                   Disables logging colors
       --dns string                  Uses custom DNS server <host[:port]> for resolving server address
@@ -613,6 +614,15 @@ it to this one.
 
 Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
 the keepalive will leave not listener clients hanging forever.
+
+#### Beacon Client Flags
+
+##### `--beacon`, `--address` and `--port`:
+A Client can run in Beacon mode (`--beacon`), where it acts as a pivot, connecting to the Server while also accepting connections from child agents on a bound address (`--address`) and port (`--port`).
+
+When a Child agent connects to the Beacon, this one passes the client's raw network connection to the first available Server in the chain. The server would then handle and authenticate the connection while the Beacon just passes through the connection.
+
+The `--beacon` and `--listener` flags are mutually exclusive.
 
 #### Listener Client Flags
 
