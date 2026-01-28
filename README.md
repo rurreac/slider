@@ -478,7 +478,7 @@ The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of 
 | System | Default Shell | Alternate Shell |
 |--------|---------------|-----------------|
 | *nix | `$SHELL`       | `/bin/sh`     |
-| Windows | `cmd.exe` | `powershell.exe` |
+| Windows | `cmd` | `powershell` |
 
 A few considerations:
 * If the client supports PTY, the Shell can be upgraded to fully interactive as well.
