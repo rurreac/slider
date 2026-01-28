@@ -146,6 +146,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 	}
 
 	for {
+		ui.Term.SetPrompt(sftpCtx.getSFTPPrompt())
 		input, rErr := ui.Term.ReadLine()
 		if rErr != nil {
 			// From 'term' documentation, CTRL^C as well as CTR^D return:
