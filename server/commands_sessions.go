@@ -445,10 +445,10 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 
 				// Build role display
 				roleDisplay := uSess.Role
-				// Gateway = has IsGateway flag (server in gateway mode)
 				if uSess.IsGateway {
+					// Gateway
 					roleDisplay += "·G"
-					// Beacon = not a gateway but has children
+					// Beacon
 				} else if hasChildren[uSess.UnifiedID] {
 					roleDisplay += "·B"
 				}
@@ -515,8 +515,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("interactive session not allowed against operator roles")
 		}
 
-		// ROUTE BASED ON LOCAL vs REMOTE
-		// GatewayID == 0 means local session, GatewayID != 0 means remote session accessed via that gateway
+		// GatewayID == 0 means local session
+		// GatewayID != 0 means remote session accessed via that gateway
 		if uSess.GatewayID == 0 {
 			// LOCAL SESSION
 			sess, sessErr := svr.GetSession(int(uSess.ActualID))
@@ -534,7 +534,8 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			if !ok {
 				return fmt.Errorf("UI is not a Console")
 			}
-			// Use the working directory from the unified session
+
+			// Use LatestDir from the unified session for directory persistence
 			opt := SftpConsoleOptions{
 				Session:    sess,
 				SftpClient: sftpCli,
@@ -545,7 +546,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 			return nil
 		}
-
 		// REMOTE SESSION
 		// Get Gateway Session using GatewayID (the local session through which we reach the remote)
 		gatewaySession, sessErr := svr.GetSession(int(uSess.GatewayID))
@@ -557,10 +557,10 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("gateway session %d is not promiscuous", uSess.GatewayID)
 		}
 
-		// Construct Target Path for slider-connect
+		// Construct Target Path for slider-connect.
 		// Format: [ID, ID, ID...]
-		// If path is empty (direct child), target is just [ActualID]
 		target := append([]int64{}, uSess.Path...)
+		// If path is empty (direct child), target is just [ActualID]
 		target = append(target, uSess.ActualID)
 
 		// Connect via slider-connect channel
