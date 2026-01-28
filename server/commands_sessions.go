@@ -443,12 +443,12 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 					hostname = hostname[:15] + "..."
 				}
 
-				// Build role display with capability suffix
-				// Gateway = has IsGateway flag (server in gateway mode)
-				// Beacon = not a gateway but has children (is acting as a relay/pivot)
+				// Build role display
 				roleDisplay := uSess.Role
+				// Gateway = has IsGateway flag (server in gateway mode)
 				if uSess.IsGateway {
 					roleDisplay += "·G"
+					// Beacon = not a gateway but has children
 				} else if hasChildren[uSess.UnifiedID] {
 					roleDisplay += "·B"
 				}
@@ -535,17 +535,19 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("UI is not a Console")
 			}
 			// Use the working directory from the unified session
-			svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
+			opt := SftpConsoleOptions{
 				Session:    sess,
 				SftpClient: sftpCli,
 				LatestDir:  uSess.WorkingDir,
-			})
+				RemoteInfo: sess.GetPeerInfo(),
+			}
+			svr.newSftpConsoleWithInterpreter(console, opt)
 			console.setConsoleAutoComplete(svr.commandRegistry, svr.serverInterpreter)
 			return nil
 		}
 
 		// REMOTE SESSION
-		// 1. Get Gateway Session using GatewayID (the local session through which we reach the remote)
+		// Get Gateway Session using GatewayID (the local session through which we reach the remote)
 		gatewaySession, sessErr := svr.GetSession(int(uSess.GatewayID))
 		if sessErr != nil {
 			return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
@@ -555,13 +557,13 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("gateway session %d is not promiscuous", uSess.GatewayID)
 		}
 
-		// 2. Construct Target Path for slider-connect
+		// Construct Target Path for slider-connect
 		// Format: [ID, ID, ID...]
 		// If path is empty (direct child), target is just [ActualID]
 		target := append([]int64{}, uSess.Path...)
 		target = append(target, uSess.ActualID)
 
-		// 3. Connect via slider-connect channel
+		// Connect via slider-connect channel
 		connReq := remote.ConnectRequest{
 			Target:      target,
 			ChannelType: "sftp",
@@ -576,13 +578,11 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Parse the target system info from UnifiedSession and create a separate interpreter
 		// This interpreter is NOT shared and won't interfere with other remote sessions
 
-		// Parse "arch/system" or "arch/system (P)" format
 		systemParts := strings.Split(uSess.System, "/")
 		remoteSystem := "unknown"
 		remoteArch := "unknown"
 		if len(systemParts) >= 2 {
 			remoteArch = systemParts[0]
-			// Remove "(P)" suffix if present
 			systemStr := systemParts[1]
 			if idx := strings.Index(systemStr, " "); idx >= 0 {
 				systemStr = systemStr[:idx]
@@ -666,11 +666,6 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 
 		// Use the unified session ID for display and pass the separate interpreter
-		// Pass the workingDir so the console starts in the target session's current directory
-		// This prevents session confusion when connecting to multiple remote targets
-		// TODO: Persistent working directory is NOT yet available for remote leaf sessions (multi-hop).
-		// Currently, uSess.WorkingDir may be empty or stale for leaves because the intermediate gateway
-		// does not track/persist the state of transient SFTP channels opened to the leaf.
 		svr.newSftpConsoleWithInterpreter(console, SftpConsoleOptions{
 			Session:         gatewaySession,
 			SftpClient:      sftpCli,
