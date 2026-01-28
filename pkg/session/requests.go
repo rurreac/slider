@@ -515,8 +515,7 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 			slog.F("is_gateway", sess.GetSSHClient() != nil))
 
 		// Get the current SFTP working directory if available
-		var workingDir string
-		workingDir = sess.GetSftpWorkingDir()
+		workingDir := sess.GetSftpWorkingDir()
 
 		// Get connection address
 		connectionAddr := ""
