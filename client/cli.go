@@ -19,6 +19,7 @@ func NewCommand() *cobra.Command {
 		fingerprint   string
 		key           string
 		listenerOn    bool
+		beaconOn      bool
 		port          int
 		address       string
 		retry         bool
@@ -50,7 +51,7 @@ to the defined Slider Server.`,
 			// Custom validation for conditional exclusion
 			if !listenerOn {
 				// When not in listener mode, these flags should not be used
-				conditionalFlags := []string{"address", "port", "fingerprint", "http-template",
+				conditionalFlags := []string{"fingerprint", "http-template",
 					"http-server-header", "http-redirect", "http-status-code", "http-version",
 					"http-health", "listener-cert", "listener-key", "listener-ca"}
 
@@ -61,12 +62,12 @@ to the defined Slider Server.`,
 				}
 			}
 
-			// Validate argument count based on listener mode
+			// Validate argument count
 			if !listenerOn && len(args) != 1 {
-				return fmt.Errorf("client requires exactly one valid server address as an argument when not in listener mode")
+				return fmt.Errorf("client requires exactly one valid server address as an argument (unless in --listener mode)")
 			}
 			if listenerOn && len(args) > 0 {
-				return fmt.Errorf("server address should not be provided in listener mode")
+				return fmt.Errorf("server address cannot be provided in --listener mode")
 			}
 
 			// Build configuration from flags
@@ -77,6 +78,7 @@ to the defined Slider Server.`,
 				Fingerprint:   fingerprint,
 				Key:           key,
 				ListenerOn:    listenerOn,
+				BeaconOn:      beaconOn,
 				Port:          port,
 				Address:       address,
 				Retry:         retry,
@@ -97,8 +99,8 @@ to the defined Slider Server.`,
 				CallerLog:     callerLog,
 			}
 
-			// Add server URL if not in listener mode
-			if !listenerOn {
+			// Add server URL if provided
+			if len(args) > 0 {
 				cfg.ServerURL = args[0]
 			}
 
@@ -115,6 +117,7 @@ to the defined Slider Server.`,
 	cmd.Flags().StringVar(&fingerprint, "fingerprint", "", "Server fingerprint for host verification (listener)")
 	cmd.Flags().StringVar(&key, "key", "", "Private key for authenticating to a Server")
 	cmd.Flags().BoolVar(&listenerOn, "listener", false, "Client will listen for incoming Server connections")
+	cmd.Flags().BoolVar(&beaconOn, "beacon", false, "Client will also act as a Pivot (accepts Agents, connects to Server)")
 	cmd.Flags().IntVar(&port, "port", 8081, "Listener port")
 	cmd.Flags().StringVar(&address, "address", "0.0.0.0", "Address the Listener will bind to")
 	cmd.Flags().BoolVar(&retry, "retry", false, "Retries reconnection indefinitely")
@@ -137,6 +140,7 @@ to the defined Slider Server.`,
 	}
 
 	// Mark mutual exclusions
+	cmd.MarkFlagsMutuallyExclusive("listener", "beacon")
 	cmd.MarkFlagsMutuallyExclusive("listener", "key")
 	cmd.MarkFlagsMutuallyExclusive("listener", "dns")
 	cmd.MarkFlagsMutuallyExclusive("listener", "retry")

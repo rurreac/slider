@@ -43,6 +43,7 @@ type client struct {
 	sessionTrack      *sessionTrack
 	sessionTrackMutex sync.Mutex
 	isListener        bool
+	isBeacon          bool
 	firstRun          bool
 	customProto       string
 	interpreter       *interpreter.Interpreter
@@ -94,7 +95,7 @@ func (c *client) startConnection(customDNS string) {
 			slog.F("err", cErr))
 		return
 	}
-	sess := c.newWebSocketSession(wsConn)
+	sess := c.newWebSocketSession(wsConn, false) // outbound connection is NEVER a listener session
 
 	// Block until SSH connection closes
 	c.newSSHClient(sess)
@@ -150,14 +151,14 @@ func (c *client) newSSHClient(sess *session.BidirectionalSession) {
 	_ = sshClient.Wait()
 }
 
-func (c *client) newWebSocketSession(wsConn *websocket.Conn) *session.BidirectionalSession {
+func (c *client) newWebSocketSession(wsConn *websocket.Conn, isListenerSession bool) *session.BidirectionalSession {
 	c.sessionTrackMutex.Lock()
 	defer c.sessionTrackMutex.Unlock()
 
 	// Create a session without SSH client (will be set later in newSSHClient)
 	serverAddr := wsConn.RemoteAddr().String()
 	sess := session.NewClientToServerSession(c.Logger, wsConn, nil, c.interpreter, serverAddr)
-	sess.SetIsListener(c.isListener)
+	sess.SetIsListener(isListenerSession)
 	sessionID := sess.GetID()
 	c.sessionTrack.Sessions[sessionID] = sess
 

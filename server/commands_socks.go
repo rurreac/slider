@@ -153,8 +153,8 @@ func listSocksSessions(svr *server, ui UserInterface) error {
 		// List remote session SOCKS servers
 		unifiedMap := svr.ResolveUnifiedSessions()
 		for unifiedID, uSess := range unifiedMap {
-			if uSess.OwnerID != 0 { // Remote session
-				socksKey := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
+			if uSess.GatewayID != 0 { // Remote session
+				socksKey := fmt.Sprintf("socks:%d:%v", uSess.GatewayID, uSess.Path)
 				svr.remoteSessionsMutex.Lock()
 				if state, ok := svr.remoteSessions[socksKey]; ok {
 					if state.SocksInstance != nil && state.SocksInstance.IsEnabled() {
@@ -251,7 +251,7 @@ func killSessionSocksServer(svr *server, ui UserInterface, sessionID int) error 
 			return fmt.Errorf("socks command not allowed against operator roles")
 		}
 		uSess = val
-		isRemote = uSess.OwnerID != 0
+		isRemote = uSess.GatewayID != 0
 	} else {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
@@ -276,7 +276,7 @@ func killSessionSocksServer(svr *server, ui UserInterface, sessionID int) error 
 	}
 
 	// Remote Strategy - kill remote session SOCKS
-	socksKey := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
+	socksKey := fmt.Sprintf("socks:%d:%v", uSess.GatewayID, uSess.Path)
 	svr.remoteSessionsMutex.Lock()
 	state, ok := svr.remoteSessions[socksKey]
 	svr.remoteSessionsMutex.Unlock()
@@ -309,7 +309,7 @@ func createSessionSocksServer(svr *server, ui UserInterface, sessionID int, port
 			return fmt.Errorf("socks command not allowed against operator roles")
 		}
 		uSess = val
-		isRemote = uSess.OwnerID != 0
+		isRemote = uSess.GatewayID != 0
 	} else {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
@@ -359,7 +359,7 @@ func createSessionSocksServer(svr *server, ui UserInterface, sessionID int, port
 		}
 	} else {
 		// Remote Strategy
-		key := fmt.Sprintf("socks:%d:%v", uSess.OwnerID, uSess.Path)
+		key := fmt.Sprintf("socks:%d:%v", uSess.GatewayID, uSess.Path)
 		svr.remoteSessionsMutex.Lock()
 		if _, ok := svr.remoteSessions[key]; !ok {
 			svr.remoteSessions[key] = &RemoteSessionState{}
@@ -374,10 +374,10 @@ func createSessionSocksServer(svr *server, ui UserInterface, sessionID int, port
 			return nil
 		}
 
-		// Setup Remote Connection
-		gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
+		// Setup Remote Connection using GatewayID
+		gatewaySession, err := svr.GetSession(int(uSess.GatewayID))
 		if err != nil {
-			return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+			return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
 		}
 
 		// Construct Target Path

@@ -514,42 +514,29 @@ func (s *BidirectionalSession) handleSliderSessions(req *ssh.Request) {
 			slog.F("is_client", sess.GetPeerInfo().User != ""),
 			slog.F("is_gateway", sess.GetSSHClient() != nil))
 
-		// Identify user/host/system/arch/homeDir/workingDir
-
-		// Identify user/host/system/arch/homeDir/workingDir
-		var baseInfo interpreter.BaseInfo
-		var workingDir string
-		host := sess.GetHostIP()
-		if sess.GetPeerInfo().User != "" {
-			// Copy BaseInfo from interpreter
-			baseInfo = sess.GetPeerInfo()
-		} else {
-			// Fallback/Init necessary fields if no interpreter
-			// (Though essentially if no interpreter, most are empty)
-			baseInfo.Hostname = host
-		}
-
-		// Ensure Hostname is set if it was empty from interpreter (e.g. connecting...)
-		// or unrelated to interpreter host
-		if baseInfo.Hostname == "" {
-			baseInfo.Hostname = host
-		}
-
 		// Get the current SFTP working directory if available
-		workingDir = sess.GetSftpWorkingDir()
+		workingDir := sess.GetSftpWorkingDir()
+
+		// Get connection address
+		connectionAddr := ""
+		if addr := sess.GetRemoteAddr(); addr != nil {
+			connectionAddr = addr.String()
+		}
 
 		sessions = append(sessions, RemoteSession{
 			ID:                sess.GetID(),
+			ParentSessionID:   sess.GetParentSessionID(), // Track parent for beacon chains
 			ServerFingerprint: fingerprint,
-			BaseInfo:          baseInfo,
+			BaseInfo:          sess.GetPeerInfo(),
 			Role:              sess.GetPeerRole().String(),
 			WorkingDir:        workingDir,
 			IsConnector:       sess.GetRole().IsConnector(),
 			IsGateway:         sess.GetIsGateway(),
-			ConnectionAddr:    sess.GetWebSocketConn().RemoteAddr().String(),
+			ConnectionAddr:    connectionAddr,
 		})
 
-		if sess.GetRouter() != nil || sess.GetSSHClient() != nil {
+		// Only query sessions that have an SSH client for remote sessions
+		if sess.GetSSHClient() != nil {
 			gatewayClients = append(gatewayClients, sess)
 		}
 	}

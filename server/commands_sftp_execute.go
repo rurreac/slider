@@ -65,7 +65,7 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 		return fmt.Errorf("UI is not a Console")
 	}
 	// Execute Command
-	if uSess.OwnerID == 0 {
+	if uSess.GatewayID == 0 {
 		// Local Execution
 		// Retrieve the actual session object
 		bidirSession, err := svr.GetSession(int(uSess.ActualID))
@@ -82,10 +82,10 @@ func (c *SftpExecuteCommand) Run(execCtx *ExecutionContext, args []string) error
 	} else {
 		// Remote Execution
 
-		// Get Gateway Session
-		gatewaySession, sessErr := svr.GetSession(int(uSess.OwnerID))
+		// Get Gateway Session using GatewayID
+		gatewaySession, sessErr := svr.GetSession(int(uSess.GatewayID))
 		if sessErr != nil {
-			return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+			return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
 		}
 
 		// Construct Path
