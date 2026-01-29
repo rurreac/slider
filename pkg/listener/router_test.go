@@ -178,67 +178,6 @@ func TestTemplateHandlerNonRootPath(t *testing.T) {
 	}
 }
 
-func TestDirIndexHandler(t *testing.T) {
-	// Create a temporary directory with a test file
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "test.txt")
-	testContent := "test content"
-
-	if err := os.WriteFile(testFile, []byte(testContent), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Change to temp dir for the test
-	oldWd, _ := os.Getwd()
-	defer func() { _ = os.Chdir(oldWd) }()
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := &RouterConfig{
-		DirIndexOn:   true,
-		DirIndexPath: "/files",
-		ServerHeader: "test-server",
-	}
-
-	mux := NewRouter(cfg)
-
-	req := httptest.NewRequest("GET", "/files/test.txt", nil)
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	resp := w.Result()
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", resp.StatusCode)
-	}
-
-	if string(body) != testContent {
-		t.Errorf("Expected body '%s', got '%s'", testContent, string(body))
-	}
-}
-
-func TestDirIndexHandlerDisabled(t *testing.T) {
-	cfg := &RouterConfig{
-		DirIndexOn: false,
-	}
-
-	mux := NewRouter(cfg)
-
-	req := httptest.NewRequest("GET", "/files/test.txt", nil)
-	w := httptest.NewRecorder()
-
-	mux.ServeHTTP(w, req)
-
-	resp := w.Result()
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Errorf("Expected status 404 when dir index disabled, got %d", resp.StatusCode)
-	}
-}
-
 func TestRouterMultipleEndpoints(t *testing.T) {
 	cfg := &RouterConfig{
 		HealthOn:     true,

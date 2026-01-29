@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 )
 
 const (
@@ -28,10 +27,6 @@ type RouterConfig struct {
 	HealthOn  bool
 	VersionOn bool
 
-	// Development features
-	DirIndexOn   bool
-	DirIndexPath string
-
 	// Console features
 	ConsoleOn bool
 	AuthOn    bool
@@ -50,16 +45,6 @@ func NewRouter(cfg *RouterConfig) *http.ServeMux {
 	}
 	if cfg.VersionOn {
 		mux.HandleFunc("/version", versionHandler(cfg))
-	}
-	if cfg.DirIndexOn {
-		prefix := cfg.DirIndexPath
-		if !strings.HasPrefix(prefix, "/") {
-			prefix = "/" + prefix
-		}
-		if !strings.HasSuffix(prefix, "/") {
-			prefix += "/"
-		}
-		mux.HandleFunc(prefix, dirIndexHandler(cfg))
 	}
 
 	return mux
@@ -142,23 +127,5 @@ func templateHandler(cfg *RouterConfig) http.HandlerFunc {
 		// No template configured or error reading it - return 404
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte("Not found"))
-	}
-}
-
-// dirIndexHandler serves directory listings and files
-func dirIndexHandler(cfg *RouterConfig) http.HandlerFunc {
-	prefix := cfg.DirIndexPath
-	if !strings.HasPrefix(prefix, "/") {
-		prefix = "/" + prefix
-	}
-	if !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		if cfg.ServerHeader != "" {
-			w.Header().Add("server", cfg.ServerHeader)
-		}
-		http.StripPrefix(prefix, http.FileServer(http.Dir("."))).ServeHTTP(w, r)
 	}
 }

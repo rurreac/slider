@@ -23,34 +23,32 @@ import (
 
 // Config holds all configuration for a server instance
 type Config struct {
-	Verbose          string
-	Address          string
-	Port             int
-	Keepalive        time.Duration
-	Colorless        bool
-	Auth             bool
-	CertJarFile      string
-	CaStore          bool
-	CaStorePath      string
-	TemplatePath     string
-	ServerHeader     string
-	HttpRedirect     string
-	StatusCode       int
-	HttpVersion      bool
-	HttpHealth       bool
-	HttpDirIndex     bool
-	HttpDirIndexPath string
-	CustomProto      string
-	ListenerCert     string
-	ListenerKey      string
-	ListenerCA       string
-	JsonLog          bool
-	CallerLog        bool
-	Headless         bool
-	HttpConsole      bool
-	Gateway          bool
-	CallbackURL      string
-	CallbackRetry    bool
+	Verbose       string
+	Address       string
+	Port          int
+	Keepalive     time.Duration
+	Colorless     bool
+	Auth          bool
+	CertJarFile   string
+	CaStore       bool
+	CaStorePath   string
+	TemplatePath  string
+	ServerHeader  string
+	HttpRedirect  string
+	StatusCode    int
+	HttpVersion   bool
+	HttpHealth    bool
+	CustomProto   string
+	ListenerCert  string
+	ListenerKey   string
+	ListenerCA    string
+	JsonLog       bool
+	CallerLog     bool
+	Headless      bool
+	HttpConsole   bool
+	Gateway       bool
+	CallbackURL   string
+	CallbackRetry bool
 }
 
 // RunServer starts a server with the given configuration
@@ -108,8 +106,6 @@ func RunServer(cfg *Config) {
 		serverHeader:      cfg.ServerHeader,
 		httpVersion:       cfg.HttpVersion,
 		httpHealth:        cfg.HttpHealth,
-		httpDirIndex:      cfg.HttpDirIndex,
-		httpDirIndexPath:  cfg.HttpDirIndexPath,
 		httpConsoleOn:     cfg.HttpConsole,
 		customProto:       cfg.CustomProto,
 		gateway:           cfg.Gateway,

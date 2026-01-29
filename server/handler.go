@@ -33,8 +33,6 @@ func (s *server) buildRouter() http.Handler {
 		UrlRedirect:  s.urlRedirect,
 		HealthOn:     s.httpHealth,
 		VersionOn:    s.httpVersion,
-		DirIndexOn:   s.httpDirIndex,
-		DirIndexPath: s.httpDirIndexPath,
 		ConsoleOn:    s.httpConsoleOn,
 		AuthOn:       s.authOn,
 	})

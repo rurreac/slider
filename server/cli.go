@@ -12,34 +12,32 @@ import (
 // NewCommand creates the server cobra command
 func NewCommand() *cobra.Command {
 	var (
-		verbose          string
-		address          string
-		port             int
-		keepalive        time.Duration
-		colorless        bool
-		auth             bool
-		certJarFile      string
-		caStore          bool
-		caStorePath      string
-		templatePath     string
-		serverHeader     string
-		httpRedirect     string
-		statusCode       int
-		httpVersion      bool
-		httpHealth       bool
-		httpDirIndex     bool
-		httpDirIndexPath string
-		customProto      string
-		listenerCert     string
-		listenerKey      string
-		listenerCA       string
-		jsonLog          bool
-		callerLog        bool
-		headless         bool
-		httpConsole      bool
-		gateway          bool
-		callbackURL      string
-		callbackRetry    bool
+		verbose       string
+		address       string
+		port          int
+		keepalive     time.Duration
+		colorless     bool
+		auth          bool
+		certJarFile   string
+		caStore       bool
+		caStorePath   string
+		templatePath  string
+		serverHeader  string
+		httpRedirect  string
+		statusCode    int
+		httpVersion   bool
+		httpHealth    bool
+		customProto   string
+		listenerCert  string
+		listenerKey   string
+		listenerCA    string
+		jsonLog       bool
+		callerLog     bool
+		headless      bool
+		httpConsole   bool
+		gateway       bool
+		callbackURL   string
+		callbackRetry bool
 	)
 
 	cmd := &cobra.Command{
@@ -55,34 +53,32 @@ its integrated Console by pressing CTR^C at any time.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Build configuration from flags
 			cfg := &Config{
-				Verbose:          verbose,
-				Address:          address,
-				Port:             port,
-				Keepalive:        keepalive,
-				Colorless:        colorless,
-				Auth:             auth,
-				CertJarFile:      certJarFile,
-				CaStore:          caStore,
-				CaStorePath:      caStorePath,
-				TemplatePath:     templatePath,
-				ServerHeader:     serverHeader,
-				HttpRedirect:     httpRedirect,
-				StatusCode:       statusCode,
-				HttpVersion:      httpVersion,
-				HttpHealth:       httpHealth,
-				HttpDirIndex:     httpDirIndex,
-				HttpDirIndexPath: httpDirIndexPath,
-				CustomProto:      customProto,
-				ListenerCert:     listenerCert,
-				ListenerKey:      listenerKey,
-				ListenerCA:       listenerCA,
-				JsonLog:          jsonLog,
-				CallerLog:        callerLog,
-				Headless:         headless,
-				HttpConsole:      httpConsole,
-				Gateway:          gateway,
-				CallbackURL:      callbackURL,
-				CallbackRetry:    callbackRetry,
+				Verbose:       verbose,
+				Address:       address,
+				Port:          port,
+				Keepalive:     keepalive,
+				Colorless:     colorless,
+				Auth:          auth,
+				CertJarFile:   certJarFile,
+				CaStore:       caStore,
+				CaStorePath:   caStorePath,
+				TemplatePath:  templatePath,
+				ServerHeader:  serverHeader,
+				HttpRedirect:  httpRedirect,
+				StatusCode:    statusCode,
+				HttpVersion:   httpVersion,
+				HttpHealth:    httpHealth,
+				CustomProto:   customProto,
+				ListenerCert:  listenerCert,
+				ListenerKey:   listenerKey,
+				ListenerCA:    listenerCA,
+				JsonLog:       jsonLog,
+				CallerLog:     callerLog,
+				Headless:      headless,
+				HttpConsole:   httpConsole,
+				Gateway:       gateway,
+				CallbackURL:   callbackURL,
+				CallbackRetry: callbackRetry,
 			}
 
 			// Call the RunServer function
@@ -119,8 +115,6 @@ its integrated Console by pressing CTR^C at any time.`,
 	cmd.Flags().BoolVar(&jsonLog, "json-log", false, "Enables JSON formatted logging")
 	if conf.Version == "development" {
 		cmd.Flags().BoolVar(&callerLog, "caller-log", false, "Display caller information in logs")
-		cmd.Flags().BoolVar(&httpDirIndex, "http-dir-index", false, "Enables /dir HTTP path with file browsing")
-		cmd.Flags().StringVar(&httpDirIndexPath, "http-dir-index-path", "/dir", "Sets custom directory index path")
 	}
 
 	// Mark flag dependencies
