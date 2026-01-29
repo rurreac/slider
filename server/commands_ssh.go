@@ -81,7 +81,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("ssh command not allowed against operator roles")
 		}
 		uSess = val
-		isRemote = uSess.OwnerID != 0
+		isRemote = uSess.GatewayID != 0
 	} else {
 		return fmt.Errorf("unknown session ID %d", sessionID)
 	}
@@ -143,7 +143,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 	} else {
 		// Remote Strategy
-		key := fmt.Sprintf("ssh:%d:%v", uSess.OwnerID, uSess.Path)
+		key := fmt.Sprintf("ssh:%d:%v", uSess.GatewayID, uSess.Path)
 		svr.remoteSessionsMutex.Lock()
 		if _, ok := svr.remoteSessions[key]; !ok {
 			svr.remoteSessions[key] = &RemoteSessionState{}
@@ -175,10 +175,10 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 				return nil
 			}
 
-			// Setup Remote Connection
-			gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
+			// Setup Remote Connection using GatewayID
+			gatewaySession, err := svr.GetSession(int(uSess.GatewayID))
 			if err != nil {
-				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+				return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
 			}
 
 			// Construct Target Path
@@ -198,7 +198,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			config.SetSSHConn(remoteConn)
 			config.SetExpose(*sExpose)
 			config.SetUseAltShell(*sAltShell)
-			if uSess.PtyOn {
+			if uSess.BaseInfo.PtyOn {
 				config.SetPtyOn(true)
 			}
 

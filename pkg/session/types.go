@@ -74,6 +74,7 @@ type RevPortControl struct {
 // RemoteSession represents a session on a connected server
 type RemoteSession struct {
 	ID                int64
+	ParentSessionID   int64 // Parent session ID (0 for direct connections to the reporting server)
 	ServerFingerprint string
 	interpreter.BaseInfo
 	Role           string

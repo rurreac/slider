@@ -478,7 +478,7 @@ The `alt-shell` flag (`-a`) can be used to spawn the alternate shell instead of 
 | System | Default Shell | Alternate Shell |
 |--------|---------------|-----------------|
 | *nix | `$SHELL`       | `/bin/sh`     |
-| Windows | `cmd.exe` | `powershell.exe` |
+| Windows | `cmd` | `powershell` |
 
 A few considerations:
 * If the client supports PTY, the Shell can be upgraded to fully interactive as well.
@@ -515,18 +515,38 @@ If the server was run with the `--ca-store` flag, the CA certificate and key wil
 If we generated our own certificates for server or client listeners with this CA, we can also provide this CA to authenticate
 listener client certificates.
 
-Once you have the dump the CA certificate and key, you can use them to create your own certificates for client listeners as in the example below:
+Once you have the dump the CA certificate and key, you can use them to create your own certificates for listeners (server or client) as in the example below:
 
 1. Generate ECDSA/prime256v1 key:
 ```
-c_name="http-listener"
+c_name="listener"
 openssl ecparam -genkey -name prime256v1 -out $c_name.key
 ```
 > While you can use the ed25519 algorithm (`openssl genpkey -algorithm ED25519 -out $c_name.key`), it is not supported by all browsers and will error. 
+2. Generate certificate (replace host/IP as necessary, optionally remove `clientAuth` if you don't plan to reuse it for client authentication):
+```
+openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
+-addext "subjectAltName = DNS:localhost,IP:127.0.0.1" \
+-addext "extendedKeyUsage = serverAuth, clientAuth"
+```
+3. Sign certificate using CA:
+```
+openssl x509 -req -in $c_name.csr -CA ca_cert.pem -CAkey ca_key.pem \
+-CAcreateserial -out signed-$c_name.crt -days 9999 -sha256 -copy_extensions copyall
+```
+
+For generating client only certificates (if mTLS is enabled):
+
+1. Generate ECDSA/prime256v1 key:
+```
+c_name="client"
+openssl ecparam -genkey -name prime256v1 -out $c_name.key
+```
 2. Generate certificate (replace host/IP as necessary):
 ```
 openssl req -new -key $c_name.key -out $c_name.csr -subj "/CN=localhost" \
--addext "subjectAltName = DNS:localhost,IP:127.0.0.1"
+-addext "subjectAltName = DNS:localhost,IP:127.0.0.1" \
+-addext "extendedKeyUsage = clientAuth"
 ```
 3. Sign certificate using CA:
 ```
@@ -565,6 +585,7 @@ Usage:
 
 Flags:
       --address string              Address the Listener will bind to (default "0.0.0.0")
+      --beacon                      Client will also act as a Pivot (accepts Agents, connects to Server)
       --caller-log                  Display caller information in logs
       --colorless                   Disables logging colors
       --dns string                  Uses custom DNS server <host[:port]> for resolving server address
@@ -613,6 +634,18 @@ it to this one.
 
 Keepalive ensures that non listener clients terminate their connection to the server and shutdown, completely disabling
 the keepalive will leave not listener clients hanging forever.
+
+#### Beacon Client Flags
+
+##### `--beacon`, `--address` and `--port`:
+A Client can run in Beacon mode (`--beacon`), in this mode it connects to the Server while also accepting connections from child agents (clients) on a bound address (`--address`) and port (`--port`).
+
+When a Child agent connects to the Beacon, this one passes the client's raw network connection to the first available Server in the chain. The server would then handle and authenticate the connection while the Beacon just passes through the connection.
+
+A client wanting to connect to a Server with certificates enabled through a Beacon must connect to the Beacon using HTTPS even though the Beacon is not configured with certificates, so that Secure Websocket connections are used. 
+If the Server is also providing a CA certificate (mTLS), the client must connect to the beacon using a certificate and key generated from the same CA.
+
+The `--beacon` client cannot be `--listener` at the same time.
 
 #### Listener Client Flags
 

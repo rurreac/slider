@@ -99,7 +99,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 				return fmt.Errorf("portfwd command not allowed against operator roles")
 			}
 			uSess = val
-			isRemote = uSess.OwnerID != 0
+			isRemote = uSess.GatewayID != 0
 		} else {
 			return fmt.Errorf("unknown session ID %d", *pSession)
 		}
@@ -155,7 +155,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 	} else {
 		// Remote Strategy
-		key := fmt.Sprintf("portfwd:%d:%v", uSess.OwnerID, uSess.Path)
+		key := fmt.Sprintf("portfwd:%d:%v", uSess.GatewayID, uSess.Path)
 		svr.remoteSessionsMutex.Lock()
 		if _, ok := svr.remoteSessions[key]; !ok {
 			svr.remoteSessions[key] = &RemoteSessionState{}
@@ -165,9 +165,9 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 
 		// Ensure SSHInstance exists (generic)
 		if state.SSHInstance == nil {
-			gatewaySession, err := svr.GetSession(int(uSess.OwnerID))
+			gatewaySession, err := svr.GetSession(int(uSess.GatewayID))
 			if err != nil {
-				return fmt.Errorf("gateway session %d not found", uSess.OwnerID)
+				return fmt.Errorf("gateway session %d not found", uSess.GatewayID)
 			}
 
 			target := append([]int64{}, uSess.Path...)

@@ -123,32 +123,37 @@ func (s *server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Determine role based on operation
 	switch operationType := r.Header.Get("Sec-WebSocket-Operation"); operationType {
+
+	// Callback agent connecting to us
 	case conf.OperationAgent:
-		// Callback agent connecting to us
 		if s.gateway {
 			biSession.SetRole(session.GatewayListener)
 		} else {
 			biSession.SetRole(session.OperatorListener)
 		}
 		biSession.SetPeerRole(session.AgentConnector)
+		// Regular agents are not gateways
+		biSession.SetIsGateway(false)
 
+	// Gateway server connecting to us wanting us to control it
 	case conf.OperationCallback:
-		// Gateway server connecting to us wanting US to control THEM
 		biSession.SetRole(session.OperatorListener)
 		biSession.SetPeerRole(session.AgentConnector)
+		// Callback sources are gateways with potential children
+		biSession.SetIsGateway(true)
 
+	// OperationGateway: Server connecting to listening client
+	// OperationOperator: Incoming management request (Someone wants to control US)
 	case conf.OperationGateway, conf.OperationOperator:
-		// OperationGateway: Server connecting to listening client (client should expose shell)
-		// OperationOperator: Incoming management request (Someone wants to control US)
 		biSession.SetRole(session.AgentListener)
 		biSession.SetPeerRole(session.OperatorConnector)
 
+	// Default fallback
 	default:
-		// Default fallback
 		biSession.SetRole(session.OperatorListener)
 		biSession.SetPeerRole(session.AgentConnector)
+		biSession.SetIsGateway(false)
 	}
-	biSession.SetIsGateway(false) // Inbound connections are never relays by default
 
 	// Add to server's session track
 	s.sessionTrackMutex.Lock()

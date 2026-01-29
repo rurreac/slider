@@ -37,13 +37,6 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 	targetSessionID := opts.targetSessionID
 	latestDir := opts.LatestDir
 
-	// Since we always ensure an Interpreter at initialization, this should never happen.
-	if bSession.GetPeerInfo().User == "" {
-		ui.PrintError("Session interpreter not initialized, won't enter interactive")
-		return
-	}
-	remoteInfo = bSession.GetPeerInfo()
-
 	// Get the current directory
 	localCwd, clErr := os.Getwd()
 	if clErr != nil {
@@ -77,8 +70,7 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 		}
 	}
 
-	// Normalize the working directory to SFTP format (Unix-style paths)
-	// SFTP protocol always uses Unix-style paths even for Windows servers
+	// Normalize the working directory to SFTP format
 	if remoteCwd != "" {
 		remoteCwd = spath.NormalizeToSFTPPath(remoteCwd, remoteInfo.System)
 	}
@@ -88,10 +80,9 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 		targetSessionID = bSession.GetID()
 	}
 
-	// Keep remoteCwd in SFTP format (Unix-style) from sftpClient.Getwd()
-	// Convert remoteHomeDir to SFTP format if it's in native Windows format
+	// Convert remoteHomeDir to SFTP format
 	remoteHomeDirSFTP := spath.NormalizeToSFTPPath(remoteInfo.HomeDir, remoteInfo.System)
-	// Store SFTP format in the target interpreter for consistent usage
+	// Store SFTP format if differs from native format
 	if remoteHomeDirSFTP != remoteInfo.HomeDir {
 		remoteInfo.HomeDir = remoteHomeDirSFTP
 	}
@@ -115,20 +106,16 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 
 	// Persist the initial working directory to the session using the context
 	sftpCtx.setCwd(remoteCwd, true)
-	// Set the terminal prompt and autocomplete
-	ui.Term.SetPrompt(sftpCtx.getSFTPPrompt())
-	ui.setSftpConsoleAutoComplete(sftpRegistry, sftpCtx, sftpClient)
 
-	// Replace Console History with own History for SFTP Session
-	// Save current history first
+	// Save current history
 	mainHistory := ui.Term.History
 
 	// Initialize SFTP history if not already set
-	// Each session gets its own history instance (not shared)
 	if bSession.GetSftpHistory() == nil {
 		bSession.SetSftpHistory(session.NewCustomHistory())
 	}
 	sftpHistory := bSession.GetSftpHistory()
+	// Replace Console History with own History for SFTP Session
 	ui.Term.History = sftpHistory
 
 	defer func() {
@@ -145,7 +132,11 @@ func (s *server) newSftpConsoleWithInterpreter(ui *Console, opts SftpConsoleOpti
 		sftpRegistry: sftpRegistry,
 	}
 
+	// Set the terminal autocompletion
+	ui.setSftpConsoleAutoComplete(sftpRegistry, sftpCtx, sftpClient)
+
 	for {
+		ui.Term.SetPrompt(sftpCtx.getSFTPPrompt())
 		input, rErr := ui.Term.ReadLine()
 		if rErr != nil {
 			// From 'term' documentation, CTRL^C as well as CTR^D return:

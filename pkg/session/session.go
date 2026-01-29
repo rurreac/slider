@@ -1,6 +1,7 @@
 package session
 
 import (
+	"net"
 	"slider/pkg/instance"
 	"slider/pkg/interpreter"
 	"slider/pkg/slog"
@@ -25,9 +26,11 @@ type BidirectionalSession struct {
 	// ========================================
 	// Network Connections
 	// ========================================
-	wsConn *websocket.Conn // WebSocket underlying connection
+	// WebSocket Connection - mutually exclusive
+	wsConn  *websocket.Conn // WebSocket underlying connection
+	rawConn net.Conn        // Raw underlying Beacon connection
 
-	// SSH Connections - exactly ONE will be set based on role:
+	// SSH Connections - exactly one will be set based on role:
 	// - AgentRole/OperatorRole (Initiator): sshClient is set
 	// - OperatorRole/GatewayRole/AgentRole (Acceptor): sshServerConn is set
 	sshClient     *ssh.Client       // When acting as SSH client
@@ -41,9 +44,10 @@ type BidirectionalSession struct {
 	peerBaseInfo     interpreter.BaseInfo     // Remote system info received from peer
 	peerIdentity     string                   // Peer server identity (fingerprint:port) for loop detection
 	initTermSize     types.TermDimensions
-	isListener       bool // Whether this session is to/from a listener client
-	isGateway        bool // Whether the peer node is in gateway mode
-	useAltShell      bool // Whether to use the alternate shell for execution
+	isListener       bool  // Whether this session is to/from a listener client
+	isGateway        bool  // Whether the peer node is in gateway mode
+	useAltShell      bool  // Whether to use the alternate shell for execution
+	parentSessionID  int64 // Session ID of the beacon that tunneled this connection (0 if direct)
 
 	// Channel tracking
 	channels      []ssh.Channel
@@ -177,6 +181,28 @@ func (s *BidirectionalSession) GetWebSocketConn() *websocket.Conn {
 	return s.wsConn
 }
 
+// GetRawConn returns the raw connection
+func (s *BidirectionalSession) GetRawConn() net.Conn {
+	return s.rawConn
+}
+
+// SetRawConn sets the raw connection
+func (s *BidirectionalSession) SetRawConn(conn net.Conn) {
+	s.rawConn = conn
+}
+
+// GetRemoteAddr returns the network address of the connected peer
+// Handles both WebSocket and Raw Beacon connections
+func (s *BidirectionalSession) GetRemoteAddr() net.Addr {
+	if s.wsConn != nil {
+		return s.wsConn.RemoteAddr()
+	}
+	if s.rawConn != nil {
+		return s.rawConn.RemoteAddr()
+	}
+	return nil
+}
+
 // GetPeerInfo returns the remote session (peer) interpreter info
 func (s *BidirectionalSession) GetPeerInfo() interpreter.BaseInfo {
 	return s.peerBaseInfo
@@ -261,4 +287,19 @@ func (s *BidirectionalSession) GetCertInfo() (id int64, fingerprint string) {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
 	return s.certInfo.id, s.certInfo.fingerprint
+}
+
+// GetParentSessionID returns the session ID of the beacon that tunneled this connection
+// Returns 0 for direct connections
+func (s *BidirectionalSession) GetParentSessionID() int64 {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	return s.parentSessionID
+}
+
+// SetParentSessionID sets the parent session ID for beacon-tunneled connections
+func (s *BidirectionalSession) SetParentSessionID(parentID int64) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+	s.parentSessionID = parentID
 }
