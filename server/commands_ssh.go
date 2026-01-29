@@ -198,7 +198,7 @@ func (c *SSHCommand) Run(ctx *ExecutionContext, args []string) error {
 			config.SetSSHConn(remoteConn)
 			config.SetExpose(*sExpose)
 			config.SetUseAltShell(*sAltShell)
-			if uSess.PtyOn {
+			if uSess.BaseInfo.PtyOn {
 				config.SetPtyOn(true)
 			}
 

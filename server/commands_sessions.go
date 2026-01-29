@@ -11,9 +11,11 @@ import (
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
 	"slider/pkg/session"
+	"slider/pkg/spath"
 
 	"github.com/pkg/sftp"
 	"github.com/spf13/pflag"
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -35,14 +37,8 @@ type UnifiedSession struct {
 	GatewayID int64 // Local gateway session ID for routing (0 for local sessions)
 	Role      string
 	// System properties
-	PtyOn      bool
-	User       string
-	Host       string
-	System     string
-	HomeDir    string
+	BaseInfo   interpreter.BaseInfo
 	WorkingDir string // Current SFTP working directory (if active)
-	SliderDir  string // Binary path
-	LaunchDir  string // Launch path
 	// Connection type
 	IsConnector    bool
 	IsGateway      bool
@@ -106,37 +102,13 @@ func (s *server) createUnifiedFromLocal(sess *session.BidirectionalSession) Unif
 		UnifiedID: sess.GetID(),
 		ActualID:  sess.GetID(),
 		OwnerID:   sess.GetParentSessionID(), // 0 for direct, parent ID for beacon-tunneled
-		User:      "unknown",
-		Host:      "unknown",
-		System:    "unknown",
+		BaseInfo:  sess.GetPeerInfo(),
 	}
 
-	peerInfo := sess.GetPeerInfo()
-
 	if sess.GetRouter() != nil || (sess.GetSSHClient() != nil && !sess.GetIsListener()) {
-		uSess.User = "server"
 		if addr := sess.GetRemoteAddr(); addr != nil {
-			uSess.Host = addr.String()
+			uSess.BaseInfo.Hostname = addr.String()
 		}
-		uSess.System = "unknown/unknown"
-		uSess.HomeDir = "/"
-		if peerInfo.User != "" {
-			uSess.User = peerInfo.User
-			uSess.Host = peerInfo.Hostname
-			uSess.System = fmt.Sprintf("%s/%s", peerInfo.Arch, peerInfo.System)
-			uSess.HomeDir = peerInfo.HomeDir
-			uSess.SliderDir = peerInfo.SliderDir
-			uSess.LaunchDir = peerInfo.LaunchDir
-			uSess.PtyOn = peerInfo.PtyOn
-		}
-	} else if peerInfo.User != "" {
-		uSess.User = peerInfo.User
-		uSess.Host = peerInfo.Hostname
-		uSess.System = fmt.Sprintf("%s/%s", peerInfo.Arch, peerInfo.System)
-		uSess.HomeDir = peerInfo.HomeDir
-		uSess.SliderDir = peerInfo.SliderDir
-		uSess.LaunchDir = peerInfo.LaunchDir
-		uSess.PtyOn = peerInfo.PtyOn
 	}
 
 	uSess.Role = sess.GetPeerRole().String()
@@ -201,11 +173,6 @@ func (s *server) processRemoteSessions(unifiedMap map[int64]UnifiedSession, entr
 func (s *server) createUnifiedFromRemote(entry remoteSessionEntry, lookup map[pathKey]int64) UnifiedSession {
 	rs := entry.rs
 
-	system := fmt.Sprintf("%s/%s", rs.Arch, rs.System)
-	if rs.System == "" || rs.Arch == "" {
-		system = "REMOTE"
-	}
-
 	ownerID := s.resolveRemoteOwner(entry, lookup)
 
 	// Get the unified ID for this session
@@ -221,19 +188,13 @@ func (s *server) createUnifiedFromRemote(entry remoteSessionEntry, lookup map[pa
 		ActualID:       rs.ID,
 		OwnerID:        ownerID,
 		GatewayID:      entry.gatewayID, // Local gateway for routing
-		User:           rs.User,
-		Host:           rs.Hostname,
-		System:         system,
+		BaseInfo:       rs.BaseInfo,
 		Role:           rs.Role,
-		HomeDir:        rs.HomeDir,
 		WorkingDir:     rs.WorkingDir,
-		SliderDir:      rs.SliderDir,
-		LaunchDir:      rs.LaunchDir,
 		IsConnector:    rs.IsConnector,
 		IsGateway:      rs.IsGateway,
 		ConnectionAddr: rs.ConnectionAddr,
 		Path:           rs.Path,
-		PtyOn:          rs.PtyOn,
 	}
 }
 
@@ -438,7 +399,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				}
 
 				// Truncate host if needed
-				hostname := uSess.Host
+				hostname := uSess.BaseInfo.Hostname
 				if len(hostname) > 15 {
 					hostname = hostname[:15] + "..."
 				}
@@ -456,9 +417,9 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 				_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t\n",
 					uSess.UnifiedID,
 					ownerStr,
-					uSess.System,
+					fmt.Sprintf("%s/%s", uSess.BaseInfo.Arch, uSess.BaseInfo.System),
 					roleDisplay,
-					uSess.User,
+					uSess.BaseInfo.User,
 					hostname,
 					inOut,
 					connection,
@@ -575,80 +536,17 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 			return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
 		}
 
-		// Parse the target system info from UnifiedSession and create a separate interpreter
-		// This interpreter is NOT shared and won't interfere with other remote sessions
-
-		systemParts := strings.Split(uSess.System, "/")
-		remoteSystem := "unknown"
-		remoteArch := "unknown"
-		if len(systemParts) >= 2 {
-			remoteArch = systemParts[0]
-			systemStr := systemParts[1]
-			if idx := strings.Index(systemStr, " "); idx >= 0 {
-				systemStr = systemStr[:idx]
-			}
-			remoteSystem = strings.ToLower(systemStr)
-		}
-
-		// Get HomeDir from UnifiedSession - convert to SFTP format if needed
-		homeDir := uSess.HomeDir
-		if remoteSystem == "windows" {
-			if strings.Contains(homeDir, "\\") {
-				homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
-			} else if !strings.HasPrefix(homeDir, "/") && homeDir != "/" {
-				homeDir = "/" + homeDir
-			}
-		}
-
 		remoteInfo := interpreter.BaseInfo{
-			User:      uSess.User,
-			Hostname:  uSess.Host,
-			HomeDir:   homeDir,
-			System:    remoteSystem,
-			Arch:      remoteArch,
-			SliderDir: uSess.SliderDir,
-			LaunchDir: uSess.LaunchDir,
+			User:      uSess.BaseInfo.User,
+			Hostname:  uSess.BaseInfo.Hostname,
+			HomeDir:   spath.NormalizeToSFTPPath(uSess.BaseInfo.HomeDir, uSess.BaseInfo.System),
+			System:    uSess.BaseInfo.System,
+			Arch:      uSess.BaseInfo.Arch,
+			SliderDir: uSess.BaseInfo.SliderDir,
+			LaunchDir: uSess.BaseInfo.LaunchDir,
 		}
 
-		// Handle channel requests in background
-		// When client-info arrives, update our separate interpreter
-		go func() {
-			for req := range reqs {
-				switch req.Type {
-				case "keep-alive":
-					_ = gatewaySession.ReplyConnRequest(req, true, []byte("pong"))
-				case "client-info":
-					ci := &interpreter.Info{}
-					if jErr := json.Unmarshal(req.Payload, ci); jErr == nil {
-						// Update the remote interpreter (NOT the gateway session's interpreter)
-						// Convert HomeDir to SFTP format for Windows systems if needed
-						homeDir := ci.HomeDir
-						if strings.ToLower(ci.System) == "windows" {
-							// Only convert if it's in native Windows format (contains backslashes)
-							if strings.Contains(homeDir, "\\") {
-								homeDir = "/" + strings.ReplaceAll(homeDir, "\\", "/")
-							} else if !strings.HasPrefix(homeDir, "/") && homeDir != "/" {
-								// Handle case where Windows path uses forward slashes but isn't in SFTP format
-								homeDir = "/" + homeDir
-							}
-						}
-						// Copy the updated values to our remote interpreter
-						remoteInfo.User = ci.User
-						remoteInfo.Hostname = ci.Hostname
-						remoteInfo.HomeDir = homeDir
-						remoteInfo.System = strings.ToLower(ci.System)
-						remoteInfo.Arch = ci.Arch
-						remoteInfo.SliderDir = ci.SliderDir
-						remoteInfo.LaunchDir = ci.LaunchDir
-					}
-					_ = gatewaySession.ReplyConnRequest(req, true, nil)
-				default:
-					if req.WantReply {
-						_ = req.Reply(false, nil)
-					}
-				}
-			}
-		}()
+		go ssh.DiscardRequests(reqs)
 
 		// Wrap in the SFTP client
 		sftpCli, err := sftp.NewClientPipe(sftpChan, sftpChan)

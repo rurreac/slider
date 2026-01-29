@@ -235,7 +235,7 @@ func (c *ShellCommand) Run(ctx *ExecutionContext, args []string) error {
 						port:                 port,
 						tlsConfig:            tlsConfig,
 						ui:                   ui,
-						targetSystem:         uSess.System,
+						targetSystem:         uSess.BaseInfo.System,
 					}
 					ui.PrintInfo("Connecting to Shell...")
 					if intErr := interactiveConf.Run(); intErr != nil {
@@ -585,7 +585,7 @@ func (c *ShellCommand) handleRemoteShell(s *server, uSess UnifiedSession, ui Use
 					port:                 actualPort,
 					tlsConfig:            tlsConfig,
 					ui:                   ui,
-					targetSystem:         uSess.System,
+					targetSystem:         uSess.BaseInfo.System,
 				}
 				ui.PrintInfo("Connecting to Shell...")
 
