@@ -54,15 +54,28 @@ builds:
     # If you do, you are responsible for keeping different builds from
     # overriding each other.
     no_unique_dist_dir: true
-    # Overrides allows to override some fields for specific targets.
-    # This can be specially useful when using CGO.
-    # Note: it'll only match if the full target matches.
-    #
-    # Since: v1.5
-    overrides:
-      - goos: darwin
-        goarch: arm64
-        goamd64: v1
+  - id: client
+    binary: slider-client_{{ .Os }}_{{ .Arch }}
+    main: ./client/cmd
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X slider/pkg/conf.Version={{.Version}}
+      - -X slider/pkg/conf.binOS={{.Os}}
+      - -X slider/pkg/conf.binArch={{.Arch}}
+      - -X slider/pkg/conf.commit={{.Commit}}
+      - -X slider/pkg/conf.date={{.Date}}
+      - -X slider/pkg/conf.goVer={{.Env.GOVERSION}}
+    env:
+      - CGO_ENABLED=0
+      - GOVERSION={{ .Env.GOVERSION }}
+    goos: ['darwin', 'linux', 'windows']
+    goarch: [ '386', 'amd64', 'arm64' ]
+    ignore:
+      - goos: 'darwin'
+        goarch: '386'
+    no_unique_dist_dir: true
 changelog:
   sort: asc
   filters:
