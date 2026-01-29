@@ -638,11 +638,14 @@ the keepalive will leave not listener clients hanging forever.
 #### Beacon Client Flags
 
 ##### `--beacon`, `--address` and `--port`:
-A Client can run in Beacon mode (`--beacon`), where it acts as a pivot, connecting to the Server while also accepting connections from child agents on a bound address (`--address`) and port (`--port`).
+A Client can run in Beacon mode (`--beacon`), in this mode it connects to the Server while also accepting connections from child agents (clients) on a bound address (`--address`) and port (`--port`).
 
 When a Child agent connects to the Beacon, this one passes the client's raw network connection to the first available Server in the chain. The server would then handle and authenticate the connection while the Beacon just passes through the connection.
 
-The `--beacon` and `--listener` flags are mutually exclusive.
+A client wanting to connect to a Server with certificates enabled through a Beacon must connect to the Beacon using HTTPS even though the Beacon is not configured with certificates, so that Secure Websocket connections are used. 
+If the Server is also providing a CA certificate (mTLS), the client must connect to the beacon using a certificate and key generated from the same CA.
+
+The `--beacon` client cannot be `--listener` at the same time.
 
 #### Listener Client Flags
 
