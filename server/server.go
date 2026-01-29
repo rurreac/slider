@@ -57,8 +57,6 @@ type server struct {
 	port                 int
 	httpVersion          bool
 	httpHealth           bool
-	httpDirIndex         bool
-	httpDirIndexPath     string
 	httpConsoleOn        bool
 	gateway              bool
 	CertificateAuthority *scrypt.CertificateAuthority
