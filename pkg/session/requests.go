@@ -195,7 +195,7 @@ func (s *BidirectionalSession) handleKeepAlive(req *ssh.Request) {
 	s.logger.DebugWith("Received keep-alive request",
 		slog.F("session_id", s.sessionID))
 
-	if err := s.ReplyConnRequest(req, true, []byte("pong")); err != nil {
+	if err := s.ReplyConnRequest(req, true, nil); err != nil {
 		s.logger.ErrorWith("Error sending keep-alive reply",
 			slog.F("session_id", s.sessionID),
 			slog.F("request_type", req.Type),

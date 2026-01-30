@@ -426,7 +426,8 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 	envChange := make(chan []byte, 10)
 	defer close(envChange)
 
-	var externalPtyRequested bool // Local PTY tracking for this connection
+	// Local PTY tracking for this connection
+	var externalPtyRequested bool
 
 	for req := range requests {
 		ok := false
@@ -500,6 +501,13 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			}
 		case conf.SSHRequestTcpIpForward:
 			go si.handleTcpIpForwardRequest(req)
+		case conf.SSHRequestKeepAlive:
+			ok = true
+			if req.WantReply {
+				go func() {
+					_ = req.Reply(ok, nil)
+				}()
+			}
 		default:
 			si.Logger.DebugWith("Request status",
 				slog.F("session_id", si.SessionID),

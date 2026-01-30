@@ -17,7 +17,7 @@ const (
 	SSHRequestEnv                = "env"
 	SSHRequestExitStatus         = "exit-status"
 	SSHRequestExitSignal         = "exit-signal"
-	SSHRequestKeepAlive          = "keep-alive"
+	SSHRequestKeepAlive          = "keepalive@openssh.com"
 	SSHRequestTcpIpForward       = "tcpip-forward"
 	SSHRequestCancelTcpIpForward = "cancel-tcpip-forward"
 )
