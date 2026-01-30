@@ -15,18 +15,13 @@ import (
 // BidirectionalSession represents a session that can act as client or server.
 // This single type replaces both client.Session and server.Session.
 type BidirectionalSession struct {
-	// ========================================
 	// Core Identity
-	// ========================================
 	logger    *slog.Logger
 	sessionID int64
 	role      Role
 	peerRole  Role
 
-	// ========================================
-	// Network Connections
-	// ========================================
-	// WebSocket Connection - mutually exclusive
+	// Network Connections / WebSocket Connection are mutually exclusive
 	wsConn  *websocket.Conn // WebSocket underlying connection
 	rawConn net.Conn        // Raw underlying Beacon connection
 
@@ -37,9 +32,7 @@ type BidirectionalSession struct {
 	sshServerConn *ssh.ServerConn   // When acting as SSH server
 	sshConfig     *ssh.ServerConfig // Server configuration (Acceptor roles only)
 
-	// ========================================
 	// Session State
-	// ========================================
 	localInterpreter *interpreter.Interpreter // Host system info for local process execution
 	peerBaseInfo     interpreter.BaseInfo     // Remote system info received from peer
 	peerIdentity     string                   // Peer server identity (fingerprint:port) for loop detection
@@ -53,18 +46,14 @@ type BidirectionalSession struct {
 	channels      []ssh.Channel
 	channelsMutex sync.RWMutex
 
-	// ========================================
 	// Lifecycle Management
-	// ========================================
 	KeepAliveChan chan bool
 	keepAliveOn   bool
 	Disconnect    chan bool // Exported for compatibility
 	active        bool
 	sessionMutex  sync.Mutex
 
-	// ========================================
-	// Feature-Specific State
-	// ========================================
+	// Features State
 
 	// Port Forwarding (used in AgentRole)
 	revPortFwdMap map[uint32]*RevPortControl
@@ -81,8 +70,6 @@ type BidirectionalSession struct {
 	// ApplicationServer provides access to server-level operations
 	// Only injected for gateway servers - presence enables multi-hop features
 	applicationServer ApplicationServer
-	// RequestHandler handles application-specific SSH global requests (deprecated, kept for backward compatibility)
-	requestHandler ApplicationRequestHandler
 
 	// SFTP State (OperatorRole, GatewayRole)
 	sftpHistory    *CustomHistory // Save history within the session
@@ -94,9 +81,7 @@ type BidirectionalSession struct {
 	notifier   chan error
 	serverAddr string // For client role
 
-	// ========================================
 	// Remote Session Tracking (GatewayRole/AgentRole if gateway)
-	// ========================================
 	remoteSessions      map[string]RemoteSession
 	remoteSessionsMutex sync.RWMutex
 }

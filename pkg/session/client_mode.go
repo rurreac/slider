@@ -13,10 +13,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ========================================
-// Client Mode Methods
-// ========================================
-
 // Methods specific to AgentRole (clients/listeners that offer interactive access)
 
 // AddReversePortForward adds a reverse port forward (ClientRole only)

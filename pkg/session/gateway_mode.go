@@ -8,10 +8,6 @@ import (
 	"slider/pkg/slog"
 )
 
-// ========================================
-// Gateway Mode Methods
-// ========================================
-
 // Methods specific to routing and multi-hop sessions
 
 // SetRouter sets the channel router (can be *Router or *remote.Router)
@@ -38,20 +34,6 @@ func (s *BidirectionalSession) GetApplicationServer() ApplicationServer {
 	s.sessionMutex.Lock()
 	defer s.sessionMutex.Unlock()
 	return s.applicationServer
-}
-
-// SetRequestHandler sets the application request handler
-func (s *BidirectionalSession) SetRequestHandler(handler ApplicationRequestHandler) {
-	s.sessionMutex.Lock()
-	s.requestHandler = handler
-	s.sessionMutex.Unlock()
-}
-
-// GetRequestHandler returns the application request handler
-func (s *BidirectionalSession) GetRequestHandler() ApplicationRequestHandler {
-	s.sessionMutex.Lock()
-	defer s.sessionMutex.Unlock()
-	return s.requestHandler
 }
 
 // AddRemoteSession registers a remote session (Gateways only)

@@ -91,9 +91,7 @@ type certInfo struct {
 	id          int64
 }
 
-// ========================================
 // Interfaces for Application Extensions
-// ========================================
 
 // Registry provides access to the server's session registry
 type Registry interface {
@@ -147,12 +145,4 @@ type ApplicationRouter interface {
 	// Route handles an incoming channel using application-specific logic
 	// It receives the channel, the session, and the server for context
 	Route(nc ssh.NewChannel, sess Session, srv ApplicationServer) error
-}
-
-// ApplicationRequestHandler handles application-specific global requests (e.g., slider-sessions, window-size)
-// This interface allows session to delegate application-specific requests without circular dependencies
-type ApplicationRequestHandler interface {
-	// HandleRequest processes an application-specific SSH global request
-	// It receives the request and the session, should return true if handled
-	HandleRequest(req *ssh.Request, sess Session) bool
 }

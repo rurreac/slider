@@ -12,10 +12,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ========================================
-// Server Mode Methods
-// ========================================
-
 // Methods specific to OperatorRole, GatewayRole, and AgentRole (when acting as target)
 
 // EnableSocks starts the SOCKS endpoint instance

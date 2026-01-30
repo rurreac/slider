@@ -15,10 +15,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ========================================
-// Channel Routing
-// ========================================
-
 // HandleIncomingChannels processes new SSH channels
 // This works for ANY role - client, server, gateway, or listener
 func (s *BidirectionalSession) HandleIncomingChannels(newChannels <-chan ssh.NewChannel) {

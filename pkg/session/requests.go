@@ -114,9 +114,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		slog.F("role", s.role.String()))
 
 	switch req.Type {
-	// ========================================
 	// Protocol-level requests (common SSH)
-	// ========================================
 	case "keep-alive":
 		s.handleKeepAlive(req)
 
@@ -134,9 +132,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 			s.rejectRequest(req, "cancel-tcpip-forward not supported in this role")
 		}
 
-	// ========================================
 	// Application-specific requests
-	// ========================================
 	case "client-info":
 		s.handleClientInfo(req)
 
@@ -172,12 +168,6 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		s.handleShutdown(req)
 
 	default:
-		// Delegate to application-specific handler if injected (for backward compatibility)
-		if s.requestHandler != nil {
-			if s.requestHandler.HandleRequest(req, s) {
-				return
-			}
-		}
 
 		// Unknown request
 		s.logger.DebugWith("Received unknown request type",
@@ -199,10 +189,6 @@ func (s *BidirectionalSession) rejectRequest(req *ssh.Request, reason string) {
 		_ = req.Reply(false, nil)
 	}
 }
-
-// ========================================
-// Request Handlers
-// ========================================
 
 // handleKeepAlive handles keep-alive requests (common to all roles)
 func (s *BidirectionalSession) handleKeepAlive(req *ssh.Request) {
@@ -382,10 +368,6 @@ func (s *BidirectionalSession) handleCancelTcpIpForward(req *ssh.Request) {
 		_ = req.Reply(ok, nil)
 	}
 }
-
-// ========================================
-// Application-specific Request Handlers
-// ========================================
 
 // handleClientInfo handles client-info requests (all roles)
 func (s *BidirectionalSession) handleClientInfo(req *ssh.Request) {
@@ -631,10 +613,9 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 		slog.F("remaining_path", target[1:]),
 	)
 
-	// Determine if Next Hop is Promiscuous (Intermediate) or Leaf
+	// Determine if Next Hop is Gateway or Leaf
 	if nextHop.GetSSHClient() != nil && len(target) > 1 {
-		// GATEWAY / INTERMEDIATE
-		// Forward as slider-forward-request
+		// Gateway forwards as slider-forward-request
 		remainingPath := target[1:]
 
 		newPayload := types.ForwardRequestPayload{
@@ -691,7 +672,7 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 
 // eventRequest defines the payload for slider-event request
 type eventRequest struct {
-	Type      string `json:"type"`       // e.g., "disconnect"
+	Type      string `json:"type"`
 	SessionID int64  `json:"session_id"` // Local ID that caused the event
 	Timestamp int64  `json:"timestamp"`
 }
