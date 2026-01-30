@@ -3,6 +3,7 @@ package remote
 import (
 	"encoding/json"
 	"fmt"
+	"slider/pkg/conf"
 	"slider/pkg/session"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -42,7 +43,7 @@ func (p *Proxy) OpenChannel(name string, payload []byte) (ssh.Channel, <-chan *s
 		slog.F("target", p.targetPath),
 	)
 
-	return p.gateway.GetSSHClient().OpenChannel("slider-connect", data)
+	return p.gateway.GetSSHClient().OpenChannel(conf.SSHChannelSliderConnect, data)
 }
 
 // SendRequest proxies a global request via slider-forward-request
@@ -62,7 +63,7 @@ func (p *Proxy) SendRequest(name string, wantReply bool, payload []byte) (bool, 
 		slog.F("target", p.targetPath),
 	)
 
-	return p.gateway.GetSSHClient().SendRequest("slider-forward-request", wantReply, data)
+	return p.gateway.GetSSHClient().SendRequest(conf.SSHRequestSliderForward, wantReply, data)
 }
 
 // ParsePath parses a target path from []int64

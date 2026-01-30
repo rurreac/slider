@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/sconn"
 	"slider/pkg/session"
@@ -59,7 +60,7 @@ func (s *server) NewSSHClient(biSession *session.BidirectionalSession) {
 		}
 		payload, _ := json.Marshal(clientInfo)
 		s.DebugWith("Sending client-info to upstream server", slog.F("session_id", biSession.GetID()))
-		ok, reply, sErr := cConn.SendRequest("client-info", true, payload)
+		ok, reply, sErr := cConn.SendRequest(conf.SSHRequestClientInfo, true, payload)
 		if sErr == nil && ok && len(reply) > 0 {
 			// The server identifies itself in the reply
 			var ciAnswer interpreter.Info
@@ -170,7 +171,7 @@ func (s *server) NotifyUpstreamDisconnect(id int64) {
 			if client == nil {
 				return
 			}
-			_, _, _ = client.SendRequest("slider-event", false, payload)
+			_, _, _ = client.SendRequest(conf.SSHRequestSliderEvent, false, payload)
 		}(up)
 	}
 }

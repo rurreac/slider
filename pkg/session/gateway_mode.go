@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 
+	"slider/pkg/conf"
 	"slider/pkg/slog"
 )
 
@@ -131,7 +132,7 @@ func (s *BidirectionalSession) GetRemoteSessions(visited []string) ([]RemoteSess
 	}
 
 	// Send a specific request to the server to get sessions
-	ok, resPayload, err := client.SendRequest("slider-sessions", true, payload)
+	ok, resPayload, err := client.SendRequest(conf.SSHRequestSliderSessions, true, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send slider-sessions request: %w", err)
 	}

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 
+	"slider/pkg/conf"
 	"slider/pkg/instance/socks"
 	"slider/pkg/sconn"
 	"slider/pkg/sio"
@@ -33,7 +34,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 	var err error
 
 	switch channelType {
-	case "shell":
+	case conf.SSHRequestShell:
 		if s.role.IsAgent() {
 			err = s.HandleShell(nc)
 		} else {
@@ -41,7 +42,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "exec":
+	case conf.SSHRequestExec:
 		if s.role.IsAgent() {
 			err = s.HandleExec(nc)
 		} else {
@@ -49,7 +50,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "sftp":
+	case conf.SSHChannelSFTP:
 		if s.role.IsAgent() {
 			err = s.HandleSFTP(nc)
 		} else {
@@ -57,7 +58,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "direct-tcpip":
+	case conf.SSHChannelDirectTCPIP:
 		if s.role.IsAgent() {
 			err = s.HandleDirectTcpIp(nc)
 		} else {
@@ -65,7 +66,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "socks5":
+	case conf.SSHChannelSocks5:
 		if s.role.IsAgent() {
 			err = s.HandleSocks(nc)
 		} else {
@@ -73,11 +74,11 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "init-size":
+	case conf.SSHChannelInitSize:
 		// All roles can handle init-size (initial terminal dimensions)
 		err = s.HandleInitSize(nc)
 
-	case "slider-connect":
+	case conf.SSHChannelSliderConnect:
 		if s.router != nil && s.applicationServer != nil {
 			err = s.router.Route(nc, s, s.applicationServer)
 		} else {
@@ -85,7 +86,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "slider-beacon":
+	case conf.SSHChannelSliderBeacon:
 		if s.router != nil && s.applicationServer != nil {
 			err = s.router.Route(nc, s, s.applicationServer)
 		} else {
@@ -93,7 +94,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "session":
+	case conf.SSHChannelSession:
 		if s.role.IsAgent() {
 			err = s.HandleShell(nc)
 		} else {
@@ -101,7 +102,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 			return nil
 		}
 
-	case "forwarded-tcpip":
+	case conf.SSHChannelForwardedTCPIP:
 		// All roles handle forwarded-tcpip responses
 		err = s.HandleForwardedTcpIp(nc)
 

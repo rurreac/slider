@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"slider/pkg/conf"
 	"slider/pkg/interpreter"
 	"slider/pkg/remote"
 	"slider/pkg/session"
@@ -454,7 +455,7 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		}
 		var err error
 		if _, _, err = sess.SendRequest(
-			"shutdown",
+			conf.SSHRequestShutdown,
 			true,
 			nil,
 		); err != nil {
@@ -527,11 +528,11 @@ func (c *SessionsCommand) Run(ctx *ExecutionContext, args []string) error {
 		// Connect via slider-connect channel
 		connReq := remote.ConnectRequest{
 			Target:      target,
-			ChannelType: "sftp",
+			ChannelType: conf.SSHChannelSFTP,
 		}
 		payload, _ := json.Marshal(connReq)
 
-		sftpChan, reqs, err := gatewaySession.GetSSHClient().OpenChannel("slider-connect", payload)
+		sftpChan, reqs, err := gatewaySession.GetSSHClient().OpenChannel(conf.SSHChannelSliderConnect, payload)
 		if err != nil {
 			return fmt.Errorf("failed to open remote channel to %d: %v", target, err)
 		}

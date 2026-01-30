@@ -330,7 +330,7 @@ func (si *Config) runSshComm(conn net.Conn) {
 
 	for nc := range si.sshClientChannel {
 		switch nc.ChannelType() {
-		case "session":
+		case conf.SSHChannelSession:
 			sessionClientChannel, request, aErr := nc.Accept()
 			if aErr != nil {
 				si.Logger.ErrorWith("Failed to accept channel",
@@ -339,7 +339,7 @@ func (si *Config) runSshComm(conn net.Conn) {
 					slog.F("err", aErr))
 			}
 			go si.handleRequests(sessionClientChannel, request, sshSessionScope)
-		case "direct-tcpip":
+		case conf.SSHChannelDirectTCPIP:
 			go func() {
 				if hErr := si.handleDirectTcpIpChannel(nc); hErr != nil {
 					si.Logger.ErrorWith("Failed to handle channel",
@@ -390,11 +390,11 @@ func (si *Config) runShellComm(conn net.Conn) {
 	}
 
 	// Send message with initial size
-	initChan, reqs, oErr := sshConn.OpenChannel("init-size", initSize)
+	initChan, reqs, oErr := sshConn.OpenChannel(conf.SSHChannelInitSize, initSize)
 	if oErr != nil {
 		si.Logger.ErrorWith("Failed to open channel",
 			slog.F("session_id", si.SessionID),
-			slog.F("channel_type", "init-size"),
+			slog.F("channel_type", conf.SSHChannelInitSize),
 			slog.F("err", oErr))
 		return
 	}
@@ -430,7 +430,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 
 	for req := range requests {
 		ok := false
-		if req.Type != "env" {
+		if req.Type != conf.SSHRequestEnv {
 			si.Logger.DebugWith("External request received",
 				slog.F("session_id", si.SessionID),
 				slog.F("scope", scope),
@@ -438,7 +438,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				slog.F("payload", req.Payload))
 		}
 		switch req.Type {
-		case "pty-req":
+		case conf.SSHRequestPTY:
 			// Answering pty-req request true if Slider client has ptyOn
 			if si.ptyOn {
 				ok = true
@@ -452,13 +452,13 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 					_ = req.Reply(ok, nil)
 				}()
 			}
-		case "env":
+		case conf.SSHRequestEnv:
 			ok = true
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
 			envChange <- req.Payload
-		case "shell":
+		case conf.SSHRequestShell:
 			ok = true
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
@@ -469,7 +469,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				envChange <- ssh.Marshal(envVar)
 			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, nil, winChange, envChange)
-		case "exec":
+		case conf.SSHRequestExec:
 			ok = true
 			if req.WantReply {
 				go func() {
@@ -482,7 +482,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				envChange <- ssh.Marshal(envVar)
 			}
 			go si.interactiveChannelPipe(sessionClientChannel, req.Type, req.Payload, winChange, envChange)
-		case "window-change":
+		case conf.SSHRequestWindowChange:
 			if si.ptyOn {
 				ok = true
 			}
@@ -490,15 +490,15 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 				go func() { _ = req.Reply(ok, nil) }()
 			}
 			winChange <- req.Payload
-		case "subsystem":
-			if string(req.Payload[4:]) == "sftp" {
+		case conf.SSHRequestSubsystem:
+			if string(req.Payload[4:]) == conf.SSHChannelSFTP {
 				ok = true
-				go si.channelPipe(sessionClientChannel, "sftp", nil)
+				go si.channelPipe(sessionClientChannel, conf.SSHChannelSFTP, nil)
 			}
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
-		case "tcpip-forward":
+		case conf.SSHRequestTcpIpForward:
 			go si.handleTcpIpForwardRequest(req)
 		default:
 			si.Logger.DebugWith("Request status",
@@ -630,12 +630,12 @@ func (si *Config) sendInitTermSize(payload []byte) {
 		if uErr := ssh.Unmarshal(payload, &ptyReq); uErr != nil {
 			si.Logger.ErrorWith("Failed to unmarshall \"pty-req\" request",
 				slog.F("session_id", si.SessionID),
-				slog.F("request_type", "pty-req"),
+				slog.F("request_type", conf.SSHRequestPTY),
 				slog.F("err", uErr))
 		}
 		si.Logger.DebugWith("Init Terminal size",
 			slog.F("session_id", si.SessionID),
-			slog.F("request_type", "pty-req"),
+			slog.F("request_type", conf.SSHRequestPTY),
 			slog.F("width", ptyReq.TermWidthCols),
 			slog.F("height", ptyReq.TermHeightRows))
 
@@ -650,15 +650,15 @@ func (si *Config) sendInitTermSize(payload []byte) {
 		if uErr != nil {
 			si.Logger.ErrorWith("Failed to marshal request payload",
 				slog.F("session_id", si.SessionID),
-				slog.F("request_type", "init-size"),
+				slog.F("request_type", conf.SSHChannelInitSize),
 				slog.F("err", uErr))
 		}
 
-		sliderClientChannel, requests, oErr := sshConn.OpenChannel("init-size", initSize)
+		sliderClientChannel, requests, oErr := sshConn.OpenChannel(conf.SSHChannelInitSize, initSize)
 		if oErr != nil {
 			si.Logger.ErrorWith("Failed to open SSH channel",
 				slog.F("session_id", si.SessionID),
-				slog.F("channel_type", "init-size"),
+				slog.F("channel_type", conf.SSHChannelInitSize),
 				slog.F("err", oErr))
 			return
 		}
@@ -680,7 +680,7 @@ func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
 	payload := []byte{0, 0, 0, byte(cmdLen)}
 	payload = append(payload, cmdBytes...)
 
-	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel("exec", payload)
+	sliderClientChannel, shellRequests, oErr := sshConn.OpenChannel(conf.SSHRequestExec, payload)
 	if oErr != nil {
 		return fmt.Errorf("could not open ssh channel: %v", oErr)
 	}
@@ -692,10 +692,10 @@ func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
 	go func() {
 		// Always request PTY for Console execute commands
 		for _, envVar := range si.getEnvVars(true) {
-			if _, eErr := sliderClientChannel.SendRequest("env", true, ssh.Marshal(envVar)); eErr != nil {
+			if _, eErr := sliderClientChannel.SendRequest(conf.SSHRequestEnv, true, ssh.Marshal(envVar)); eErr != nil {
 				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
-					slog.F("request_type", "env"),
+					slog.F("request_type", conf.SSHRequestEnv),
 					slog.F("err", eErr))
 			}
 		}
@@ -771,11 +771,11 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 	// Handle window-change events
 	go func() {
 		for sizeBytes := range winChange {
-			_, wErr := sliderClientChannel.SendRequest("window-change", true, sizeBytes)
+			_, wErr := sliderClientChannel.SendRequest(conf.SSHRequestWindowChange, true, sizeBytes)
 			if wErr != nil {
 				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
-					slog.F("request_type", "window-change"),
+					slog.F("request_type", conf.SSHRequestWindowChange),
 					slog.F("err", wErr))
 			}
 
@@ -785,11 +785,11 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 	// Handle environment variable events
 	go func() {
 		for envVarBytes := range envChange {
-			_, eErr := sliderClientChannel.SendRequest("env", true, envVarBytes)
+			_, eErr := sliderClientChannel.SendRequest(conf.SSHRequestEnv, true, envVarBytes)
 			if eErr != nil {
 				si.Logger.ErrorWith("Failed to send request",
 					slog.F("session_id", si.SessionID),
-					slog.F("request_type", "env"),
+					slog.F("request_type", conf.SSHRequestEnv),
 					slog.F("err", eErr))
 			}
 		}

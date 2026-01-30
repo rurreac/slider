@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"slider/pkg/conf"
 	"slider/pkg/instance"
 	"slider/pkg/slog"
 
@@ -209,7 +210,7 @@ func (s *BidirectionalSession) KeepAlive(keepalive time.Duration) {
 				slog.F("session_id", s.sessionID))
 			return
 		case <-ticker.C:
-			ok, p, sendErr := s.SendRequest("keep-alive", true, []byte("ping"))
+			ok, p, sendErr := s.SendRequest(conf.SSHRequestKeepAlive, true, []byte("ping"))
 			if sendErr != nil {
 				s.logger.ErrorWith("KeepAlive connection error",
 					slog.F("session_id", s.sessionID),
@@ -272,9 +273,9 @@ func (s *BidirectionalSession) NewSftpClient() (*sftp.Client, error) {
 	var err error
 
 	if s.sshClient != nil {
-		sftpChan, requests, err = s.sshClient.OpenChannel("sftp", nil)
+		sftpChan, requests, err = s.sshClient.OpenChannel(conf.SSHChannelSFTP, nil)
 	} else if s.sshServerConn != nil {
-		sftpChan, requests, err = s.sshServerConn.OpenChannel("sftp", nil)
+		sftpChan, requests, err = s.sshServerConn.OpenChannel(conf.SSHChannelSFTP, nil)
 	} else {
 		return nil, fmt.Errorf("no active connection")
 	}

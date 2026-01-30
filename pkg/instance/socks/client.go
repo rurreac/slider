@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -53,7 +54,7 @@ func (c *Client) Stop() error {
 func (c *Client) HandleConnection(conn net.Conn) error {
 	defer func() { _ = conn.Close() }()
 
-	socksChan, reqs, oErr := c.opener.OpenChannel("socks5", nil)
+	socksChan, reqs, oErr := c.opener.OpenChannel(conf.SSHChannelSocks5, nil)
 	if oErr != nil {
 		c.logger.ErrorWith("Failed to open \"socks5\" channel",
 			slog.F("session_id", c.sessionID),
@@ -71,7 +72,7 @@ func (c *Client) HandleConnection(conn net.Conn) error {
 // This is used for direct-tcpip channel handling
 func (c *Client) ConnectViaSocks(destination types.TcpIpChannelMsg, clientChannel ssh.Channel) error {
 	// Open a SOCKS5 channel to the client
-	socksChannel, socksRequests, oErr := c.opener.OpenChannel("socks5", nil)
+	socksChannel, socksRequests, oErr := c.opener.OpenChannel(conf.SSHChannelSocks5, nil)
 	if oErr != nil {
 		return fmt.Errorf("could not open socks5 channel - %v", oErr)
 	}

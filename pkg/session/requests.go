@@ -31,7 +31,7 @@ func (s *BidirectionalSession) handleSSHRequests(
 	for req := range requests {
 		ok := false
 
-		if req.Type != "env" {
+		if req.Type != conf.SSHRequestEnv {
 			s.logger.DebugWith("SSH Request",
 				slog.F("session_id", s.sessionID),
 				slog.F("request_type", req.Type),
@@ -39,14 +39,14 @@ func (s *BidirectionalSession) handleSSHRequests(
 		}
 
 		switch req.Type {
-		case "env":
+		case conf.SSHRequestEnv:
 			// Environment variable setting
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
 			envChange <- req.Payload
 
-		case "window-change":
+		case conf.SSHRequestWindowChange:
 			// Terminal window size change
 			if s.peerBaseInfo.PtyOn {
 				ok = true
@@ -56,7 +56,7 @@ func (s *BidirectionalSession) handleSSHRequests(
 			}
 			winChange <- req.Payload
 
-		case "pty-req":
+		case conf.SSHRequestPTY:
 			// PTY request - typically handled before shell/exec
 			// Standard SSH clients send dimensions here
 			var ptyReq types.PtyRequest
@@ -115,17 +115,17 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 
 	switch req.Type {
 	// Protocol-level requests (common SSH)
-	case "keep-alive":
+	case conf.SSHRequestKeepAlive:
 		s.handleKeepAlive(req)
 
-	case "tcpip-forward":
+	case conf.SSHRequestTcpIpForward:
 		if s.role.IsAgent() || s.role.IsGateway() {
 			go s.handleTcpIpForward(req)
 		} else {
 			s.rejectRequest(req, "tcpip-forward not supported in this role")
 		}
 
-	case "cancel-tcpip-forward":
+	case conf.SSHRequestCancelTcpIpForward:
 		if s.role.IsAgent() || s.role.IsGateway() {
 			s.handleCancelTcpIpForward(req)
 		} else {
@@ -133,14 +133,14 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		}
 
 	// Application-specific requests
-	case "client-info":
+	case conf.SSHRequestClientInfo:
 		s.handleClientInfo(req)
 
-	case "window-size":
+	case conf.SSHRequestWindowSize:
 		// All connections where someone might want a terminal size
 		s.handleWindowSize(req)
 
-	case "slider-sessions":
+	case conf.SSHRequestSliderSessions:
 		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderSessions(req)
@@ -148,7 +148,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 			s.rejectRequest(req, "slider-sessions not supported in this configuration")
 		}
 
-	case "slider-forward-request":
+	case conf.SSHRequestSliderForward:
 		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderForwardRequest(req)
@@ -156,7 +156,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 			s.rejectRequest(req, "slider-forward-request not supported in this configuration")
 		}
 
-	case "slider-event":
+	case conf.SSHRequestSliderEvent:
 		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderEvent(req)
@@ -164,7 +164,7 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 			s.rejectRequest(req, "slider-event not supported in this configuration")
 		}
 
-	case "shutdown":
+	case conf.SSHRequestShutdown:
 		s.handleShutdown(req)
 
 	default:
@@ -634,7 +634,7 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 			return
 		}
 
-		ok, reply, sErr := nextHop.GetSSHClient().SendRequest("slider-forward-request", req.WantReply, newData)
+		ok, reply, sErr := nextHop.GetSSHClient().SendRequest(conf.SSHRequestSliderForward, req.WantReply, newData)
 		if sErr != nil {
 			s.logger.DErrorWith("Failed to send forward request",
 				slog.F("session_id", s.sessionID),

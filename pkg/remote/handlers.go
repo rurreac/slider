@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slider/pkg/conf"
 	"slider/pkg/session"
 	"slider/pkg/slog"
 	"sync"
@@ -86,7 +87,7 @@ func routeToNextHop(nc ssh.NewChannel, sess session.Session, srv session.Applica
 	}
 	fwdPayload, _ := json.Marshal(fwdReq)
 
-	targetChan, reqs, err := nextHopSession.GetSSHClient().OpenChannel("slider-connect", fwdPayload)
+	targetChan, reqs, err := nextHopSession.GetSSHClient().OpenChannel(conf.SSHChannelSliderConnect, fwdPayload)
 	if err != nil {
 		_ = nc.Reject(ssh.ConnectionFailed, fmt.Sprintf("failed to open next hop channel: %v", err))
 		return err
