@@ -502,6 +502,7 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 		case conf.SSHRequestTcpIpForward:
 			go si.handleTcpIpForwardRequest(req)
 		case conf.SSHRequestKeepAlive:
+			ok = true
 			if req.WantReply {
 				go func() {
 					_ = req.Reply(ok, nil)

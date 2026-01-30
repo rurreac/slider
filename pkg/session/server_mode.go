@@ -210,19 +210,17 @@ func (s *BidirectionalSession) KeepAlive(keepalive time.Duration) {
 				slog.F("session_id", s.sessionID))
 			return
 		case <-ticker.C:
-			ok, p, sendErr := s.SendRequest(conf.SSHRequestKeepAlive, true, []byte("ping"))
+			ok, _, sendErr := s.SendRequest(conf.SSHRequestKeepAlive, true, nil)
 			if sendErr != nil {
 				s.logger.ErrorWith("KeepAlive connection error",
 					slog.F("session_id", s.sessionID),
 					slog.F("err", sendErr))
 				return
 			}
-			if !ok || string(p) != "pong" {
-				// Just warn, don't kill connection
-				s.logger.WarnWith("KeepAlive reply mismatch (non-fatal)",
+			if !ok {
+				s.logger.WarnWith("KeepAlive failed",
 					slog.F("session_id", s.sessionID),
-					slog.F("ok", ok),
-					slog.F("payload", string(p)))
+					slog.F("ok", ok))
 			}
 		}
 	}
@@ -311,9 +309,7 @@ func (s *BidirectionalSession) NewSftpClient() (*sftp.Client, error) {
 	return client, nil
 }
 
-// ========================================
 // SFTP State Management (OperatorRole, GatewayRole)
-// ========================================
 
 // SetSftpHistory sets the SFTP history
 func (s *BidirectionalSession) SetSftpHistory(history *CustomHistory) {
@@ -335,9 +331,7 @@ func (s *BidirectionalSession) GetSftpWorkingDir() string {
 	return s.sftpWorkingDir
 }
 
-// ========================================
 // Endpoint Instance Access (OperatorRole, GatewayRole, AgentRole)
-// ========================================
 
 // GetSocksInstance returns the SOCKS endpoint instance
 func (s *BidirectionalSession) GetSocksInstance() *instance.Config {
