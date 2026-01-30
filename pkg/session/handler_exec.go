@@ -127,7 +127,7 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 	// Send exit status
 	exitPayload := make([]byte, 4)
 	binary.BigEndian.PutUint32(exitPayload, uint32(exitCode))
-	_, _ = sshChan.SendRequest("exit-status", false, exitPayload)
+	_, _ = sshChan.SendRequest(conf.SSHRequestExitStatus, false, exitPayload)
 
 	return err
 }

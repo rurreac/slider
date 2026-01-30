@@ -173,12 +173,12 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 		return
 	}
 
-	ok, respData, rErr := m.conn.SendRequest("tcpip-forward", true, forwardReqBytes)
+	ok, respData, rErr := m.conn.SendRequest(conf.SSHRequestTcpIpForward, true, forwardReqBytes)
 	if rErr != nil || !ok {
 		if rErr == nil {
 			rErr = fmt.Errorf("request was rejected, port likely in use")
 		}
-		notifier <- fmt.Errorf("failed to send \"tcpip-forward\" request - %v", rErr)
+		notifier <- fmt.Errorf("failed to send \"%s\" request - %v", conf.SSHRequestTcpIpForward, rErr)
 		return
 	}
 
@@ -239,7 +239,7 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 
 	m.logger.DebugWith("Endpoint listening",
 		slog.F("session_id", m.sessionID),
-		slog.F("channel_type", "direct-tcpip"),
+		slog.F("channel_type", conf.SSHChannelDirectTCPIP),
 		slog.F("src_host", msg.SrcHost),
 		slog.F("src_port", msg.SrcPort))
 
@@ -255,7 +255,7 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 		case <-mapping.DoneChan:
 			m.logger.DebugWith("Endpoint listener stopped",
 				slog.F("session_id", m.sessionID),
-				slog.F("channel_type", "direct-tcpip"),
+				slog.F("channel_type", conf.SSHChannelDirectTCPIP),
 				slog.F("src_host", msg.SrcHost),
 				slog.F("src_port", msg.SrcPort))
 			m.RemoveLocalForward(int(msg.SrcPort))
@@ -270,11 +270,11 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 			continue
 		}
 
-		oChan, oReq, oErr := m.conn.OpenChannel("direct-tcpip", ssh.Marshal(msg))
+		oChan, oReq, oErr := m.conn.OpenChannel(conf.SSHChannelDirectTCPIP, ssh.Marshal(msg))
 		if oErr != nil {
 			m.logger.ErrorWith("Failed to open \"direct-tcpip\" channel",
 				slog.F("session_id", m.sessionID),
-				slog.F("channel_type", "direct-tcpip"),
+				slog.F("channel_type", conf.SSHChannelDirectTCPIP),
 				slog.F("err", oErr))
 			_ = conn.Close()
 			continue
@@ -304,14 +304,14 @@ func (m *Manager) CancelRemoteForward(port int) error {
 		BindPort:    control.SrcPort,
 	})
 
-	rOk, _, cErr := m.conn.SendRequest("cancel-tcpip-forward", true, payload)
+	rOk, _, cErr := m.conn.SendRequest(conf.SSHRequestCancelTcpIpForward, true, payload)
 	if cErr != nil || !rOk {
 		return fmt.Errorf("failed to cancel reverse tcp forwarding - %v", cErr)
 	}
 
 	m.logger.DebugWith("Cancelled reverse tcp forwarding",
 		slog.F("session_id", m.sessionID),
-		slog.F("request_channel", "cancel-tcpip-forward"),
+		slog.F("request_channel", conf.SSHRequestCancelTcpIpForward),
 		slog.F("fwd_port", control.SrcPort))
 
 	close(control.RcvChan)
@@ -340,11 +340,11 @@ func (m *Manager) CancelAllSSHRemoteForwards() {
 			BindPort:    portFwd.SrcPort,
 		})
 
-		ok, _, cErr := m.conn.SendRequest("cancel-tcpip-forward", true, payload)
+		ok, _, cErr := m.conn.SendRequest(conf.SSHRequestCancelTcpIpForward, true, payload)
 		if cErr != nil || !ok {
 			m.logger.ErrorWith("Failed to cancel reverse tcp forwarding",
 				slog.F("session_id", m.sessionID),
-				slog.F("request_channel", "cancel-tcpip-forward"),
+				slog.F("request_channel", conf.SSHRequestCancelTcpIpForward),
 				slog.F("fwd_host", portFwd.SrcHost),
 				slog.F("fwd_port", portFwd.SrcPort),
 				slog.F("err", cErr))
@@ -353,7 +353,7 @@ func (m *Manager) CancelAllSSHRemoteForwards() {
 
 		m.logger.DebugWith("Cancelled reverse tcp forwarding",
 			slog.F("session_id", m.sessionID),
-			slog.F("request_channel", "cancel-tcpip-forward"),
+			slog.F("request_channel", conf.SSHRequestCancelTcpIpForward),
 			slog.F("fwd_host", portFwd.SrcHost),
 			slog.F("fwd_port", portFwd.SrcPort))
 

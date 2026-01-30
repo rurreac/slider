@@ -121,11 +121,11 @@ func (s *Service) Start(conn net.Conn) error {
 	}
 
 	// Send message with initial size
-	initChan, reqs, oErr := s.opener.OpenChannel("init-size", initSize)
+	initChan, reqs, oErr := s.opener.OpenChannel(conf.SSHChannelInitSize, initSize)
 	if oErr != nil {
 		s.logger.ErrorWith("Failed to open channel",
 			slog.F("session_id", s.sessionID),
-			slog.F("channel_type", "init-size"),
+			slog.F("channel_type", conf.SSHChannelInitSize),
 			slog.F("err", oErr))
 		return oErr
 	}
@@ -167,7 +167,7 @@ func (s *Service) Start(conn net.Conn) error {
 		envChange <- ssh.Marshal(ev)
 	}
 
-	return s.interactiveConnPipe(conn, "shell", nil, winChange, envChange)
+	return s.interactiveConnPipe(conn, conf.SSHRequestShell, nil, winChange, envChange)
 }
 
 // Stop implements the Service interface
@@ -206,11 +206,11 @@ func (s *Service) interactiveConnPipe(conn net.Conn, channelType string, payload
 	// Handle window-change events
 	go func() {
 		for sizeBytes := range winChange {
-			_, wErr := sliderClientChannel.SendRequest("window-change", true, sizeBytes)
+			_, wErr := sliderClientChannel.SendRequest(conf.SSHRequestWindowChange, true, sizeBytes)
 			if wErr != nil {
 				s.logger.ErrorWith("Failed to send request",
 					slog.F("session_id", s.sessionID),
-					slog.F("request_type", "window-change"),
+					slog.F("request_type", conf.SSHRequestWindowChange),
 					slog.F("err", wErr))
 			}
 		}
@@ -219,11 +219,11 @@ func (s *Service) interactiveConnPipe(conn net.Conn, channelType string, payload
 	// Handle environment variable events
 	go func() {
 		for envVarBytes := range envChange {
-			_, eErr := sliderClientChannel.SendRequest("env", true, envVarBytes)
+			_, eErr := sliderClientChannel.SendRequest(conf.SSHRequestEnv, true, envVarBytes)
 			if eErr != nil {
 				s.logger.ErrorWith("Failed to send request",
 					slog.F("session_id", s.sessionID),
-					slog.F("request_type", "env"),
+					slog.F("request_type", conf.SSHRequestEnv),
 					slog.F("err", eErr))
 			}
 		}

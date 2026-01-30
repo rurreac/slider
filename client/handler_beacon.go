@@ -2,6 +2,7 @@ package client
 
 import (
 	"net/http"
+	"slider/pkg/conf"
 	"slider/pkg/listener"
 	"slider/pkg/sconn"
 	"slider/pkg/sio"
@@ -42,7 +43,7 @@ func (c *client) handleBeaconConnection(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Open a Beacon channel on the Server session
-	channel, reqs, err := upstreamClient.OpenChannel("slider-beacon", nil)
+	channel, reqs, err := upstreamClient.OpenChannel(conf.SSHChannelSliderBeacon, nil)
 	if err != nil {
 		c.Logger.ErrorWith("Failed to open Beacon channel to server",
 			slog.F("err", err))

@@ -236,7 +236,7 @@ func (c *client) verifyServerKey(_ string, remote net.Addr, key ssh.PublicKey) e
 
 func (c *client) sendClientInfo(sess *session.BidirectionalSession, ci *interpreter.Info) {
 	clientInfoBytes, _ := json.Marshal(ci)
-	ok, ciAnswerBytes, sErr := sess.SendRequest("client-info", true, clientInfoBytes)
+	ok, ciAnswerBytes, sErr := sess.SendRequest(conf.SSHRequestClientInfo, true, clientInfoBytes)
 	if sErr != nil || !ok {
 		c.Logger.ErrorWith("Client information was not sent to server",
 			slog.F("session_id", sess.GetID()),

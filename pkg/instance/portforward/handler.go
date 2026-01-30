@@ -2,6 +2,7 @@ package portforward
 
 import (
 	"encoding/json"
+	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -22,7 +23,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 	if uErr := ssh.Unmarshal(req.Payload, srcReqPayload); uErr != nil {
 		m.logger.ErrorWith("Failed to unmarshal TcpIpFwdRequest request",
 			slog.F("session_id", m.sessionID),
-			slog.F("request_type", "tcpip-forward"),
+			slog.F("request_type", conf.SSHRequestTcpIpForward),
 			slog.F("err", uErr))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
@@ -40,7 +41,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 	if mErr != nil {
 		m.logger.ErrorWith("Failed to marshal request",
 			slog.F("session_id", m.sessionID),
-			slog.F("request_type", "tcpip-forward"),
+			slog.F("request_type", conf.SSHRequestTcpIpForward),
 			slog.F("err", mErr))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
@@ -48,11 +49,11 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 		return
 	}
 
-	rOk, sliderRespData, rErr := m.conn.SendRequest("tcpip-forward", req.WantReply, reqPayload)
+	rOk, sliderRespData, rErr := m.conn.SendRequest(conf.SSHRequestTcpIpForward, req.WantReply, reqPayload)
 	if rErr != nil || !rOk {
 		m.logger.ErrorWith("Failed to send slider client request",
 			slog.F("session_id", m.sessionID),
-			slog.F("request_type", "tcpip-forward"),
+			slog.F("request_type", conf.SSHRequestTcpIpForward),
 			slog.F("err", rErr))
 		if req.WantReply {
 			_ = req.Reply(false, nil)
@@ -66,7 +67,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 		if sliderRespData == nil && srcReqPayload.BindPort == 0 {
 			m.logger.ErrorWith("Failed to bind to port",
 				slog.F("session_id", m.sessionID),
-				slog.F("request_type", "tcpip-forward"),
+				slog.F("request_type", conf.SSHRequestTcpIpForward),
 				slog.F("bind_port", srcReqPayload.BindPort))
 			_ = req.Reply(false, nil)
 			return
@@ -77,7 +78,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 			if uErr := ssh.Unmarshal(sliderRespData, sshRespPayload); uErr != nil {
 				m.logger.ErrorWith("Failed to unmarshal request",
 					slog.F("session_id", m.sessionID),
-					slog.F("request_type", "tcpip-forward"),
+					slog.F("request_type", conf.SSHRequestTcpIpForward),
 					slog.F("err", uErr))
 				_ = req.Reply(false, nil)
 				return
@@ -90,7 +91,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 		if wErr := req.Reply(true, respPayload); wErr != nil {
 			m.logger.ErrorWith("Failed to reply to original request",
 				slog.F("session_id", m.sessionID),
-				slog.F("request_type", "tcpip-forward"),
+				slog.F("request_type", conf.SSHRequestTcpIpForward),
 				slog.F("err", wErr))
 			return
 		}
@@ -109,11 +110,11 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 
 	// Handle incoming connections on the forwarded port
 	for channelMsg := range control.RcvChan {
-		channel, tcpIpFwdReq, oErr := sshServerConn.OpenChannel("forwarded-tcpip", ssh.Marshal(channelMsg))
+		channel, tcpIpFwdReq, oErr := sshServerConn.OpenChannel(conf.SSHChannelForwardedTCPIP, ssh.Marshal(channelMsg))
 		if oErr != nil {
 			m.logger.ErrorWith("Failed to open channel to client",
 				slog.F("session_id", m.sessionID),
-				slog.F("request_channel", "forwarded-tcpip"),
+				slog.F("request_channel", conf.SSHChannelForwardedTCPIP),
 				slog.F("err", oErr))
 			control.DoneChan <- true
 			continue
@@ -129,7 +130,7 @@ func (m *Manager) HandleTcpIpForwardRequest(req *ssh.Request, sshServerConn SSHS
 			control.DoneChan <- true
 			m.logger.DebugWith("Completed SSH Port Forward channel from remote",
 				slog.F("session_id", m.sessionID),
-				slog.F("request_channel", "forwarded-tcpip"),
+				slog.F("request_channel", conf.SSHChannelForwardedTCPIP),
 				slog.F("src_host", srcReqPayload.BindAddress),
 				slog.F("src_port", srcReqPayload.BindPort))
 		}()
@@ -153,7 +154,7 @@ func (m *Manager) HandleDirectTcpIpChannel(nc ssh.NewChannel) error {
 
 	m.logger.DebugWith("Direct TCPIP channel request",
 		slog.F("session_id", m.sessionID),
-		slog.F("request_channel", "direct-tcpip"),
+		slog.F("request_channel", conf.SSHChannelDirectTCPIP),
 		slog.F("dst_host", dti.DstHost),
 		slog.F("dst_port", dti.DstPort),
 		slog.F("src_host", dti.SrcHost),
