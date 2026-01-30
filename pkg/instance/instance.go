@@ -141,7 +141,7 @@ func (si *Config) SetSSHConn(conn ChannelOpener) {
 	_ = si.serviceManager.RegisterService(si.shellService)
 }
 
-// GetSSHConn returns the SSH connection (thread-safe)
+// GetSSHConn returns the SSH connection
 func (si *Config) GetSSHConn() ChannelOpener {
 	si.instanceMutex.Lock()
 	defer si.instanceMutex.Unlock()
@@ -361,7 +361,6 @@ func (si *Config) runSshComm(conn net.Conn) {
 func (si *Config) runShellComm(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
@@ -618,7 +617,6 @@ func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
 
 // sendInitTermSize receives a req-pty payload extracts the terminal size and sends it through an init-size channel payload
 func (si *Config) sendInitTermSize(payload []byte) {
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
@@ -672,7 +670,6 @@ func (si *Config) sendInitTermSize(payload []byte) {
 }
 
 func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		return fmt.Errorf("no active SSH connection available")
@@ -730,7 +727,6 @@ func (si *Config) ExecuteCommand(cmdBytes []byte, ic io.ReadWriter) error {
 }
 
 func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte) {
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
@@ -755,7 +751,6 @@ func (si *Config) channelPipe(sessionClientChannel ssh.Channel, channelType stri
 }
 
 func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		si.Logger.ErrorWith("SSH connection not set on endpoint instance",
@@ -805,14 +800,52 @@ func (si *Config) interactiveChannelPipe(sessionClientChannel ssh.Channel, chann
 		envChange <- ssh.Marshal(envVar)
 	}
 
-	// Handle requests from the SSH channel
-	go si.handleRequests(sessionClientChannel, shellRequests, sliderChannelScope)
-	// Pipe SSH channel with SSH channel
-	_, _ = sio.PipeWithCancel(sessionClientChannel, sliderClientChannel)
+	// Pipe external SSH session channel with Slider SSH channel
+	byteTrx, byteRcv := si.channelPipeWithStatus(sessionClientChannel, sliderClientChannel, shellRequests)
+	si.Logger.DebugWith("Pipe closed",
+		slog.F("session_id", si.SessionID),
+		slog.F("bytes_transferred", byteTrx),
+		slog.F("bytes_received", byteRcv))
+
+}
+
+// pipeChannelWithStatus pipes data between an SSH client-server channel and a slider channel on shell/exec requests,
+// forwarding the exit status request from slider to the SSH client so exit code is reported
+func (si *Config) channelPipeWithStatus(sessionClientChannel ssh.Channel, sliderClientChannel ssh.Channel, shellRequests <-chan *ssh.Request) (int64, int64) {
+	var byteTrx int64
+	var byteRcv int64
+
+	// Start bidirectional copy in background
+	go func() {
+		byteRcv, _ = io.Copy(sessionClientChannel, sliderClientChannel)
+	}()
+	go func() {
+		byteTrx, _ = io.Copy(sliderClientChannel, sessionClientChannel)
+	}()
+
+	// Block on shellRequests which closes when the channel closes
+	// Process exit-status and return immediately
+	for req := range shellRequests {
+		switch req.Type {
+		case "exit-status":
+			if sessionClientChannel != nil {
+				_, _ = sessionClientChannel.SendRequest(req.Type, false, req.Payload)
+			}
+			// Close and return immediately
+			_ = sessionClientChannel.Close()
+			_ = sliderClientChannel.Close()
+			return byteTrx, byteRcv
+		}
+		if req.WantReply {
+			_ = req.Reply(true, nil)
+		}
+	}
+
+	// Return on unexpected copy termination
+	return byteTrx, byteRcv
 }
 
 func (si *Config) interactiveConnPipe(conn net.Conn, channelType string, payload []byte, winChange chan []byte, envChange chan []byte) {
-	// Get SSH connection (thread-safe)
 	sshConn := si.GetSSHConn()
 	if sshConn == nil {
 		si.Logger.ErrorWith("SSH connection not set on endpoint instance",

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,17 +84,27 @@ func (s *BidirectionalSession) HandleShell(nc ssh.NewChannel) error {
 	}()
 
 	// Execute shell based on PTY availability of the peer
+	var exitCode int
+	var eErr error
 	if s.peerBaseInfo.PtyOn {
-		return s.executeShellWithPty(sshChan, winChange, envVars, useAltShell)
+		exitCode, eErr = s.executeShellWithPty(sshChan, winChange, envVars, useAltShell)
+	} else {
+		// Drain window change channel if not using PTY
+		go func() {
+			for range winChange {
+			}
+		}()
+
+		exitCode, eErr = s.executeShellWithoutPty(sshChan, envVars, useAltShell)
 	}
 
-	// Drain window change channel if not using PTY
-	go func() {
-		for range winChange {
-		}
-	}()
+	// Send exit status
+	exitPayload := make([]byte, 4)
+	binary.BigEndian.PutUint32(exitPayload, uint32(exitCode))
+	_, _ = sshChan.SendRequest("exit-status", false, exitPayload)
 
-	return s.executeShellWithoutPty(sshChan, envVars, useAltShell)
+	return eErr
+
 }
 
 // executeShellWithPty runs an interactive shell with PTY
@@ -102,7 +113,7 @@ func (s *BidirectionalSession) executeShellWithPty(
 	winChange <-chan []byte,
 	envVars []string,
 	useAltShell bool,
-) error {
+) (int, error) {
 	// Get the local execution parameters
 	var shell string
 	var args []string
@@ -114,7 +125,7 @@ func (s *BidirectionalSession) executeShellWithPty(
 			args = s.localInterpreter.AltShellArgs
 		}
 	} else {
-		return fmt.Errorf("local interpreter not found")
+		return 255, fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running SHELL on PTY",
@@ -141,7 +152,7 @@ func (s *BidirectionalSession) executeShellWithPty(
 		s.logger.ErrorWith("Failed to start PTY",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", err))
-		return fmt.Errorf("start pty: %w", err)
+		return 1, fmt.Errorf("start pty: %w", err)
 	}
 
 	// Handle window resize
@@ -175,7 +186,7 @@ func (s *BidirectionalSession) executeShellWithPty(
 	}()
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1) // Only wait for Output copy
 
 	// Copy from PTY to SSH channel
 	go func() {
@@ -190,9 +201,8 @@ func (s *BidirectionalSession) executeShellWithPty(
 		_ = channel.CloseWrite()
 	}()
 
-	// Copy from SSH channel to PTY
+	// Copy from SSH channel to PTY (don't wait for this)
 	go func() {
-		defer wg.Done()
 		_, copyErr := io.Copy(ptyF, channel)
 		if copyErr != nil && copyErr != io.EOF {
 			s.logger.DebugWith("Error copying from SSH to PTY",
@@ -206,7 +216,12 @@ func (s *BidirectionalSession) executeShellWithPty(
 	s.logger.DebugWith("Shell I/O piping completed",
 		slog.F("session_id", s.sessionID))
 
-	return nil
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	return exitCode, nil
 }
 
 // executeShellWithoutPty runs a non-interactive shell
@@ -214,7 +229,7 @@ func (s *BidirectionalSession) executeShellWithoutPty(
 	channel ssh.Channel,
 	envVars []string,
 	useAltShell bool,
-) error {
+) (int, error) {
 	// Get the local execution parameters
 	var shell string
 	var args []string
@@ -226,7 +241,7 @@ func (s *BidirectionalSession) executeShellWithoutPty(
 			args = s.localInterpreter.AltShellArgs
 		}
 	} else {
-		return fmt.Errorf("local interpreter not found")
+		return 255, fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running SHELL on NON PTY",
@@ -242,38 +257,53 @@ func (s *BidirectionalSession) executeShellWithoutPty(
 		s.logger.ErrorWith("Failed to get stdout pipe",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", oErr))
-		return oErr
+		return 1, oErr
 	}
+
 	errRC, eErr := cmd.StderrPipe()
 	if eErr != nil {
 		s.logger.ErrorWith("Failed to get stderr pipe",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", eErr))
-		return eErr
+		return 1, eErr
 	}
 
 	cmd.Stdin = channel
-
 	if runErr := cmd.Start(); runErr != nil {
 		s.logger.ErrorWith("Failed to execute command",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", runErr))
-		return runErr
+		return 1, runErr
 	}
 
-	go func() { _, _ = io.Copy(channel, outRC) }()
-	go func() { _, _ = io.Copy(channel, errRC) }()
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	if wErr := cmd.Wait(); wErr != nil {
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(channel, outRC)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(channel, errRC)
+	}()
+
+	wErr := cmd.Wait()
+	wg.Wait()
+	if wErr != nil {
 		s.logger.ErrorWith("Failed to wait for command",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", wErr))
-		return wErr
+		exitCode := 1
+		if cmd.ProcessState != nil {
+			exitCode = cmd.ProcessState.ExitCode()
+		}
+		return exitCode, wErr
 	}
 
 	s.logger.DebugWith("Non-PTY shell completed",
 		slog.F("session_id", s.sessionID))
-	return nil
+	return 0, nil
 }
 
 // ========================================
@@ -385,12 +415,9 @@ func (s *BidirectionalSession) HandleExec(nc ssh.NewChannel) error {
 		exitCode, err = s.executeCommandWithoutPty(rcvCmd, sshChan, envVars, useAltShell)
 	}
 
-	// Send exit status (always send, even on error)
+	// Send exit status
 	exitPayload := make([]byte, 4)
-	exitPayload[0] = byte(exitCode >> 24)
-	exitPayload[1] = byte(exitCode >> 16)
-	exitPayload[2] = byte(exitCode >> 8)
-	exitPayload[3] = byte(exitCode)
+	binary.BigEndian.PutUint32(exitPayload, uint32(exitCode))
 	_, _ = sshChan.SendRequest("exit-status", false, exitPayload)
 
 	return err
@@ -415,7 +442,7 @@ func (s *BidirectionalSession) executeCommandWithPty(
 			execArgs = s.localInterpreter.AltShellExecArgs
 		}
 	} else {
-		return 0, fmt.Errorf("local interpreter not found")
+		return 255, fmt.Errorf("local interpreter not found")
 	}
 
 	s.logger.DebugWith("Running EXEC on PTY",
@@ -474,11 +501,10 @@ func (s *BidirectionalSession) executeCommandWithPty(
 	}()
 
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	// Copy from PTY to SSH channel
-	go func() {
-		defer wg.Done()
+	// Copy from PTY to SSH channel and wait, the channel will be closed
+	// on the other end when the exit-status request is received
+	wg.Go(func() {
 		_, copyErr := io.Copy(channel, ptyF)
 		if copyErr != nil && copyErr != io.EOF {
 			s.logger.DebugWith("Error copying from PTY to SSH",
@@ -486,11 +512,10 @@ func (s *BidirectionalSession) executeCommandWithPty(
 				slog.F("err", copyErr))
 		}
 		_ = channel.CloseWrite()
-	}()
+	})
 
 	// Copy from SSH channel to PTY
 	go func() {
-		defer wg.Done()
 		_, copyErr := io.Copy(ptyF, channel)
 		if copyErr != nil && copyErr != io.EOF {
 			s.logger.DebugWith("Error copying from SSH to PTY",
@@ -568,10 +593,21 @@ func (s *BidirectionalSession) executeCommandWithoutPty(
 		return 1, runErr
 	}
 
-	go func() { _, _ = io.Copy(channel, outRC) }()
-	go func() { _, _ = io.Copy(channel, errRC) }()
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	if wErr := cmd.Wait(); wErr != nil {
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(channel, outRC)
+	}()
+	go func() {
+		defer wg.Done()
+		_, _ = io.Copy(channel, errRC)
+	}()
+
+	wErr := cmd.Wait()
+	wg.Wait()
+	if wErr != nil {
 		s.logger.ErrorWith("Failed to wait for command or timed out",
 			slog.F("session_id", s.sessionID),
 			slog.F("err", wErr))
