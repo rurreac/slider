@@ -41,6 +41,7 @@ type TcpIpReqSuccess struct {
 
 // CustomTcpIpChannelMsg is a wrapper for TcpIpChannelMsg to include the channel
 type CustomTcpIpChannelMsg struct {
+	Protocol  string
 	IsSshConn bool
 	*TcpIpChannelMsg
 	Channel ssh.Channel
@@ -54,6 +55,7 @@ type ForwardRequestPayload struct {
 }
 
 type CustomTcpIpFwdRequest struct {
+	Protocol  string
 	IsSshConn bool
 	*TcpIpFwdRequest
 	// Forward destination fields (used by Slider console forwards, not SSH forwards)

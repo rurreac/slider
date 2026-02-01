@@ -8,9 +8,7 @@ import (
 	"slider/pkg/slog"
 )
 
-// ========================================
 // Mock ApplicationServer for Testing
-// ========================================
 
 // MockApplicationServer provides a testable implementation of ApplicationServer
 type MockApplicationServer struct {
@@ -77,9 +75,7 @@ func (m *MockApplicationServer) AddSession(sess *BidirectionalSession) {
 	m.sessions = append(m.sessions, sess)
 }
 
-// ========================================
 // Test Session Builder
-// ========================================
 
 // SessionBuilder helps create BidirectionalSession instances for testing
 type SessionBuilder struct {
@@ -136,9 +132,7 @@ func (b *SessionBuilder) Build() *BidirectionalSession {
 	return b.session
 }
 
-// ========================================
 // Example Tests
-// ========================================
 
 func TestMockApplicationServer_GetSession(t *testing.T) {
 	// Create mock server

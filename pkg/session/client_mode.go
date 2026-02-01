@@ -90,10 +90,9 @@ func (s *BidirectionalSession) GetReversePortForwards() map[uint32]*RevPortContr
 	return result
 }
 
-// HandleForwardedTcpIpChannel handles incoming forwarded-tcpip channels
+// HandleForwardedTCPIPChannel handles incoming forwarded-tcpip channels
 // Called when a reverse port forward connection arrives
-func (s *BidirectionalSession) HandleForwardedTcpIpChannel(nc ssh.NewChannel) {
-	// Parse the channel data to get connection info
+func (s *BidirectionalSession) HandleForwardedTCPIPChannel(nc ssh.NewChannel) {
 	var tcpIpMsg types.TcpIpChannelMsg
 	customMsg := &types.CustomTcpIpChannelMsg{}
 
@@ -117,9 +116,9 @@ func (s *BidirectionalSession) HandleForwardedTcpIpChannel(nc ssh.NewChannel) {
 		slog.F("dst_host", tcpIpMsg.DstHost),
 		slog.F("dst_port", tcpIpMsg.DstPort),
 		slog.F("src_host", tcpIpMsg.SrcHost),
-		slog.F("src_port", tcpIpMsg.SrcPort))
+		slog.F("src_port", tcpIpMsg.SrcPort),
+		slog.F("protocol", customMsg.Protocol))
 
-	// Accept the channel
 	channel, requests, aErr := nc.Accept()
 	if aErr != nil {
 		s.logger.ErrorWith("Failed to accept forwarded-tcpip channel",
@@ -130,25 +129,156 @@ func (s *BidirectionalSession) HandleForwardedTcpIpChannel(nc ssh.NewChannel) {
 	defer func() { _ = channel.Close() }()
 	go ssh.DiscardRequests(requests)
 
-	// Dial the local destination
+	protocol := customMsg.Protocol
+
+	// Check if this is a Server-managed reverse forward (e.g. initiated by console portfwd -R)
+	if s.sshInstance != nil {
+		mapping, mErr := s.sshInstance.GetRemotePortMapping(protocol, tcpIpMsg.SrcPort)
+		if mErr != nil {
+			s.logger.ErrorWith("Failed to find mapping for forwarded-tcpip",
+				slog.F("session_id", s.sessionID),
+				slog.F("src_port", tcpIpMsg.SrcPort),
+				slog.F("protocol", protocol))
+			return
+		}
+
+		s.logger.DebugWith("Directly handling forwarded-tcpip channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("src_port", tcpIpMsg.SrcPort),
+			slog.F("protocol", protocol))
+
+		// For standard SSH reverse forwards, the payload contains the "originator" (src) and "connected" (dst) addresses.
+		// BUT the "dst" in the payload is the BIND address (e.g. 0.0.0.0 or localhost on the client).
+		// We need to route to the TARGET address configured in the Manager/Console.
+		// The mapping contains the configured destination.
+		dstHost := mapping.TcpIpChannelMsg.DstHost
+		dstPort := mapping.TcpIpChannelMsg.DstPort
+		host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
+
+		conn, cErr := net.Dial(protocol, host)
+		if cErr != nil {
+			s.logger.ErrorWith("Failed to connect to local destination",
+				slog.F("session_id", s.sessionID),
+				slog.F("host", host),
+				slog.F("protocol", protocol),
+				slog.F("err", cErr))
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		s.logger.DebugWith("Bridged forwarded-tcpip channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("target", host),
+			slog.F("protocol", protocol))
+
+		// Pipe the SSH channel to the local connection
+		_, _ = sio.PipeWithCancel(channel, conn)
+		return
+	}
+
+	// Fallback for non-server managed sessions (e.g. direct client-to-client or legacy)
+	// This path relies on the payload containing the correct destination.
 	host := net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort)))
-	conn, cErr := net.Dial("tcp", host)
+	conn, cErr := net.Dial(protocol, host)
 	if cErr != nil {
 		s.logger.ErrorWith("Failed to connect to local destination",
 			slog.F("session_id", s.sessionID),
 			slog.F("host", host),
+			slog.F("protocol", protocol),
 			slog.F("err", cErr))
 		return
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Pipe the SSH channel to the local connection
 	_, _ = sio.PipeWithCancel(channel, conn)
 
 	s.logger.DebugWith("Completed forwarded-tcpip channel",
 		slog.F("session_id", s.sessionID),
 		slog.F("dst_host", tcpIpMsg.DstHost),
-		slog.F("dst_port", tcpIpMsg.DstPort))
+		slog.F("dst_port", tcpIpMsg.DstPort),
+		slog.F("protocol", protocol))
+}
+
+// HandleForwardedUDPChannel handles incoming forwarded-udp channels
+// Called when a reverse port forward connection arrives for UDP
+func (s *BidirectionalSession) HandleForwardedUDPChannel(nc ssh.NewChannel) {
+	var tcpIpMsg types.TcpIpChannelMsg
+	customMsg := &types.CustomTcpIpChannelMsg{}
+
+	// UDP is internally initiated through Console (always CustomTcpIpChannelMsg format)
+	if jErr := json.Unmarshal(nc.ExtraData(), customMsg); jErr == nil && customMsg.TcpIpChannelMsg != nil {
+		tcpIpMsg = *customMsg.TcpIpChannelMsg
+	} else {
+		s.logger.ErrorWith("Failed to unmarshal forwarded-udp data",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", jErr))
+		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode forwarded-udp data")
+		return
+	}
+
+	protocol := customMsg.Protocol
+
+	s.logger.DebugWith("Forwarded-udp channel request",
+		slog.F("session_id", s.sessionID),
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort),
+		slog.F("src_host", tcpIpMsg.SrcHost),
+		slog.F("src_port", tcpIpMsg.SrcPort),
+		slog.F("protocol", protocol))
+
+	channel, requests, aErr := nc.Accept()
+	if aErr != nil {
+		s.logger.ErrorWith("Failed to accept forwarded-udp channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", aErr))
+		return
+	}
+	defer func() { _ = channel.Close() }()
+	go ssh.DiscardRequests(requests)
+
+	// Check if this is a Server-managed reverse forward (e.g. initiated by console portfwd -R)
+	if s.sshInstance != nil {
+		mapping, mErr := s.sshInstance.GetRemotePortMapping(protocol, tcpIpMsg.SrcPort)
+		if mErr != nil {
+			s.logger.ErrorWith("Failed to find mapping for forwarded-udp",
+				slog.F("session_id", s.sessionID),
+				slog.F("src_port", tcpIpMsg.SrcPort),
+				slog.F("protocol", protocol))
+			return
+		}
+
+		s.logger.DebugWith("Directly handling forwarded-udp channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("src_port", tcpIpMsg.SrcPort),
+			slog.F("protocol", protocol))
+
+		// Dial the local destination (Server side)
+		dstHost := mapping.TcpIpChannelMsg.DstHost
+		dstPort := mapping.TcpIpChannelMsg.DstPort
+		host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
+
+		conn, cErr := net.Dial(protocol, host)
+		if cErr != nil {
+			s.logger.ErrorWith("Failed to connect to local destination",
+				slog.F("session_id", s.sessionID),
+				slog.F("host", host),
+				slog.F("protocol", protocol),
+				slog.F("err", cErr))
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		s.logger.DebugWith("Bridged forwarded-udp channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("target", host),
+			slog.F("protocol", protocol))
+
+		// Pipe the SSH channel to the local connection
+		_, _ = sio.PipeWithCancel(channel, conn)
+		return
+	}
+	s.logger.ErrorWith("SSH instance not found for forwarded-udp",
+		slog.F("session_id", s.sessionID))
 }
 
 // SetSSHClient sets the SSH client connection (AgentRole/OperatorRole)

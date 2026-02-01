@@ -3,6 +3,7 @@ package portforward
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
@@ -21,8 +22,8 @@ type Manager struct {
 	logger         *slog.Logger
 	sessionID      int64
 	conn           ChannelOpener
-	remoteMappings map[int]*RemoteForward
-	localMappings  map[int]*LocalForward
+	remoteMappings map[string]*RemoteForward
+	localMappings  map[string]*LocalForward
 	forwardedTx    *ForwardedTx
 	mutex          sync.Mutex
 }
@@ -50,7 +51,7 @@ type RemoteForward struct {
 type LocalForward struct {
 	RcvChan  chan *types.TcpIpChannelMsg
 	DoneChan chan bool
-	Listener net.Listener
+	Listener io.Closer
 	*types.CustomTcpIpChannelMsg
 }
 
@@ -60,8 +61,8 @@ func NewManager(logger *slog.Logger, sessionID int64, conn ChannelOpener) *Manag
 		logger:         logger,
 		sessionID:      sessionID,
 		conn:           conn,
-		remoteMappings: make(map[int]*RemoteForward),
-		localMappings:  make(map[int]*LocalForward),
+		remoteMappings: make(map[string]*RemoteForward),
+		localMappings:  make(map[string]*LocalForward),
 		forwardedTx:    &ForwardedTx{},
 	}
 }
@@ -73,15 +74,21 @@ func (m *Manager) SetForwardedChannel(channel ssh.Channel) {
 	m.forwardedTx.ForwardingMutex.Unlock()
 }
 
+func newProtocolPortKey(protocol string, port uint32) string {
+	return fmt.Sprintf("%s:%d", protocol, port)
+}
+
 // AddRemoteForward adds a remote port forward mapping
-func (m *Manager) AddRemoteForward(t *types.TcpIpChannelMsg, isSshConn bool) {
+func (m *Manager) AddRemoteForward(t *types.TcpIpChannelMsg, isSshConn bool, protocol string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.remoteMappings[int(t.SrcPort)] = &RemoteForward{
+	key := newProtocolPortKey(protocol, t.SrcPort)
+	m.remoteMappings[key] = &RemoteForward{
 		RcvChan:  make(chan *types.TcpIpChannelMsg, 5),
 		DoneChan: make(chan bool, 5),
 		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
+			Protocol:        protocol,
 			IsSshConn:       isSshConn,
 			TcpIpChannelMsg: t,
 		},
@@ -89,33 +96,36 @@ func (m *Manager) AddRemoteForward(t *types.TcpIpChannelMsg, isSshConn bool) {
 }
 
 // GetRemoteMappings returns all remote port forward mappings
-func (m *Manager) GetRemoteMappings() map[int]*RemoteForward {
+func (m *Manager) GetRemoteMappings() map[string]*RemoteForward {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return m.remoteMappings
 }
 
 // GetRemoteMapping returns a specific remote port forward mapping
-func (m *Manager) GetRemoteMapping(port int) (*RemoteForward, error) {
+func (m *Manager) GetRemoteMapping(protocol string, port uint32) (*RemoteForward, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	mapping, ok := m.remoteMappings[port]
+	key := newProtocolPortKey(protocol, port)
+	mapping, ok := m.remoteMappings[key]
 	if !ok {
-		return nil, fmt.Errorf("no remote mapping found for port %d", port)
+		return nil, fmt.Errorf("no remote mapping found for %s port %d", protocol, port)
 	}
 	return mapping, nil
 }
 
 // AddLocalForward adds a local port forward mapping
-func (m *Manager) AddLocalForward(t *types.TcpIpChannelMsg, listener net.Listener, isSshConn bool) {
+func (m *Manager) AddLocalForward(t *types.TcpIpChannelMsg, listener io.Closer, isSshConn bool, protocol string) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.localMappings[int(t.SrcPort)] = &LocalForward{
+	key := newProtocolPortKey(protocol, t.SrcPort)
+	m.localMappings[key] = &LocalForward{
 		DoneChan: make(chan bool, 1),
 		Listener: listener,
 		CustomTcpIpChannelMsg: &types.CustomTcpIpChannelMsg{
+			Protocol:        protocol,
 			IsSshConn:       isSshConn,
 			TcpIpChannelMsg: t,
 		},
@@ -123,41 +133,45 @@ func (m *Manager) AddLocalForward(t *types.TcpIpChannelMsg, listener net.Listene
 }
 
 // GetLocalMappings returns all local port forward mappings
-func (m *Manager) GetLocalMappings() map[int]*LocalForward {
+func (m *Manager) GetLocalMappings() map[string]*LocalForward {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 	return m.localMappings
 }
 
 // GetLocalMapping returns a specific local port forward mapping
-func (m *Manager) GetLocalMapping(port int) (*LocalForward, error) {
+func (m *Manager) GetLocalMapping(protocol string, port uint32) (*LocalForward, error) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	mapping, ok := m.localMappings[port]
+	key := newProtocolPortKey(protocol, port)
+	mapping, ok := m.localMappings[key]
 	if !ok {
-		return nil, fmt.Errorf("no local mapping found for port %d", port)
+		return nil, fmt.Errorf("no local mapping found for %s port %d", protocol, port)
 	}
 	return mapping, nil
 }
 
 // RemoveLocalForward removes a local port forward mapping
-func (m *Manager) RemoveLocalForward(port int) {
+func (m *Manager) RemoveLocalForward(protocol string, port uint32) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	delete(m.localMappings, port)
+	key := newProtocolPortKey(protocol, port)
+	delete(m.localMappings, key)
 }
 
 // RemoveRemoteForward removes a remote port forward mapping
-func (m *Manager) RemoveRemoteForward(port int) {
+func (m *Manager) RemoveRemoteForward(protocol string, port uint32) {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	delete(m.remoteMappings, port)
+	key := newProtocolPortKey(protocol, port)
+	delete(m.remoteMappings, key)
 }
 
 // StartRemoteForward initiates a remote (reverse) port forward from a message
 func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier chan error) {
 	forwardReq := types.CustomTcpIpFwdRequest{
+		Protocol:  msg.Protocol,
 		IsSshConn: false,
 		TcpIpFwdRequest: &types.TcpIpFwdRequest{
 			BindAddress: msg.SrcHost,
@@ -173,13 +187,27 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 		return
 	}
 
-	ok, respData, rErr := m.conn.SendRequest(conf.SSHRequestTcpIpForward, true, forwardReqBytes)
-	if rErr != nil || !ok {
-		if rErr == nil {
-			rErr = fmt.Errorf("request was rejected, port likely in use")
+	var ok bool
+	var respData []byte
+	var rErr error
+	if msg.Protocol == conf.ForwardingProtocolUDP {
+		ok, respData, rErr = m.conn.SendRequest(conf.SSHRequestSliderUDPForward, true, forwardReqBytes)
+		if rErr != nil || !ok {
+			if rErr == nil {
+				rErr = fmt.Errorf("request was rejected, port likely in use")
+			}
+			notifier <- fmt.Errorf("failed to send \"%s\" request - %v", conf.SSHRequestSliderUDPForward, rErr)
+			return
 		}
-		notifier <- fmt.Errorf("failed to send \"%s\" request - %v", conf.SSHRequestTcpIpForward, rErr)
-		return
+	} else {
+		ok, respData, rErr = m.conn.SendRequest(conf.SSHRequestTcpIpForward, true, forwardReqBytes)
+		if rErr != nil || !ok {
+			if rErr == nil {
+				rErr = fmt.Errorf("request was rejected, port likely in use")
+			}
+			notifier <- fmt.Errorf("failed to send \"%s\" request - %v", conf.SSHRequestTcpIpForward, rErr)
+			return
+		}
 	}
 
 	if len(respData) > 0 {
@@ -194,13 +222,12 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 		DstPort: msg.DstPort,
 		SrcHost: msg.SrcHost,
 		SrcPort: msg.SrcPort,
-	}, false)
+	}, false, msg.Protocol)
 
-	bindPort := int(msg.SrcPort)
-	control, _ := m.GetRemoteMapping(bindPort)
+	control, _ := m.GetRemoteMapping(msg.Protocol, msg.SrcPort)
 
 	for range control.RcvChan {
-		conn, cErr := net.Dial("tcp", net.JoinHostPort(msg.DstHost, strconv.Itoa(int(msg.DstPort))))
+		conn, cErr := net.Dial(msg.Protocol, net.JoinHostPort(msg.DstHost, strconv.Itoa(int(msg.DstPort))))
 		if cErr != nil {
 			m.logger.ErrorWith("Failed to connect to host",
 				slog.F("session_id", m.sessionID),
@@ -217,7 +244,7 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 				_ = conn.Close()
 			}()
 			_, _ = sio.PipeWithCancel(conn, m.forwardedTx.ForwardedSshChannel)
-			m.logger.DebugWith("Completed MSG TCPIP Forwarded channel",
+			m.logger.DebugWith("Completed MSG Forwarded channel",
 				slog.F("session_id", m.sessionID),
 				slog.F("src_host", msg.SrcHost),
 				slog.F("src_port", msg.SrcPort),
@@ -230,9 +257,9 @@ func (m *Manager) StartRemoteForward(msg types.CustomTcpIpChannelMsg, notifier c
 
 // StartLocalForward initiates a local port forward from a message
 func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan error) {
-	listener, lErr := net.Listen("tcp", fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
+	listener, lErr := net.Listen(conf.ForwardingProtocolTCP, fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
 	if lErr != nil {
-		notifier <- fmt.Errorf("failed to listen on %s:%d - %v", msg.SrcHost, msg.SrcPort, lErr)
+		notifier <- fmt.Errorf("failed to listen on %s %s:%d - %v", conf.ForwardingProtocolTCP, msg.SrcHost, msg.SrcPort, lErr)
 		return
 	}
 	defer func() { _ = listener.Close() }()
@@ -243,8 +270,8 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 		slog.F("src_host", msg.SrcHost),
 		slog.F("src_port", msg.SrcPort))
 
-	m.AddLocalForward(&msg, listener, false)
-	mapping, mErr := m.GetLocalMapping(int(msg.SrcPort))
+	m.AddLocalForward(&msg, listener, false, conf.ForwardingProtocolTCP)
+	mapping, mErr := m.GetLocalMapping(conf.ForwardingProtocolTCP, msg.SrcPort)
 	if mErr != nil {
 		notifier <- fmt.Errorf("failed to get local port mapping - %v", mErr)
 		return
@@ -258,13 +285,13 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 				slog.F("channel_type", conf.SSHChannelDirectTCPIP),
 				slog.F("src_host", msg.SrcHost),
 				slog.F("src_port", msg.SrcPort))
-			m.RemoveLocalForward(int(msg.SrcPort))
+			m.RemoveLocalForward(conf.ForwardingProtocolTCP, msg.SrcPort)
 			return
 		default:
 			// Proceed
 		}
 
-		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.Timeout))
+		_ = listener.(*net.TCPListener).SetDeadline(time.Now().Add(conf.EndpointTickerInterval))
 		conn, cErr := listener.Accept()
 		if cErr != nil {
 			continue
@@ -285,13 +312,153 @@ func (m *Manager) StartLocalForward(msg types.TcpIpChannelMsg, notifier chan err
 	}
 }
 
+// StartLocalUDPForward initiates a local port forward from a message
+func (m *Manager) StartLocalUDPForward(msg types.TcpIpChannelMsg, notifier chan error) {
+	udpAddr, rErr := net.ResolveUDPAddr(conf.ForwardingProtocolUDP, fmt.Sprintf("%s:%d", msg.SrcHost, msg.SrcPort))
+	if rErr != nil {
+		notifier <- fmt.Errorf("failed to resolve UDP address %s:%d - %v", msg.SrcHost, msg.SrcPort, rErr)
+		return
+	}
+
+	conn, lErr := net.ListenUDP(conf.ForwardingProtocolUDP, udpAddr)
+	if lErr != nil {
+		notifier <- fmt.Errorf("failed to listen on %s %s:%d - %v", conf.ForwardingProtocolUDP, msg.SrcHost, msg.SrcPort, lErr)
+		return
+	}
+	defer func() { _ = conn.Close() }()
+
+	m.logger.DebugWith("UDP Endpoint listening",
+		slog.F("session_id", m.sessionID),
+		slog.F("channel_type", conf.SSHChannelDirectUDP),
+		slog.F("src_host", msg.SrcHost),
+		slog.F("src_port", msg.SrcPort))
+
+	// Listener wrapper for tracking
+	// Create a dummy listener to satisfy AddLocalForward signature
+	// Since UDP is connectionless, the "Listener" concept is slightly different,
+	// but we store the connection to close it later via CloseAll/RemoveLocalForward
+	m.AddLocalForward(&msg, conn, false, conf.ForwardingProtocolUDP)
+
+	mapping, mErr := m.GetLocalMapping(conf.ForwardingProtocolUDP, msg.SrcPort)
+	if mErr != nil {
+		notifier <- fmt.Errorf("failed to get local port mapping - %v", mErr)
+		return
+	}
+
+	// Map to track active "sessions" based on source address
+	// Key: Source IP:Port (string), Value: SSH Channel
+	sessions := make(map[string]ssh.Channel)
+	sessionsMutex := sync.Mutex{}
+
+	buffer := make([]byte, conf.MaxUDPPacketSize)
+
+	for {
+		select {
+		case <-mapping.DoneChan:
+			m.logger.DebugWith("Endpoint listener stopped",
+				slog.F("session_id", m.sessionID),
+				slog.F("channel_type", conf.SSHChannelDirectUDP),
+				slog.F("src_host", msg.SrcHost),
+				slog.F("src_port", msg.SrcPort))
+			m.RemoveLocalForward(conf.ForwardingProtocolUDP, msg.SrcPort)
+
+			// Cleanup all open channels
+			sessionsMutex.Lock()
+			for _, ch := range sessions {
+				_ = ch.Close()
+			}
+			sessionsMutex.Unlock()
+			return
+		default:
+			// Proceed
+		}
+
+		_ = conn.SetReadDeadline(time.Now().Add(conf.EndpointTickerInterval))
+		n, addr, err := conn.ReadFromUDP(buffer)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue
+			}
+			m.logger.ErrorWith("Failed to read from UDP connection",
+				slog.F("session_id", m.sessionID),
+				slog.F("err", err))
+			continue
+		}
+
+		clientAddr := addr.String()
+		sessionsMutex.Lock()
+		sshCh, exists := sessions[clientAddr]
+		sessionsMutex.Unlock()
+
+		if !exists {
+			// Open a new SSH channel for this client
+			// Initialize new channel request
+			reqPayload := ssh.Marshal(msg)
+			newChannel, reqs, openErr := m.conn.OpenChannel(conf.SSHChannelDirectUDP, reqPayload)
+			if openErr != nil {
+				m.logger.ErrorWith("Failed to open \"direct-udp\" channel",
+					slog.F("session_id", m.sessionID),
+					slog.F("channel_type", conf.SSHChannelDirectUDP),
+					slog.F("err", openErr))
+				continue
+			}
+			go ssh.DiscardRequests(reqs)
+
+			sshCh = newChannel
+			sessionsMutex.Lock()
+			sessions[clientAddr] = sshCh
+			sessionsMutex.Unlock()
+
+			// Handle responses from SSH channel -> UDP Client
+			go func(ch ssh.Channel, targetAddr *net.UDPAddr) {
+				defer func() {
+					_ = ch.Close()
+					sessionsMutex.Lock()
+					delete(sessions, clientAddr)
+					sessionsMutex.Unlock()
+				}()
+
+				// Read from SSH channel and write to UDP
+				// Simplified pipe logic for UDP
+				respBuf := make([]byte, 65535)
+				for {
+					rn, rErr := ch.Read(respBuf)
+					if rErr != nil {
+						return
+					}
+					if rn > 0 {
+						_, wErr := conn.WriteToUDP(respBuf[:rn], targetAddr)
+						if wErr != nil {
+							return
+						}
+					}
+				}
+			}(sshCh, addr)
+		}
+
+		// Write payload to SSH channel
+		_, wErr := sshCh.Write(buffer[:n])
+		if wErr != nil {
+			m.logger.ErrorWith("Failed to write to SSH channel",
+				slog.F("session_id", m.sessionID),
+				slog.F("err", wErr))
+			// Close channel on write error (broken pipe)
+			_ = sshCh.Close()
+			sessionsMutex.Lock()
+			delete(sessions, clientAddr)
+			sessionsMutex.Unlock()
+		}
+	}
+}
+
 // CancelRemoteForward cancels a remote port forward
-func (m *Manager) CancelRemoteForward(port int) error {
+func (m *Manager) CancelRemoteForward(protocol string, port uint32) error {
 	m.mutex.Lock()
-	control, ok := m.remoteMappings[port]
+	key := newProtocolPortKey(protocol, port)
+	control, ok := m.remoteMappings[key]
 	if !ok {
 		m.mutex.Unlock()
-		return fmt.Errorf("port %d not found", port)
+		return fmt.Errorf("mapping not found: %s", key)
 	}
 	m.mutex.Unlock()
 
@@ -318,7 +485,7 @@ func (m *Manager) CancelRemoteForward(port int) error {
 	close(control.DoneChan)
 
 	// Remove from map after successfully closing the port forward
-	m.RemoveRemoteForward(port)
+	m.RemoveRemoteForward(protocol, port)
 
 	return nil
 }
@@ -326,7 +493,7 @@ func (m *Manager) CancelRemoteForward(port int) error {
 // CancelAllSSHRemoteForwards cancels all SSH-initiated remote port forwards
 func (m *Manager) CancelAllSSHRemoteForwards() {
 	m.mutex.Lock()
-	mappings := make(map[int]*RemoteForward)
+	mappings := make(map[string]*RemoteForward)
 	for k, v := range m.remoteMappings {
 		if v.IsSshConn {
 			mappings[k] = v
@@ -366,7 +533,7 @@ func (m *Manager) CloseAll() {
 	defer m.mutex.Unlock()
 
 	// Close Local Mappings (Listeners)
-	for port, fwd := range m.localMappings {
+	for key, fwd := range m.localMappings {
 		if fwd.Listener != nil {
 			_ = fwd.Listener.Close()
 		}
@@ -375,17 +542,17 @@ func (m *Manager) CloseAll() {
 		case fwd.DoneChan <- true:
 		default:
 		}
-		delete(m.localMappings, port)
+		delete(m.localMappings, key)
 	}
 
 	// Close Remote Mappings
-	for port, fwd := range m.remoteMappings {
+	for key, fwd := range m.remoteMappings {
 		// Signal done loop
 		select {
 		case fwd.DoneChan <- true:
 		default:
 		}
 		close(fwd.RcvChan)
-		delete(m.remoteMappings, port)
+		delete(m.remoteMappings, key)
 	}
 }

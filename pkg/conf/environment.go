@@ -3,22 +3,16 @@ package conf
 // Slider environment variables
 const (
 
-	// ========================================
 	// Slider ENV VARS
-	// ========================================
 	SliderHomeEnvVar    = "S_HOME"
 	SliderCertJarEnvVar = "S_CERT_JAR"
 
-	// ========================================
 	// Console ENV VARS
-	// ========================================
 
 	// Position console shells in (0,0) if "true"
 	SliderAlignConsoleShellEnvVar = "S_ALIGN_CONSOLE_SHELL"
 
-	// ========================================
 	// SSH MESSAGE ENV VARS
-	// ========================================
 
 	// Use alternate shell if "true"
 	SliderAltShellEnvVar = "S_ALT_SHELL"

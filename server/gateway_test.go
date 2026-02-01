@@ -9,9 +9,7 @@ import (
 	"slider/pkg/slog"
 )
 
-// ========================================
 // Test Infrastructure
-// ========================================
 
 // testServer provides a minimal server for testing
 type testServer struct {
@@ -77,9 +75,7 @@ func (s *testServer) addSession(sess *session.BidirectionalSession) {
 	s.sessions[sess.GetID()] = sess
 }
 
-// ========================================
 // Test Session Builder
-// ========================================
 
 // testSessionBuilder helps create sessions for testing
 type testSessionBuilder struct {
@@ -120,9 +116,7 @@ func (b *testSessionBuilder) build() *session.BidirectionalSession {
 	return sess
 }
 
-// ========================================
 // Promiscuous Routing Tests
-// ========================================
 
 // TestInt_SessionListing tests that GetAllSessions returns connected sessions
 func TestInt_SessionListing(t *testing.T) {
