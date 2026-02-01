@@ -819,11 +819,16 @@ func (s *BidirectionalSession) handleSliderUDPForwardRequest(req *ssh.Request) {
 	}()
 
 	buf := make([]byte, 65535)
+	s.logger.DebugWith("Starting UDP listener loop",
+		slog.F("session_id", s.sessionID),
+		slog.F("bind_port", udpForward.BindPort))
 	for {
 		n, addr, rErr := conn.ReadFromUDP(buf)
 		if rErr != nil {
 			select {
 			case <-stopChan:
+				s.logger.DebugWith("UDP listener stopped via signal",
+					slog.F("session_id", s.sessionID))
 				return
 			default:
 				if !errors.Is(rErr, net.ErrClosed) {
@@ -834,11 +839,16 @@ func (s *BidirectionalSession) handleSliderUDPForwardRequest(req *ssh.Request) {
 			}
 		}
 
+		s.logger.DebugWith("Received UDP packet",
+			slog.F("session_id", s.sessionID),
+			slog.F("bytes", n),
+			slog.F("from", addr.String()))
+
 		clientAddr := addr.String()
 
 		sessionsMutex <- struct{}{}
 		sess, exists := sessions[clientAddr]
-		sessionsMutex <- struct{}{}
+		<-sessionsMutex
 
 		if !exists {
 			payload := &types.CustomTcpIpChannelMsg{
@@ -872,7 +882,7 @@ func (s *BidirectionalSession) handleSliderUDPForwardRequest(req *ssh.Request) {
 
 			sessionsMutex <- struct{}{}
 			sessions[clientAddr] = sess
-			sessionsMutex <- struct{}{}
+			<-sessionsMutex
 
 			// Handle return traffic (Channel -> UDP)
 			go func(us *udpSession, key string) {
@@ -880,7 +890,7 @@ func (s *BidirectionalSession) handleSliderUDPForwardRequest(req *ssh.Request) {
 					_ = us.channel.Close()
 					sessionsMutex <- struct{}{}
 					delete(sessions, key)
-					sessionsMutex <- struct{}{}
+					<-sessionsMutex
 				}()
 
 				// Copy from channel to UDP

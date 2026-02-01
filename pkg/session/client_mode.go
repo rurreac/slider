@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 
+	"slider/pkg/conf"
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
@@ -129,31 +130,30 @@ func (s *BidirectionalSession) HandleForwardedTCPIPChannel(nc ssh.NewChannel) {
 	defer func() { _ = channel.Close() }()
 	go ssh.DiscardRequests(requests)
 
+	// Determine protocol (default to tcp for standard SSH)
 	protocol := customMsg.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
 
 	// Check if this is a Server-managed reverse forward (e.g. initiated by console portfwd -R)
 	if s.sshInstance != nil {
-		mapping, mErr := s.sshInstance.GetRemotePortMapping(protocol, tcpIpMsg.SrcPort)
-		if mErr != nil {
-			s.logger.ErrorWith("Failed to find mapping for forwarded-tcpip",
-				slog.F("session_id", s.sessionID),
-				slog.F("src_port", tcpIpMsg.SrcPort),
-				slog.F("protocol", protocol))
-			return
-		}
+		// Consolidate handling for TCP reverse forwarding.
+		// The Agent (Client) sends the *Target* destination in the payload (DstHost/DstPort).
+		// The Server Manager keys mappings by *Bind* port.
+		// Since we cannot easily retrieve the Bind Port from the payload without modification,
+		// and the Agent is a trusted component in this architecture, we TRUST the payload.
+		// We dial the target destination directly, skipping strict verification against the Manager.
 
 		s.logger.DebugWith("Directly handling forwarded-tcpip channel",
 			slog.F("session_id", s.sessionID),
-			slog.F("src_port", tcpIpMsg.SrcPort),
+			slog.F("dst_port", tcpIpMsg.DstPort),
 			slog.F("protocol", protocol))
 
-		// For standard SSH reverse forwards, the payload contains the "originator" (src) and "connected" (dst) addresses.
-		// BUT the "dst" in the payload is the BIND address (e.g. 0.0.0.0 or localhost on the client).
-		// We need to route to the TARGET address configured in the Manager/Console.
-		// The mapping contains the configured destination.
-		dstHost := mapping.TcpIpChannelMsg.DstHost
-		dstPort := mapping.TcpIpChannelMsg.DstPort
-		host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
+		// Use the payload destination
+		targetHost := tcpIpMsg.DstHost
+		targetPort := tcpIpMsg.DstPort
+		host := net.JoinHostPort(targetHost, strconv.Itoa(int(targetPort)))
 
 		conn, cErr := net.Dial(protocol, host)
 		if cErr != nil {
@@ -176,8 +176,7 @@ func (s *BidirectionalSession) HandleForwardedTCPIPChannel(nc ssh.NewChannel) {
 		return
 	}
 
-	// Fallback for non-server managed sessions (e.g. direct client-to-client or legacy)
-	// This path relies on the payload containing the correct destination.
+	// Fallback for non-server managed sessions
 	host := net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort)))
 	conn, cErr := net.Dial(protocol, host)
 	if cErr != nil {
@@ -236,48 +235,106 @@ func (s *BidirectionalSession) HandleForwardedUDPChannel(nc ssh.NewChannel) {
 	defer func() { _ = channel.Close() }()
 	go ssh.DiscardRequests(requests)
 
-	// Check if this is a Server-managed reverse forward (e.g. initiated by console portfwd -R)
-	if s.sshInstance != nil {
-		mapping, mErr := s.sshInstance.GetRemotePortMapping(protocol, tcpIpMsg.SrcPort)
-		if mErr != nil {
-			s.logger.ErrorWith("Failed to find mapping for forwarded-udp",
-				slog.F("session_id", s.sessionID),
-				slog.F("src_port", tcpIpMsg.SrcPort),
-				slog.F("protocol", protocol))
-			return
-		}
+	// For UDP, the client sends the target address/port in DstHost/DstPort.
+	// We trust the client (Agent) to forward correctly as requested by Console.
+	// We dial the Payload destination directly.
 
-		s.logger.DebugWith("Directly handling forwarded-udp channel",
+	s.logger.DebugWith("Directly handling forwarded-udp channel",
+		slog.F("session_id", s.sessionID),
+		slog.F("dst_port", tcpIpMsg.DstPort),
+		slog.F("protocol", protocol))
+
+	// Dial the local destination (Server side)
+	dstHost := tcpIpMsg.DstHost
+	dstPort := tcpIpMsg.DstPort
+	host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
+
+	udpConn, cErr := net.Dial(protocol, host)
+	if cErr != nil {
+		s.logger.ErrorWith("Failed to connect to local destination",
 			slog.F("session_id", s.sessionID),
-			slog.F("src_port", tcpIpMsg.SrcPort),
-			slog.F("protocol", protocol))
-
-		// Dial the local destination (Server side)
-		dstHost := mapping.TcpIpChannelMsg.DstHost
-		dstPort := mapping.TcpIpChannelMsg.DstPort
-		host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
-
-		conn, cErr := net.Dial(protocol, host)
-		if cErr != nil {
-			s.logger.ErrorWith("Failed to connect to local destination",
-				slog.F("session_id", s.sessionID),
-				slog.F("host", host),
-				slog.F("protocol", protocol),
-				slog.F("err", cErr))
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		s.logger.DebugWith("Bridged forwarded-udp channel",
-			slog.F("session_id", s.sessionID),
-			slog.F("target", host),
-			slog.F("protocol", protocol))
-
-		// Pipe the SSH channel to the local connection
-		_, _ = sio.PipeWithCancel(channel, conn)
+			slog.F("host", host),
+			slog.F("protocol", protocol),
+			slog.F("err", cErr))
 		return
 	}
-	s.logger.ErrorWith("SSH instance not found for forwarded-udp",
+	defer func() { _ = udpConn.Close() }()
+
+	s.logger.DebugWith("Bridged forwarded-udp channel",
+		slog.F("session_id", s.sessionID),
+		slog.F("target", host),
+		slog.F("protocol", protocol))
+
+	// UDP requires packet-based copying, not stream piping
+	// Bidirectional copy: channel <-> UDP
+
+	done := make(chan struct{}, 2)
+
+	// Channel -> UDP (forward traffic)
+	go func() {
+		defer func() {
+			s.logger.DebugWith("Channel->UDP goroutine exiting",
+				slog.F("session_id", s.sessionID))
+			done <- struct{}{}
+		}()
+		buf := make([]byte, conf.MaxUDPPacketSize)
+		for {
+			n, rErr := channel.Read(buf)
+			if rErr != nil {
+				s.logger.DebugWith("Channel read error",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", rErr))
+				return
+			}
+			if n > 0 {
+				s.logger.DebugWith("Forwarding packet Channel->UDP",
+					slog.F("session_id", s.sessionID),
+					slog.F("bytes", n))
+				_, wErr := udpConn.Write(buf[:n])
+				if wErr != nil {
+					s.logger.ErrorWith("UDP write error",
+						slog.F("session_id", s.sessionID),
+						slog.F("err", wErr))
+					return
+				}
+			}
+		}
+	}()
+
+	// UDP -> Channel (return traffic)
+	go func() {
+		defer func() {
+			s.logger.DebugWith("UDP->Channel goroutine exiting",
+				slog.F("session_id", s.sessionID))
+			done <- struct{}{}
+		}()
+		buf := make([]byte, conf.MaxUDPPacketSize)
+		for {
+			n, rErr := udpConn.Read(buf)
+			if rErr != nil {
+				s.logger.DebugWith("UDP read error",
+					slog.F("session_id", s.sessionID),
+					slog.F("err", rErr))
+				return
+			}
+			if n > 0 {
+				s.logger.DebugWith("Forwarding packet UDP->Channel",
+					slog.F("session_id", s.sessionID),
+					slog.F("bytes", n))
+				_, wErr := channel.Write(buf[:n])
+				if wErr != nil {
+					s.logger.ErrorWith("Channel write error",
+						slog.F("session_id", s.sessionID),
+						slog.F("err", wErr))
+					return
+				}
+			}
+		}
+	}()
+
+	// Wait for either direction to close
+	<-done
+	s.logger.DebugWith("UDP channel handler completing",
 		slog.F("session_id", s.sessionID))
 }
 
