@@ -11,7 +11,7 @@ Slider can be used to:
 * Run commands remotely, 
 * Upload / download files, 
 * Run a reverse socks v5 server, 
-* Port forwarding,
+* TCP and UDP port forwarding,
 and more.
 
 All through a cyphered connection, while allowing clients and servers authenticate and verify each other through
@@ -564,6 +564,7 @@ Usage: Usage: portfwd [flags] <[a_addr]:a_port:[b_addr]:b_port>
   -r, --remove        Remove Port Forwarding from port passed as argument (requires L or R)
   -R, --reverse       Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>
   -s, --session int   Session ID to add or remove Port Forwarding
+  -u, --udp           UDP Port Forwarding
 ```
 Allows creating / removing Local and Remote port forwards dynamically over a specific session.
 
@@ -573,6 +574,7 @@ information won't be displayed as that is known only within the context of the S
 * Terminating a Remote Port forward created through an SSH endpoint won't be allowed.
 * Any Local Port Forward created through an SSH endpoint won't be displayed since the endpoint creation is handled within 
 the SSH client.
+* Both TCP and UDP port forwards are supported and displayed with their protocol type.
 
 ## Client
 
