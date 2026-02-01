@@ -16,6 +16,7 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
+	"strconv"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -341,7 +342,34 @@ func (si *Config) runSshComm(conn net.Conn) {
 			go si.handleRequests(sessionClientChannel, request, sshSessionScope)
 		case conf.SSHChannelDirectTCPIP:
 			go func() {
-				if hErr := si.handleDirectTcpIpChannel(nc); hErr != nil {
+				if hErr := si.handleDirectTCPIPChannel(nc); hErr != nil {
+					si.Logger.ErrorWith("Failed to handle channel",
+						slog.F("session_id", si.SessionID),
+						slog.F("channel_type", nc.ChannelType()),
+						slog.F("err", hErr))
+				}
+			}()
+		case conf.SSHChannelDirectUDP:
+			go func() {
+				if hErr := si.handleDirectUDPChannel(nc); hErr != nil {
+					si.Logger.ErrorWith("Failed to handle channel",
+						slog.F("session_id", si.SessionID),
+						slog.F("channel_type", nc.ChannelType()),
+						slog.F("err", hErr))
+				}
+			}()
+		case conf.SSHChannelForwardedTCPIP:
+			go func() {
+				if hErr := si.handleDirectTCPIPChannel(nc); hErr != nil {
+					si.Logger.ErrorWith("Failed to handle channel",
+						slog.F("session_id", si.SessionID),
+						slog.F("channel_type", nc.ChannelType()),
+						slog.F("err", hErr))
+				}
+			}()
+		case conf.SSHChannelForwardedUDP:
+			go func() {
+				if hErr := si.handleForwardedUDPChannel(nc); hErr != nil {
 					si.Logger.ErrorWith("Failed to handle channel",
 						slog.F("session_id", si.SessionID),
 						slog.F("channel_type", nc.ChannelType()),
@@ -499,8 +527,10 @@ func (si *Config) handleRequests(sessionClientChannel ssh.Channel, requests <-ch
 			if req.WantReply {
 				go func() { _ = req.Reply(ok, nil) }()
 			}
-		case conf.SSHRequestTcpIpForward:
-			go si.handleTcpIpForwardRequest(req)
+		case conf.SSHRequestSliderTCPIPForward:
+			go si.handleTCPIPForwardRequest(req)
+		case conf.SSHRequestSliderUDPForward:
+			go si.handleUDPForwardRequest(req)
 		case conf.SSHRequestKeepAlive:
 			ok = true
 			if req.WantReply {
@@ -555,29 +585,33 @@ func (si *Config) TcpIpForwardFromMsg(msg types.CustomTcpIpChannelMsg, notifier 
 	si.portFwdManager.StartRemoteForward(msg, notifier)
 }
 
-func (si *Config) GetLocalMappings() map[int]*portforward.LocalForward {
+func (si *Config) GetLocalMappings() map[string]*portforward.LocalForward {
 	if si.portFwdManager == nil {
-		return make(map[int]*portforward.LocalForward)
+		return make(map[string]*portforward.LocalForward)
 	}
 	return si.portFwdManager.GetLocalMappings()
 }
 
-func (si *Config) GetLocalPortMapping(port int) (*portforward.LocalForward, error) {
+func (si *Config) GetLocalPortMapping(protocol string, port uint32) (*portforward.LocalForward, error) {
 	if si.portFwdManager == nil {
 		return nil, fmt.Errorf("port forwarding manager not initialized")
 	}
-	return si.portFwdManager.GetLocalMapping(port)
+	return si.portFwdManager.GetLocalMapping(protocol, port)
 }
 
-func (si *Config) DirectTcpIpFromMsg(msg types.TcpIpChannelMsg, notifier chan error) {
+func (si *Config) StartLocalForwardingFromMsg(msg types.CustomTcpIpChannelMsg, notifier chan error) {
 	if si.portFwdManager == nil {
 		notifier <- fmt.Errorf("port forwarding manager not initialized")
 		return
 	}
-	si.portFwdManager.StartLocalForward(msg, notifier)
+	if msg.Protocol == conf.ForwardingProtocolUDP {
+		si.portFwdManager.StartLocalUDPForward(*msg.TcpIpChannelMsg, notifier)
+	} else {
+		si.portFwdManager.StartLocalForward(*msg.TcpIpChannelMsg, notifier)
+	}
 }
 
-func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
+func (si *Config) handleTCPIPForwardRequest(req *ssh.Request) {
 	if si.portFwdManager == nil {
 		si.Logger.ErrorWith("Port forwarding manager not initialized",
 			slog.F("session_id", si.SessionID))
@@ -586,21 +620,33 @@ func (si *Config) handleTcpIpForwardRequest(req *ssh.Request) {
 		}
 		return
 	}
-	si.portFwdManager.HandleTcpIpForwardRequest(req, si.sshServerConn)
+	si.portFwdManager.HandleTCPIPForwardRequest(req, si.sshServerConn)
 }
 
-func (si *Config) GetRemoteMappings() map[int]*portforward.RemoteForward {
+func (si *Config) handleUDPForwardRequest(req *ssh.Request) {
 	if si.portFwdManager == nil {
-		return make(map[int]*portforward.RemoteForward)
+		si.Logger.ErrorWith("Port forwarding manager not initialized",
+			slog.F("session_id", si.SessionID))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+	si.portFwdManager.HandleUDPForwardRequest(req, si.sshServerConn)
+}
+
+func (si *Config) GetRemoteMappings() map[string]*portforward.RemoteForward {
+	if si.portFwdManager == nil {
+		return make(map[string]*portforward.RemoteForward)
 	}
 	return si.portFwdManager.GetRemoteMappings()
 }
 
-func (si *Config) GetRemotePortMapping(port int) (*portforward.RemoteForward, error) {
+func (si *Config) GetRemotePortMapping(protocol string, port uint32) (*portforward.RemoteForward, error) {
 	if si.portFwdManager == nil {
 		return nil, fmt.Errorf("port forwarding manager not initialized")
 	}
-	return si.portFwdManager.GetRemoteMapping(port)
+	return si.portFwdManager.GetRemoteMapping(protocol, port)
 }
 
 func (si *Config) cancelSshRemoteFwd() {
@@ -609,18 +655,153 @@ func (si *Config) cancelSshRemoteFwd() {
 	}
 }
 
-func (si *Config) CancelMsgRemoteFwd(port int) error {
+func (si *Config) CancelMsgRemoteFwd(protocol string, port uint32) error {
 	if si.portFwdManager == nil {
 		return fmt.Errorf("port forwarding manager not initialized")
 	}
-	return si.portFwdManager.CancelRemoteForward(port)
+	return si.portFwdManager.CancelRemoteForward(protocol, port)
 }
 
-func (si *Config) handleDirectTcpIpChannel(nc ssh.NewChannel) error {
+func (si *Config) handleDirectTCPIPChannel(nc ssh.NewChannel) error {
 	if si.portFwdManager == nil {
 		return fmt.Errorf("port forwarding manager not initialized")
 	}
-	return si.portFwdManager.HandleDirectTcpIpChannel(nc)
+	return si.portFwdManager.HandleDirectTCPIPChannel(nc)
+}
+
+func (si *Config) handleDirectUDPChannel(nc ssh.NewChannel) error {
+	if si.portFwdManager == nil {
+		return fmt.Errorf("port forwarding manager not initialized")
+	}
+	return si.portFwdManager.HandleDirectUDPChannel(nc)
+}
+
+func (si *Config) handleForwardedUDPChannel(nc ssh.NewChannel) error {
+	var tcpIpMsg types.TcpIpChannelMsg
+	customMsg := &types.CustomTcpIpChannelMsg{}
+
+	// UDP reverse forward from client (always CustomTcpIpChannelMsg format)
+	if jErr := json.Unmarshal(nc.ExtraData(), customMsg); jErr == nil && customMsg.TcpIpChannelMsg != nil {
+		tcpIpMsg = *customMsg.TcpIpChannelMsg
+	} else {
+		si.Logger.ErrorWith("Failed to unmarshal forwarded-udp data",
+			slog.F("session_id", si.SessionID),
+			slog.F("err", jErr))
+		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode forwarded-udp data")
+		return fmt.Errorf("failed to unmarshal forwarded-udp data: %w", jErr)
+	}
+
+	protocol := customMsg.Protocol
+
+	si.Logger.DebugWith("Forwarded-udp channel request",
+		slog.F("session_id", si.SessionID),
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort),
+		slog.F("src_host", tcpIpMsg.SrcHost),
+		slog.F("src_port", tcpIpMsg.SrcPort),
+		slog.F("protocol", protocol))
+
+	channel, requests, aErr := nc.Accept()
+	if aErr != nil {
+		si.Logger.ErrorWith("Failed to accept forwarded-udp channel",
+			slog.F("session_id", si.SessionID),
+			slog.F("err", aErr))
+		return fmt.Errorf("failed to accept channel: %w", aErr)
+	}
+	defer func() { _ = channel.Close() }()
+	go ssh.DiscardRequests(requests)
+
+	// Dial the local destination (Server side)
+	dstHost := tcpIpMsg.DstHost
+	dstPort := tcpIpMsg.DstPort
+	host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
+
+	udpConn, cErr := net.Dial(protocol, host)
+	if cErr != nil {
+		si.Logger.ErrorWith("Failed to connect to local destination",
+			slog.F("session_id", si.SessionID),
+			slog.F("host", host),
+			slog.F("protocol", protocol),
+			slog.F("err", cErr))
+		return fmt.Errorf("failed to dial %s: %w", host, cErr)
+	}
+	defer func() { _ = udpConn.Close() }()
+
+	si.Logger.DebugWith("Bridged forwarded-udp channel",
+		slog.F("session_id", si.SessionID),
+		slog.F("target", host),
+		slog.F("protocol", protocol))
+
+	// UDP requires packet-based copying, not stream piping
+	done := make(chan struct{}, 2)
+
+	// Channel -> UDP (forward traffic)
+	go func() {
+		defer func() {
+			si.Logger.DebugWith("Channel->UDP goroutine exiting",
+				slog.F("session_id", si.SessionID))
+			done <- struct{}{}
+		}()
+		buf := make([]byte, conf.MaxUDPPacketSize)
+		for {
+			n, rErr := channel.Read(buf)
+			if rErr != nil {
+				si.Logger.DebugWith("Channel read error",
+					slog.F("session_id", si.SessionID),
+					slog.F("err", rErr))
+				return
+			}
+			if n > 0 {
+				si.Logger.DebugWith("Forwarding packet Channel->UDP",
+					slog.F("session_id", si.SessionID),
+					slog.F("bytes", n))
+				_, wErr := udpConn.Write(buf[:n])
+				if wErr != nil {
+					si.Logger.ErrorWith("UDP write error",
+						slog.F("session_id", si.SessionID),
+						slog.F("err", wErr))
+					return
+				}
+			}
+		}
+	}()
+
+	// UDP -> Channel (return traffic)
+	go func() {
+		defer func() {
+			si.Logger.DebugWith("UDP->Channel goroutine exiting",
+				slog.F("session_id", si.SessionID))
+			done <- struct{}{}
+		}()
+		buf := make([]byte, conf.MaxUDPPacketSize)
+		for {
+			n, rErr := udpConn.Read(buf)
+			if rErr != nil {
+				si.Logger.DebugWith("UDP read error",
+					slog.F("session_id", si.SessionID),
+					slog.F("err", rErr))
+				return
+			}
+			if n > 0 {
+				si.Logger.DebugWith("Forwarding packet UDP->Channel",
+					slog.F("session_id", si.SessionID),
+					slog.F("bytes", n))
+				_, wErr := channel.Write(buf[:n])
+				if wErr != nil {
+					si.Logger.ErrorWith("Channel write error",
+						slog.F("session_id", si.SessionID),
+						slog.F("err", wErr))
+					return
+				}
+			}
+		}
+	}()
+
+	// Wait for either direction to close
+	<-done
+	si.Logger.DebugWith("UDP channel handler completing",
+		slog.F("session_id", si.SessionID))
+	return nil
 }
 
 // sendInitTermSize receives a req-pty payload extracts the terminal size and sends it through an init-size channel payload

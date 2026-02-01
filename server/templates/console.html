@@ -69,7 +69,7 @@
             height: 600px;
             border: 1px solid var(--accent-color);
             border-radius: 8px;
-            overflow: hidden;
+            overflow: auto;
             background: #1e1e1e;
             padding: 10px;
         }
@@ -247,6 +247,9 @@
                 cursorBlink: true,
                 fontSize: 13,
                 fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+                scrollback: 10000,
+                convertEol: true,
+                windowsMode: false,
                 theme: {
                     background: '#1e1e1e',
                     foreground: '#d4d4d4',
@@ -330,9 +333,11 @@
                     event.data.arrayBuffer().then(buffer => {
                         const text = new TextDecoder().decode(buffer);
                         term.write(text);
+                        term.scrollToBottom();
                     });
                 } else {
                     term.write(event.data);
+                    term.scrollToBottom();
                 }
             };
 

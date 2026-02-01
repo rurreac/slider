@@ -8,9 +8,7 @@ import (
 	"slider/pkg/slog"
 )
 
-// ========================================
 // General Server Tests
-// ========================================
 
 // TestInt_ClientInfoExchange tests that interpreter info is stored after handshake
 func TestInt_ClientInfoExchange(t *testing.T) {

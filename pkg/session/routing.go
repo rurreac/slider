@@ -60,9 +60,17 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 
 	case conf.SSHChannelDirectTCPIP:
 		if s.role.IsAgent() {
-			err = s.HandleDirectTcpIp(nc)
+			err = s.HandleDirectTCPIP(nc)
 		} else {
 			s.rejectChannel(nc, channelType, "direct-tcpip only available for agents")
+			return nil
+		}
+
+	case conf.SSHChannelDirectUDP:
+		if s.role.IsAgent() {
+			err = s.HandleDirectUDP(nc)
+		} else {
+			s.rejectChannel(nc, channelType, "direct-udp only available for agents")
 			return nil
 		}
 
@@ -104,7 +112,11 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 
 	case conf.SSHChannelForwardedTCPIP:
 		// All roles handle forwarded-tcpip responses
-		err = s.HandleForwardedTcpIp(nc)
+		err = s.HandleForwardedTCPIP(nc)
+
+	case conf.SSHChannelForwardedUDP:
+		// All roles handle forwarded-udp responses
+		err = s.HandleForwardedUDP(nc)
 
 	default:
 		s.logger.WarnWith("Unknown channel type",
@@ -124,12 +136,10 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 	return err
 }
 
-// ========================================
 // Channel Handlers
-// ========================================
 
-// HandleDirectTcpIp handles direct-tcpip channels (local port forwarding)
-func (s *BidirectionalSession) HandleDirectTcpIp(nc ssh.NewChannel) error {
+// HandleDirectTCPIP handles direct-tcpip channels (local port forwarding)
+func (s *BidirectionalSession) HandleDirectTCPIP(nc ssh.NewChannel) error {
 	tcpIpMsg := &types.TcpIpChannelMsg{}
 	if uErr := ssh.Unmarshal(nc.ExtraData(), tcpIpMsg); uErr != nil {
 		s.logger.ErrorWith("Failed to unmarshal channel data",
@@ -172,10 +182,53 @@ func (s *BidirectionalSession) HandleDirectTcpIp(nc ssh.NewChannel) error {
 	return nil
 }
 
+// HandleDirectUDP handles direct-udp channels (local port forwarding for UDP)
+func (s *BidirectionalSession) HandleDirectUDP(nc ssh.NewChannel) error {
+	tcpIpMsg := &types.TcpIpChannelMsg{}
+	if uErr := ssh.Unmarshal(nc.ExtraData(), tcpIpMsg); uErr != nil {
+		s.logger.ErrorWith("Failed to unmarshal channel data",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("extra_data", nc.ExtraData()),
+			slog.F("err", uErr))
+		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode direct-udp data")
+		return fmt.Errorf("failed to unmarshal direct-udp data: %w", uErr)
+	}
+
+	s.logger.DebugWith("Direct UDP channel request",
+		slog.F("session_id", s.sessionID),
+		slog.F("dst_host", tcpIpMsg.DstHost),
+		slog.F("dst_port", tcpIpMsg.DstPort))
+
+	host := net.JoinHostPort(tcpIpMsg.DstHost, strconv.Itoa(int(tcpIpMsg.DstPort)))
+	conn, cErr := net.Dial("udp", host)
+	if cErr != nil {
+		s.logger.ErrorWith("Failed to connect to destination",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("host", host),
+			slog.F("err", cErr))
+		_ = nc.Reject(ssh.Prohibited, "Failed to connect to destination")
+		return fmt.Errorf("failed to connect to %s: %w", host, cErr)
+	}
+
+	dChan, dReq, dErr := nc.Accept()
+	if dErr != nil {
+		s.logger.ErrorWith("Failed to accept channel",
+			slog.F("session_id", s.sessionID),
+			slog.F("channel_type", nc.ChannelType()),
+			slog.F("err", dErr))
+		_ = conn.Close()
+		return fmt.Errorf("failed to accept channel: %w", dErr)
+	}
+	go ssh.DiscardRequests(dReq)
+	_, _ = sio.PipeWithCancel(dChan, conn)
+	return nil
+}
+
 // HandleInitSize handles init-size channels (terminal dimensions)
 func (s *BidirectionalSession) HandleInitSize(nc ssh.NewChannel) error {
-	// Process payload BEFORE accepting the channel to avoid race condition
-	// where client opens shell before server has set the size
+	// Process payload before accepting the channel
 	payload := nc.ExtraData()
 
 	s.logger.DebugWith("SSH Effective \"req-pty\" size as \"init-size\" payload",
@@ -260,13 +313,16 @@ func (s *BidirectionalSession) HandleSocks(nc ssh.NewChannel) error {
 	return nil
 }
 
-// HandleForwardedTcpIp handles forwarded-tcpip channels (reverse port forwarding)
+// HandleForwardedTCPIP handles forwarded-tcpip channels (reverse port forwarding)
 // This is called when a remote side opens a forwarded-tcpip channel to us
-func (s *BidirectionalSession) HandleForwardedTcpIp(nc ssh.NewChannel) error {
-	// Delegate to the role-specific handler
-	// This method is already implemented in client_mode.go and handles
-	// forwarded-tcpip appropriately based on the session's role
-	s.HandleForwardedTcpIpChannel(nc)
+func (s *BidirectionalSession) HandleForwardedTCPIP(nc ssh.NewChannel) error {
+	s.HandleForwardedTCPIPChannel(nc)
+	return nil
+}
+
+// HandleForwardedUDP handles forwarded-udp channels (reverse port forwarding for UDP)
+func (s *BidirectionalSession) HandleForwardedUDP(nc ssh.NewChannel) error {
+	s.HandleForwardedUDPChannel(nc)
 	return nil
 }
 

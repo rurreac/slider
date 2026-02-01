@@ -37,4 +37,7 @@ const (
 
 	DefaultTerminalWidth  = 80
 	DefaultTerminalHeight = 24
+
+	// MaxUDPPacketSize is the maximum size of a UDP packet
+	MaxUDPPacketSize = 65535
 )

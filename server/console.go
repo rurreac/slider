@@ -379,17 +379,17 @@ func (s *server) notConsoleCommand(fCmd []string) {
 
 }
 
-func parsePort(input string) (int, error) {
+func parsePort(input string) (uint32, error) {
 	remotePort, iErr := strconv.Atoi(input)
 	if iErr != nil || remotePort < 1 || remotePort > 65535 {
 		return 0, fmt.Errorf("invalid port: %s", input)
 	}
-	return remotePort, nil
+	return uint32(remotePort), nil
 }
 
-func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, error) {
+func parseForwarding(input string, reverse bool, protocol string) (*types.CustomTcpIpChannelMsg, error) {
 	var aAddr, bAddr string
-	var aPort, bPort int
+	var aPort, bPort uint32
 	msg := &types.CustomTcpIpChannelMsg{}
 
 	portFwd := strings.Split(input, ":")
@@ -426,7 +426,7 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 		}
 		bAddr = portFwd[1]
 		if bAddr == "" {
-			bAddr = "localhost"
+			bAddr = "127.0.0.1"
 		}
 		bPort, iErr = parsePort(portFwd[2])
 		if iErr != nil {
@@ -435,7 +435,7 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 	case 4:
 		aAddr = portFwd[0]
 		if aAddr == "" {
-			aAddr = "localhost"
+			aAddr = "127.0.0.1"
 			if reverse {
 				aAddr = "0.0.0.0"
 			}
@@ -446,7 +446,7 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 		}
 		bAddr = portFwd[2]
 		if bAddr == "" {
-			bAddr = "localhost"
+			bAddr = "127.0.0.1"
 		}
 		bPort, iErr = parsePort(portFwd[3])
 		if iErr != nil {
@@ -458,11 +458,12 @@ func parseForwarding(input string, reverse bool) (*types.CustomTcpIpChannelMsg, 
 	}
 
 	msg.IsSshConn = false
+	msg.Protocol = protocol
 	msg.TcpIpChannelMsg = &types.TcpIpChannelMsg{
 		SrcHost: aAddr,
-		SrcPort: uint32(aPort),
+		SrcPort: aPort,
 		DstHost: bAddr,
-		DstPort: uint32(bPort),
+		DstPort: bPort,
 	}
 
 	return msg, nil

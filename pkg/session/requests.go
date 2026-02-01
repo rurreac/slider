@@ -94,9 +94,7 @@ func (s *BidirectionalSession) handleSSHRequests(
 	}
 }
 
-// ========================================
 // Global Request Routing
-// ========================================
 
 // HandleIncomingRequests processes SSH global requests
 // Handles common protocol requests and delegates application-specific ones
@@ -122,14 +120,14 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		if s.role.IsAgent() || s.role.IsGateway() {
 			go s.handleTcpIpForward(req)
 		} else {
-			s.rejectRequest(req, "tcpip-forward not supported in this role")
+			s.rejectRequest(req, fmt.Sprintf("%s not supported in this role %s", conf.SSHRequestTcpIpForward, s.role.String()))
 		}
 
 	case conf.SSHRequestCancelTcpIpForward:
 		if s.role.IsAgent() || s.role.IsGateway() {
 			s.handleCancelTcpIpForward(req)
 		} else {
-			s.rejectRequest(req, "cancel-tcpip-forward not supported in this role")
+			s.rejectRequest(req, fmt.Sprintf("%s not supported in this role %s", conf.SSHRequestCancelTcpIpForward, s.role.String()))
 		}
 
 	// Application-specific requests
@@ -148,12 +146,19 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 			s.rejectRequest(req, "slider-sessions not supported in this configuration")
 		}
 
-	case conf.SSHRequestSliderForward:
+	case conf.SSHRequestSliderTCPIPForward:
 		// Only sessions with a router/applicationServer handle this (Gateway/Agent in gateway mode)
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderForwardRequest(req)
 		} else {
-			s.rejectRequest(req, "slider-forward-request not supported in this configuration")
+			s.rejectRequest(req, fmt.Sprintf("%s not supported in this role %s", conf.SSHRequestSliderTCPIPForward, s.role.String()))
+		}
+
+	case conf.SSHRequestSliderUDPForward:
+		if s.role.IsAgent() || s.role.IsGateway() {
+			go s.handleSliderUDPForwardRequest(req)
+		} else {
+			s.rejectRequest(req, fmt.Sprintf("%s not supported in this role %s", conf.SSHRequestSliderUDPForward, s.role.String()))
 		}
 
 	case conf.SSHRequestSliderEvent:
@@ -161,14 +166,13 @@ func (s *BidirectionalSession) routeRequest(req *ssh.Request) {
 		if (s.role.IsGateway() || s.role.IsAgent()) && s.applicationServer != nil {
 			s.handleSliderEvent(req)
 		} else {
-			s.rejectRequest(req, "slider-event not supported in this configuration")
+			s.rejectRequest(req, fmt.Sprintf("%s not supported in this role %s", conf.SSHRequestSliderEvent, s.role.String()))
 		}
 
 	case conf.SSHRequestShutdown:
 		s.handleShutdown(req)
 
 	default:
-
 		// Unknown request
 		s.logger.DebugWith("Received unknown request type",
 			slog.F("session_id", s.sessionID),
@@ -634,7 +638,7 @@ func (s *BidirectionalSession) handleSliderForwardRequest(req *ssh.Request) {
 			return
 		}
 
-		ok, reply, sErr := nextHop.GetSSHClient().SendRequest(conf.SSHRequestSliderForward, req.WantReply, newData)
+		ok, reply, sErr := nextHop.GetSSHClient().SendRequest(conf.SSHRequestSliderTCPIPForward, req.WantReply, newData)
 		if sErr != nil {
 			s.logger.DErrorWith("Failed to send forward request",
 				slog.F("session_id", s.sessionID),
@@ -721,5 +725,189 @@ func (s *BidirectionalSession) handleShutdown(req *ssh.Request) {
 	// Close WebSocket connection to trigger cleanup
 	if s.wsConn != nil {
 		_ = s.wsConn.Close()
+	}
+}
+
+// handleSliderUDPForwardRequest handles udp-forward requests (reverse port forwarding for UDP)
+func (s *BidirectionalSession) handleSliderUDPForwardRequest(req *ssh.Request) {
+	udpForward := &types.CustomTcpIpFwdRequest{}
+	if uErr := json.Unmarshal(req.Payload, udpForward); uErr != nil {
+		s.logger.ErrorWith("Failed to unmarshal UDP Forward request",
+			slog.F("session_id", s.sessionID),
+			slog.F("err", uErr))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	fwdAddress := fmt.Sprintf("%s:%d", udpForward.BindAddress, udpForward.BindPort)
+	udpAddr, rErr := net.ResolveUDPAddr("udp", fwdAddress)
+	if rErr != nil {
+		s.logger.ErrorWith("Failed to resolve UDP address",
+			slog.F("addr", fwdAddress),
+			slog.F("err", rErr))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		s.logger.ErrorWith("Failed to start reverse udp forward listener",
+			slog.F("session_id", s.sessionID),
+			slog.F("fwd_address", fwdAddress),
+			slog.F("err", err))
+		if req.WantReply {
+			_ = req.Reply(false, nil)
+		}
+		return
+	}
+
+	// We may have asked to bind to port 0, we want it resolved, saved and send back
+	finalBindPort := conn.LocalAddr().(*net.UDPAddr).Port
+	s.logger.DebugWith("Reverse UDP Forward request binding",
+		slog.F("session_id", s.sessionID),
+		slog.F("bind_address", udpForward.BindAddress),
+		slog.F("bind_port", udpForward.BindPort),
+		slog.F("fwd_address", fwdAddress),
+		slog.F("fwd_port", finalBindPort))
+
+	// Answer when we know if we can create a listener and the final bound port
+	if req.WantReply {
+		dataBytes := make([]byte, 0)
+		if udpForward.BindPort == 0 {
+			// If the port was 0, we need to send the final bound port
+			data := types.TcpIpReqSuccess{BoundPort: uint32(finalBindPort)}
+			dataBytes = ssh.Marshal(data)
+		}
+		_ = req.Reply(true, dataBytes)
+	}
+
+	// Override the structure with the final bound port
+	udpForward.BindPort = uint32(finalBindPort)
+
+	stopChan := make(chan bool, 1)
+	if err := s.AddReversePortForward(udpForward.BindPort, udpForward.BindAddress, stopChan); err != nil {
+		s.logger.ErrorWith("Failed to add reverse port forward",
+			slog.F("session_id", s.sessionID),
+			slog.F("bind_port", udpForward.BindPort),
+			slog.F("err", err))
+		_ = conn.Close()
+		return
+	}
+
+	defer func() {
+		_ = conn.Close()
+		_ = s.RemoveReversePortForward(udpForward.BindPort)
+	}()
+
+	// Map to track active sessions/channels
+	// Key: RemoteAddr string, Value: ssh.Channel
+	type udpSession struct {
+		channel ssh.Channel
+		addr    *net.UDPAddr
+	}
+	sessions := make(map[string]*udpSession)
+	sessionsMutex := make(chan struct{}, 1)
+
+	// Goroutine to handle Stop Signal and cleanup
+	go func() {
+		<-stopChan
+		_ = conn.Close()
+	}()
+
+	buf := make([]byte, 65535)
+	s.logger.DebugWith("Starting UDP listener loop",
+		slog.F("session_id", s.sessionID),
+		slog.F("bind_port", udpForward.BindPort))
+	for {
+		n, addr, rErr := conn.ReadFromUDP(buf)
+		if rErr != nil {
+			select {
+			case <-stopChan:
+				s.logger.DebugWith("UDP listener stopped via signal",
+					slog.F("session_id", s.sessionID))
+				return
+			default:
+				if !errors.Is(rErr, net.ErrClosed) {
+					s.logger.DebugWith("Error reading from UDP listener",
+						slog.F("err", rErr))
+				}
+				return
+			}
+		}
+
+		s.logger.DebugWith("Received UDP packet",
+			slog.F("session_id", s.sessionID),
+			slog.F("bytes", n),
+			slog.F("from", addr.String()))
+
+		clientAddr := addr.String()
+
+		sessionsMutex <- struct{}{}
+		sess, exists := sessions[clientAddr]
+		<-sessionsMutex
+
+		if !exists {
+			payload := &types.CustomTcpIpChannelMsg{
+				Protocol:  udpForward.Protocol,
+				IsSshConn: false,
+				TcpIpChannelMsg: &types.TcpIpChannelMsg{
+					DstHost: udpForward.FwdHost,
+					DstPort: udpForward.FwdPort,
+					SrcHost: addr.IP.String(),
+					SrcPort: uint32(addr.Port),
+				},
+			}
+
+			customMsgBytes, mErr := json.Marshal(payload)
+			if mErr != nil {
+				continue
+			}
+
+			channel, reqs, oErr := s.GetSSHConn().OpenChannel(conf.SSHChannelForwardedUDP, customMsgBytes)
+			if oErr != nil {
+				s.logger.DebugWith("Failed to open forwarded-udp channel",
+					slog.F("err", oErr))
+				continue
+			}
+			go ssh.DiscardRequests(reqs)
+
+			sess = &udpSession{
+				channel: channel,
+				addr:    addr,
+			}
+
+			sessionsMutex <- struct{}{}
+			sessions[clientAddr] = sess
+			<-sessionsMutex
+
+			// Handle return traffic (Channel -> UDP)
+			go func(us *udpSession, key string) {
+				defer func() {
+					_ = us.channel.Close()
+					sessionsMutex <- struct{}{}
+					delete(sessions, key)
+					<-sessionsMutex
+				}()
+
+				// Copy from channel to UDP
+				cBuf := make([]byte, conf.MaxUDPPacketSize)
+				for {
+					rn, cErr := us.channel.Read(cBuf)
+					if cErr != nil {
+						return
+					}
+					if rn > 0 {
+						_, _ = conn.WriteToUDP(cBuf[:rn], us.addr)
+					}
+				}
+			}(sess, clientAddr)
+		}
+
+		// Forward data to channel
+		_, _ = sess.channel.Write(buf[:n])
 	}
 }

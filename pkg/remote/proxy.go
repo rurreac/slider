@@ -63,11 +63,10 @@ func (p *Proxy) SendRequest(name string, wantReply bool, payload []byte) (bool, 
 		slog.F("target", p.targetPath),
 	)
 
-	return p.gateway.GetSSHClient().SendRequest(conf.SSHRequestSliderForward, wantReply, data)
+	return p.gateway.GetSSHClient().SendRequest(conf.SSHRequestSliderTCPIPForward, wantReply, data)
 }
 
-// ParsePath parses a target path from []int64
-// Returns the next hop ID and the remaining path
+// ParsePath parses a target path from []int64 and returns the next hop ID and the remaining path
 func (p *Proxy) ParsePath() (nextHop int, remaining []int64, err error) {
 	if len(p.targetPath) == 0 {
 		return 0, nil, nil

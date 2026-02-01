@@ -41,6 +41,7 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	pLocal := portFwdFlags.BoolP("local", "L", false, "Local Port Forwarding <[local_addr]:local_port:[remote_addr]:remote_port>")
 	pReverse := portFwdFlags.BoolP("reverse", "R", false, "Reverse format: <[allowed_remote_addr]:remote_port:[forward_addr]:forward_port>")
 	pRemove := portFwdFlags.BoolP("remove", "r", false, "Remove Port Forwarding from port passed as argument (requires L or R)")
+	pUDP := portFwdFlags.BoolP("udp", "u", false, "UDP Port Forwarding")
 
 	portFwdFlags.Usage = func() {
 		_, _ = fmt.Fprintf(ui.Writer(), "%s\n", portFwdDesc)
@@ -194,10 +195,10 @@ func (c *PortFwdCommand) Run(ctx *ExecutionContext, args []string) error {
 	}
 
 	if *pLocal {
-		return handleLocalForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove)
+		return handleLocalForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove, *pUDP)
 	}
 	if *pReverse {
-		return handleReverseForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove)
+		return handleReverseForward(svr, ui, fwdInstance, portFwdFlags.Args()[0], *pRemove, *pUDP)
 	}
 
 	return nil
@@ -214,8 +215,8 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	count += len(reverseMappings)
 	if len(reverseMappings) > 0 {
 		_, _ = fmt.Fprintln(tw)
-		_, _ = fmt.Fprintf(tw, "\tID\tForward Address\tForward Port\tAllowed Address\tRemote Port\n")
-		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t------------\t---------------\t-----------\n")
+		_, _ = fmt.Fprintf(tw, "\tID\tForward Address\tForward Port\tAllowed Address\tRemote Port\tProtocol\n")
+		_, _ = fmt.Fprintf(tw, "\t--\t---------------\t------------\t---------------\t-----------\t--------\n")
 		for _, mapping := range reverseMappings {
 			address := mapping.DstHost
 			port := fmt.Sprintf("%d", int(mapping.DstPort))
@@ -223,7 +224,7 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 				address = "(ssh client)"
 				port = "(ssh client)"
 			}
-			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\n", sessionID, address, port, mapping.SrcHost, int(mapping.SrcPort))
+			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%s\t%s\t%d\t%s\n", sessionID, address, port, mapping.SrcHost, mapping.SrcPort, mapping.Protocol)
 		}
 		_, _ = fmt.Fprintln(tw)
 		_ = tw.Flush()
@@ -233,8 +234,8 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	count += len(localMappings)
 	if len(localMappings) > 0 {
 		_, _ = fmt.Fprintln(tw)
-		_, _ = fmt.Fprintf(tw, "\tID\tLocal Address\tLocal Port\tForward Address\tForward Port\n")
-		_, _ = fmt.Fprintf(tw, "\t--\t-------------\t----------\t---------------\t------------\n")
+		_, _ = fmt.Fprintf(tw, "\tID\tLocal Address\tLocal Port\tForward Address\tForward Port\tProtocol\n")
+		_, _ = fmt.Fprintf(tw, "\t--\t-------------\t----------\t---------------\t------------\t--------\n")
 		for _, mapping := range localMappings {
 			address := mapping.DstHost
 			port := fmt.Sprintf("%d", int(mapping.DstPort))
@@ -242,7 +243,7 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 				address = "(ssh client)"
 				port = "(ssh client)"
 			}
-			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%d\t%s\t%s\n", sessionID, mapping.SrcHost, int(mapping.SrcPort), address, port)
+			_, _ = fmt.Fprintf(tw, "\t%d\t%s\t%d\t%s\t%s\t%s\n", sessionID, mapping.SrcHost, mapping.SrcPort, address, port, mapping.Protocol)
 		}
 		_, _ = fmt.Fprintln(tw)
 		_ = tw.Flush()
@@ -250,32 +251,36 @@ func listSessionForwarding(tw *tabwriter.Writer, sessionID int64, sshInst *insta
 	return count
 }
 
-func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool, udp bool) error {
+	protocol := conf.ForwardingProtocolTCP
+	if udp {
+		protocol = conf.ForwardingProtocolUDP
+	}
 	if remove {
 		port, pErr := parsePort(arg)
 		if pErr != nil {
 			return fmt.Errorf("error parsing port: %w", pErr)
 		}
-		mapping, mErr := sshInst.GetLocalPortMapping(port)
+		mapping, mErr := sshInst.GetLocalPortMapping(protocol, port)
 		if mErr != nil {
 			return fmt.Errorf("error getting local port mapping: %w", mErr)
 		}
 		mapping.DoneChan <- true
-		ui.PrintSuccess("Local Port forwarding (port %d) removed successfully", port)
+		ui.PrintSuccess("Local Port forwarding (%s:%d) removed successfully", protocol, port)
 		return nil
 	}
 	fwdItem := arg
-	msg, pErr := parseForwarding(fwdItem, false)
+	msg, pErr := parseForwarding(fwdItem, false, protocol)
 	if pErr != nil {
 		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
 	}
-	ui.PrintInfo("Creating Port Forwarding %s:%d->%s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
+	ui.PrintInfo("Creating %s Port Forwarding %s:%d->%s:%d", strings.ToUpper(msg.Protocol), msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
 
 	notifier := make(chan error, 1)
 	defer close(notifier)
-	go sshInst.DirectTcpIpFromMsg(*msg.TcpIpChannelMsg, notifier)
+	go sshInst.StartLocalForwardingFromMsg(*msg, notifier)
 
-	port := int(msg.SrcPort)
+	port := msg.SrcPort
 	ticker := time.NewTicker(conf.EndpointTickerInterval)
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
@@ -290,7 +295,7 @@ func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, a
 		}
 		select {
 		case <-ticker.C:
-			_, sErr := sshInst.GetLocalPortMapping(port)
+			_, sErr := sshInst.GetLocalPortMapping(msg.Protocol, port)
 			if sErr != nil {
 				ui.FlatPrintf(".")
 				continue
@@ -303,23 +308,26 @@ func handleLocalForward(_ *server, ui UserInterface, sshInst *instance.Config, a
 	}
 }
 
-func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool) error {
+func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config, arg string, remove bool, udp bool) error {
+	protocol := conf.ForwardingProtocolTCP
+	if udp {
+		protocol = conf.ForwardingProtocolUDP
+	}
 	if remove {
 		port, pErr := parsePort(arg)
 		if pErr != nil {
 			return fmt.Errorf("error parsing port: %w", pErr)
 		}
-		sErr := sshInst.CancelMsgRemoteFwd(port)
+		sErr := sshInst.CancelMsgRemoteFwd(protocol, port)
 		if sErr != nil {
 			return fmt.Errorf("failed to remove: %w", sErr)
 		}
-		ui.PrintSuccess("Remote Port forwarding (port %d) removed successfully", port)
+		ui.PrintSuccess("Remote Port forwarding (%s:%d) removed successfully", protocol, port)
 		return nil
 	}
-	fwdItem := arg
-	msg, pErr := parseForwarding(fwdItem, true)
+	msg, pErr := parseForwarding(arg, true, protocol)
 	if pErr != nil {
-		return fmt.Errorf("failed to parse port forwarding %s: %w", fwdItem, pErr)
+		return fmt.Errorf("failed to parse port forwarding %s: %w", arg, pErr)
 	}
 	ui.PrintInfo("Creating Port Forwarding %s:%d -> %s:%d", msg.SrcHost, msg.SrcPort, msg.DstHost, msg.DstPort)
 
@@ -330,7 +338,7 @@ func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config,
 	ticker := time.NewTicker(conf.EndpointTickerInterval)
 	defer ticker.Stop()
 	timeout := time.After(conf.Timeout)
-	port := int(msg.SrcPort)
+	port := msg.SrcPort
 	for {
 		select {
 		case nErr := <-notifier:
@@ -341,7 +349,7 @@ func handleReverseForward(_ *server, ui UserInterface, sshInst *instance.Config,
 		}
 		select {
 		case <-ticker.C:
-			_, sErr := sshInst.GetRemotePortMapping(port)
+			_, sErr := sshInst.GetRemotePortMapping(msg.Protocol, port)
 			if sErr != nil {
 				ui.FlatPrintf(".")
 				continue

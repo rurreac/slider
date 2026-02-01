@@ -129,7 +129,7 @@ type Session interface {
 	GetSSHClient() *ssh.Client
 	AddChannel(ch ssh.Channel)
 	GetPeerInfo() interpreter.BaseInfo
-	HandleForwardedTcpIpChannel(nc ssh.NewChannel)
+	HandleForwardedTCPIPChannel(nc ssh.NewChannel)
 	SetInitTermSize(types.TermDimensions)
 	GetInitTermSize() types.TermDimensions
 	ReplyConnRequest(req *ssh.Request, ok bool, payload []byte) error
