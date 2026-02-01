@@ -1,9 +1,9 @@
 package server
 
 import (
+	"embed"
 	"html/template"
 	"net/http"
-	"path/filepath"
 	"slider/pkg/listener"
 	"slider/pkg/slog"
 	"sync"
@@ -18,6 +18,9 @@ type consolePageData struct {
 }
 
 var (
+	//go:embed templates/*.html
+	templateFS embed.FS
+
 	// Template cache
 	templates     *template.Template
 	templatesOnce sync.Once
@@ -35,10 +38,9 @@ func init() {
 }
 
 // loadTemplates loads and parses all HTML templates
-func loadTemplates(templateDir string) (*template.Template, error) {
+func loadTemplates() (*template.Template, error) {
 	templatesOnce.Do(func() {
-		pattern := filepath.Join(templateDir, "*.html")
-		templates, templatesErr = template.ParseGlob(pattern)
+		templates, templatesErr = template.ParseFS(templateFS, "templates/*.html")
 	})
 	return templates, templatesErr
 }
@@ -64,7 +66,7 @@ func (s *server) handleAuthPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Load templates
-	tmpl, err := loadTemplates(s.templatePath)
+	tmpl, err := loadTemplates()
 	if err != nil {
 		s.ErrorWith("Failed to load templates", slog.F("err", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -91,7 +93,7 @@ func (s *server) handleConsolePage(w http.ResponseWriter, r *http.Request) {
 	data.AuthOn = s.authOn
 
 	// Load templates
-	tmpl, err := loadTemplates(s.templatePath)
+	tmpl, err := loadTemplates()
 	if err != nil {
 		s.ErrorWith("Failed to load templates", slog.F("err", err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

@@ -39,15 +39,13 @@ func (s *server) buildRouter() http.Handler {
 
 	// Add server-specific routes
 
-	// HTTP Console endpoints (only if enabled)
 	if s.httpConsoleOn {
-		// Authentication endpoints
-		mux.HandleFunc(listener.AuthPath, s.handleAuthPage)       // GET: Login page
-		mux.HandleFunc(listener.AuthLoginPath, s.handleAuthToken) // POST: JWT from fingerprint
-		mux.HandleFunc(listener.AuthLogoutPath, s.handleLogout)   // POST: Logout
-
-		// Console page endpoint (protected by auth middleware)
+		// Authentication endpoints & Console page
 		if s.authOn {
+			mux.HandleFunc(listener.AuthPath, s.handleAuthPage)       // GET: Login page
+			mux.HandleFunc(listener.AuthLoginPath, s.handleAuthToken) // POST: JWT from fingerprint
+			mux.HandleFunc(listener.AuthLogoutPath, s.handleLogout)   // POST: Logout
+			// Console page endpoint protected by auth middleware
 			mux.Handle(listener.ConsolePath, s.authMiddleware(http.HandlerFunc(s.handleConsolePage)))
 		} else {
 			mux.Handle(listener.ConsolePath, http.HandlerFunc(s.handleConsolePage))

@@ -91,7 +91,7 @@ func templateHandler(cfg *RouterConfig) http.HandlerFunc {
 			return
 		}
 
-		if cfg.UrlRedirect != nil {
+		if cfg.UrlRedirect != nil && cfg.UrlRedirect.String() != "" {
 			w.Header().Add("Location", cfg.UrlRedirect.String())
 			w.WriteHeader(http.StatusFound)
 			return
