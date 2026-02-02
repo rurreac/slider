@@ -116,7 +116,7 @@ func (s *BidirectionalSession) RouteChannel(nc ssh.NewChannel, channelType strin
 
 	case conf.SSHChannelForwardedUDP:
 		// All roles handle forwarded-udp responses
-		err = s.HandleForwardedUDP(nc)
+		err = sio.HandleForwardedUDPChannel(nc, s.logger, s.sessionID, conf.ForwardingProtocolUDP)
 
 	default:
 		s.logger.WarnWith("Unknown channel type",
@@ -317,12 +317,6 @@ func (s *BidirectionalSession) HandleSocks(nc ssh.NewChannel) error {
 // This is called when a remote side opens a forwarded-tcpip channel to us
 func (s *BidirectionalSession) HandleForwardedTCPIP(nc ssh.NewChannel) error {
 	s.HandleForwardedTCPIPChannel(nc)
-	return nil
-}
-
-// HandleForwardedUDP handles forwarded-udp channels (reverse port forwarding for UDP)
-func (s *BidirectionalSession) HandleForwardedUDP(nc ssh.NewChannel) error {
-	s.HandleForwardedUDPChannel(nc)
 	return nil
 }
 

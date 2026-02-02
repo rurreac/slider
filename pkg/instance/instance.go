@@ -16,7 +16,6 @@ import (
 	"slider/pkg/sio"
 	"slider/pkg/slog"
 	"slider/pkg/types"
-	"strconv"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
@@ -369,7 +368,7 @@ func (si *Config) runSshComm(conn net.Conn) {
 			}()
 		case conf.SSHChannelForwardedUDP:
 			go func() {
-				if hErr := si.handleForwardedUDPChannel(nc); hErr != nil {
+				if hErr := sio.HandleForwardedUDPChannel(nc, si.Logger, si.SessionID, conf.ForwardingProtocolUDP); hErr != nil {
 					si.Logger.ErrorWith("Failed to handle channel",
 						slog.F("session_id", si.SessionID),
 						slog.F("channel_type", nc.ChannelType()),
@@ -674,134 +673,6 @@ func (si *Config) handleDirectUDPChannel(nc ssh.NewChannel) error {
 		return fmt.Errorf("port forwarding manager not initialized")
 	}
 	return si.portFwdManager.HandleDirectUDPChannel(nc)
-}
-
-func (si *Config) handleForwardedUDPChannel(nc ssh.NewChannel) error {
-	var tcpIpMsg types.TcpIpChannelMsg
-	customMsg := &types.CustomTcpIpChannelMsg{}
-
-	// UDP reverse forward from client (always CustomTcpIpChannelMsg format)
-	if jErr := json.Unmarshal(nc.ExtraData(), customMsg); jErr == nil && customMsg.TcpIpChannelMsg != nil {
-		tcpIpMsg = *customMsg.TcpIpChannelMsg
-	} else {
-		si.Logger.ErrorWith("Failed to unmarshal forwarded-udp data",
-			slog.F("session_id", si.SessionID),
-			slog.F("err", jErr))
-		_ = nc.Reject(ssh.UnknownChannelType, "Failed to decode forwarded-udp data")
-		return fmt.Errorf("failed to unmarshal forwarded-udp data: %w", jErr)
-	}
-
-	protocol := customMsg.Protocol
-
-	si.Logger.DebugWith("Forwarded-udp channel request",
-		slog.F("session_id", si.SessionID),
-		slog.F("dst_host", tcpIpMsg.DstHost),
-		slog.F("dst_port", tcpIpMsg.DstPort),
-		slog.F("src_host", tcpIpMsg.SrcHost),
-		slog.F("src_port", tcpIpMsg.SrcPort),
-		slog.F("protocol", protocol))
-
-	channel, requests, aErr := nc.Accept()
-	if aErr != nil {
-		si.Logger.ErrorWith("Failed to accept forwarded-udp channel",
-			slog.F("session_id", si.SessionID),
-			slog.F("err", aErr))
-		return fmt.Errorf("failed to accept channel: %w", aErr)
-	}
-	defer func() { _ = channel.Close() }()
-	go ssh.DiscardRequests(requests)
-
-	// Dial the local destination (Server side)
-	dstHost := tcpIpMsg.DstHost
-	dstPort := tcpIpMsg.DstPort
-	host := net.JoinHostPort(dstHost, strconv.Itoa(int(dstPort)))
-
-	udpConn, cErr := net.Dial(protocol, host)
-	if cErr != nil {
-		si.Logger.ErrorWith("Failed to connect to local destination",
-			slog.F("session_id", si.SessionID),
-			slog.F("host", host),
-			slog.F("protocol", protocol),
-			slog.F("err", cErr))
-		return fmt.Errorf("failed to dial %s: %w", host, cErr)
-	}
-	defer func() { _ = udpConn.Close() }()
-
-	si.Logger.DebugWith("Bridged forwarded-udp channel",
-		slog.F("session_id", si.SessionID),
-		slog.F("target", host),
-		slog.F("protocol", protocol))
-
-	// UDP requires packet-based copying, not stream piping
-	done := make(chan struct{}, 2)
-
-	// Channel -> UDP (forward traffic)
-	go func() {
-		defer func() {
-			si.Logger.DebugWith("Channel->UDP goroutine exiting",
-				slog.F("session_id", si.SessionID))
-			done <- struct{}{}
-		}()
-		buf := make([]byte, conf.MaxUDPPacketSize)
-		for {
-			n, rErr := channel.Read(buf)
-			if rErr != nil {
-				si.Logger.DebugWith("Channel read error",
-					slog.F("session_id", si.SessionID),
-					slog.F("err", rErr))
-				return
-			}
-			if n > 0 {
-				si.Logger.DebugWith("Forwarding packet Channel->UDP",
-					slog.F("session_id", si.SessionID),
-					slog.F("bytes", n))
-				_, wErr := udpConn.Write(buf[:n])
-				if wErr != nil {
-					si.Logger.ErrorWith("UDP write error",
-						slog.F("session_id", si.SessionID),
-						slog.F("err", wErr))
-					return
-				}
-			}
-		}
-	}()
-
-	// UDP -> Channel (return traffic)
-	go func() {
-		defer func() {
-			si.Logger.DebugWith("UDP->Channel goroutine exiting",
-				slog.F("session_id", si.SessionID))
-			done <- struct{}{}
-		}()
-		buf := make([]byte, conf.MaxUDPPacketSize)
-		for {
-			n, rErr := udpConn.Read(buf)
-			if rErr != nil {
-				si.Logger.DebugWith("UDP read error",
-					slog.F("session_id", si.SessionID),
-					slog.F("err", rErr))
-				return
-			}
-			if n > 0 {
-				si.Logger.DebugWith("Forwarding packet UDP->Channel",
-					slog.F("session_id", si.SessionID),
-					slog.F("bytes", n))
-				_, wErr := channel.Write(buf[:n])
-				if wErr != nil {
-					si.Logger.ErrorWith("Channel write error",
-						slog.F("session_id", si.SessionID),
-						slog.F("err", wErr))
-					return
-				}
-			}
-		}
-	}()
-
-	// Wait for either direction to close
-	<-done
-	si.Logger.DebugWith("UDP channel handler completing",
-		slog.F("session_id", si.SessionID))
-	return nil
 }
 
 // sendInitTermSize receives a req-pty payload extracts the terminal size and sends it through an init-size channel payload
