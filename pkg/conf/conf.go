@@ -43,10 +43,11 @@ func GetSliderHome() string {
 }
 
 func GetSSHCertsPath() string {
-	sshPath := GetSliderHome() + "ssh/"
+	homePath := GetSliderHome()
+	sshPath := homePath + "ssh/"
 	if _, err := os.Stat(sshPath); os.IsNotExist(err) {
 		if err = ensurePath(sshPath); err != nil {
-			return ""
+			return homePath
 		}
 	}
 	return sshPath
