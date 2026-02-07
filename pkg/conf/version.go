@@ -17,7 +17,7 @@ const Banner = `
 
 var (
 	Version = "development"
-	Proto   = "slider-v1"
+	Proto   = "slider-v2"
 	binOS   = runtime.GOOS
 	binArch = runtime.GOARCH
 	commit  = "undefined"
